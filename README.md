@@ -401,7 +401,8 @@ const buyInAppProduct = async () => {
       productIdentifier: 'com.yourapp.premium_features',
       productType: PURCHASE_TYPE.INAPP,
       quantity: 1,
-      appAccountToken: userUUID // Optional: iOS only - for linking purchases to user accounts
+      appAccountToken: userUUID,    // Optional: iOS only - for linking purchases to user accounts
+      obfuscatedAccountId: userId   // Optional: Android only - for linking purchases to user accounts
     });
 
     alert('Purchase successful! Transaction ID: ' + result.transactionId);
@@ -443,7 +444,8 @@ const buySubscription = async () => {
       planIdentifier: 'monthly-plan',           // REQUIRED for Android subscriptions
       productType: PURCHASE_TYPE.SUBS,          // REQUIRED for subscriptions
       quantity: 1,
-      appAccountToken: userUUID                 // Optional: iOS only - for linking purchases to user accounts
+      appAccountToken: userUUID,                // Optional: iOS only - for linking purchases to user accounts
+      obfuscatedAccountId: userId               // Optional: Android only - for linking purchases to user accounts
     });
 
     alert('Subscription successful! Transaction ID: ' + result.transactionId);
@@ -751,14 +753,14 @@ Restores a user's previous  and links their appUserIDs to any user's also using 
 ### purchaseProduct(...)
 
 ```typescript
-purchaseProduct(options: { productIdentifier: string; planIdentifier?: string; productType?: PURCHASE_TYPE; quantity?: number; appAccountToken?: string; }) => Promise<Transaction>
+purchaseProduct(options: { productIdentifier: string; planIdentifier?: string; productType?: PURCHASE_TYPE; quantity?: number; appAccountToken?: string; obfuscatedAccountId?: string; }) => Promise<Transaction>
 ```
 
 Started purchase process for the given product.
 
-| Param         | Type                                                                                                                                                                        | Description               |
-| ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------- |
-| **`options`** | <code>{ productIdentifier: string; planIdentifier?: string; productType?: <a href="#purchase_type">PURCHASE_TYPE</a>; quantity?: number; appAccountToken?: string; }</code> | - The product to purchase |
+| Param         | Type                                                                                                                                                                                                      | Description               |
+| ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------- |
+| **`options`** | <code>{ productIdentifier: string; planIdentifier?: string; productType?: <a href="#purchase_type">PURCHASE_TYPE</a>; quantity?: number; appAccountToken?: string; obfuscatedAccountId?: string; }</code> | - The product to purchase |
 
 **Returns:** <code>Promise&lt;<a href="#transaction">Transaction</a>&gt;</code>
 

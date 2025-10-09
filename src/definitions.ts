@@ -328,6 +328,7 @@ export interface NativePurchasesPlugin {
    * @param options.planIdentifier - Only Android, the identifier of the plan you want to purchase, require for for subs.
    * @param options.quantity - Only iOS, the number of items you wish to purchase. Will use 1 by default.
    * @param options.appAccountToken - Only iOS, UUID for the user's account. Used to link purchases to the user account for App Store Server Notifications.
+   * @param options.obfuscatedAccountId - Only Android, string for the user's account. Used to link purchases to the user account for Google Play purchases.
    */
   purchaseProduct(options: {
     productIdentifier: string;
@@ -335,6 +336,7 @@ export interface NativePurchasesPlugin {
     productType?: PURCHASE_TYPE;
     quantity?: number;
     appAccountToken?: string;
+    obfuscatedAccountId?: string;
   }): Promise<Transaction>;
 
   /**
