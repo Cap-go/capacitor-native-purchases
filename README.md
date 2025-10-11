@@ -38,7 +38,7 @@ Add this to manifest
 
 ### Testing with Google Play Console
 
-> 📖 **[Complete Android Testing Guide](./docs/Android_TESTING_GUIDE.md)** - Comprehensive guide covering Internal Testing, License Testing, and Internal App Sharing methods with step-by-step instructions, troubleshooting, and best practices.
+> 📖 **[Complete Android Testing Guide](./docs/ANDROID_TESTING_GUIDE.md)** - Comprehensive guide covering Internal Testing, License Testing, and Internal App Sharing methods with step-by-step instructions, troubleshooting, and best practices.
 
 For testing in-app purchases on Android:
 
