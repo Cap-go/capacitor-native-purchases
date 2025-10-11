@@ -380,11 +380,13 @@ public class NativePurchasesPlugin extends Plugin {
     String planIdentifier = call.getString("planIdentifier");
     String productType = call.getString("productType", "inapp");
     Number quantity = call.getInt("quantity", 1);
+    String obfuscatedAccountId = call.getString("obfuscatedAccountId");
 
     Log.d(TAG, "Product identifier: " + productIdentifier);
     Log.d(TAG, "Plan identifier: " + planIdentifier);
     Log.d(TAG, "Product type: " + productType);
     Log.d(TAG, "Quantity: " + quantity);
+    Log.d(TAG, "Obfuscated account ID: " + obfuscatedAccountId);
 
     // cannot use quantity, because it's done in native modal
     Log.d("CapacitorPurchases", "purchaseProduct: " + productIdentifier);
@@ -519,9 +521,16 @@ public class NativePurchasesPlugin extends Plugin {
               }
               productDetailsParamsList.add(productDetailsParams.build());
             }
-            BillingFlowParams billingFlowParams = BillingFlowParams.newBuilder()
-              .setProductDetailsParamsList(productDetailsParamsList)
-              .build();
+            BillingFlowParams.Builder billingFlowParamsBuilder = BillingFlowParams.newBuilder()
+              .setProductDetailsParamsList(productDetailsParamsList);
+
+            // Add obfuscatedAccountId if provided
+            if (obfuscatedAccountId != null && !obfuscatedAccountId.isEmpty()) {
+              billingFlowParamsBuilder.setObfuscatedAccountId(obfuscatedAccountId);
+              Log.d(TAG, "Set obfuscated account ID: " + obfuscatedAccountId);
+            }
+
+            BillingFlowParams billingFlowParams = billingFlowParamsBuilder.build();
             // Launch the billing flow
             Log.d(TAG, "Launching billing flow");
             BillingResult billingResult2 = billingClient.launchBillingFlow(
