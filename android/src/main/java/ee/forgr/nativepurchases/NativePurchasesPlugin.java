@@ -718,7 +718,10 @@ public class NativePurchasesPlugin extends Plugin {
                                 }
                                 JSObject purchaseData = new JSObject();
                                 purchaseData.put("transactionId", purchase.getPurchaseToken());
-                                purchaseData.put("productIdentifier", purchase.getProducts().isEmpty() ? null : purchase.getProducts().get(0));
+                                purchaseData.put(
+                                    "productIdentifier",
+                                    purchase.getProducts().isEmpty() ? null : purchase.getProducts().get(0)
+                                );
                                 purchaseData.put(
                                     "purchaseDate",
                                     new java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", java.util.Locale.US).format(
@@ -768,7 +771,10 @@ public class NativePurchasesPlugin extends Plugin {
                                 }
                                 JSObject purchaseData = new JSObject();
                                 purchaseData.put("transactionId", purchase.getPurchaseToken());
-                                purchaseData.put("productIdentifier", purchase.getProducts().isEmpty() ? null : purchase.getProducts().get(0));
+                                purchaseData.put(
+                                    "productIdentifier",
+                                    purchase.getProducts().isEmpty() ? null : purchase.getProducts().get(0)
+                                );
                                 purchaseData.put(
                                     "purchaseDate",
                                     new java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", java.util.Locale.US).format(
