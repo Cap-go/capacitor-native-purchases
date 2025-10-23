@@ -265,14 +265,14 @@ While Google Play is less strict than Apple, following these practices improves 
    ```typescript
    // Recommended: Use actual product details
    product.title                         // Product name from Play Console
-   product.formattedPrice               // Formatted price
+   product.priceString               // Formatted price
    product.description                  // Product description
    ```
 
 2. **Handle Localization**
    ```typescript
    // Google Play handles currency conversion automatically
-   const price = product.formattedPrice;
+   const price = product.priceString;
    // Displays as "$9.99", "€8.99", "¥1000", etc. based on user's region
    ```
 
@@ -293,7 +293,7 @@ While Google Play is less strict than Apple, following these practices improves 
 
 ```typescript
 // Use dynamic product data
-<div>{product.title} - {product.formattedPrice}</div>
+<div>{product.title} - {product.priceString}</div>
 ```
 
 ### Testing Product Display
