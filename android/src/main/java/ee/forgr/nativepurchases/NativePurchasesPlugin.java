@@ -553,8 +553,7 @@ public class NativePurchasesPlugin extends Plugin {
                             Log.d(TAG, "Processing as in-app product");
                             product.put("identifier", productDetails.getProductId());
                             double price =
-                                Objects.requireNonNull(productDetails.getOneTimePurchaseOfferDetails()).getPriceAmountMicros() /
-                                1000000.0;
+                                Objects.requireNonNull(productDetails.getOneTimePurchaseOfferDetails()).getPriceAmountMicros() / 1000000.0;
                             product.put("price", price);
                             product.put("priceString", productDetails.getOneTimePurchaseOfferDetails().getFormattedPrice());
                             product.put("currencyCode", productDetails.getOneTimePurchaseOfferDetails().getPriceCurrencyCode());
@@ -589,8 +588,7 @@ public class NativePurchasesPlugin extends Plugin {
                             );
                             Log.d(
                                 TAG,
-                                "Currency: " +
-                                    selectedOfferDetails.getPricingPhases().getPricingPhaseList().get(0).getPriceCurrencyCode()
+                                "Currency: " + selectedOfferDetails.getPricingPhases().getPricingPhaseList().get(0).getPriceCurrencyCode()
                             );
                         }
                         product.put("isFamilyShareable", false);
@@ -930,7 +928,9 @@ public class NativePurchasesPlugin extends Plugin {
             // Open the Google Play subscription management page
             // This intent opens the subscription center for the app
             android.content.Intent intent = new android.content.Intent(android.content.Intent.ACTION_VIEW);
-            intent.setData(android.net.Uri.parse("https://play.google.com/store/account/subscriptions?package=" + getContext().getPackageName()));
+            intent.setData(
+                android.net.Uri.parse("https://play.google.com/store/account/subscriptions?package=" + getContext().getPackageName())
+            );
             intent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK);
             getContext().startActivity(intent);
 
