@@ -488,8 +488,13 @@ public class NativePurchasesPlugin: CAPPlugin, CAPBridgedPlugin {
             print("manageSubscriptions")
             Task { @MainActor in
                 do {
+                    // Get the current window scene
+                    guard let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene else {
+                        call.reject("Unable to get window scene")
+                        return
+                    }
                     // Open the App Store subscription management page
-                    try await AppStore.showManageSubscriptions(in: nil)
+                    try await AppStore.showManageSubscriptions(in: windowScene)
                     call.resolve()
                 } catch {
                     print("manageSubscriptions error: \(error)")

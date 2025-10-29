@@ -38,4 +38,7 @@ export class NativePurchasesWeb extends WebPlugin implements NativePurchasesPlug
     console.error('getPurchases only mocked in web ' + options);
     return { purchases: [] };
   }
+  async manageSubscriptions(): Promise<void> {
+    console.error('manageSubscriptions only mocked in web');
+  }
 }
