@@ -39,7 +39,7 @@ import org.json.JSONArray;
 @CapacitorPlugin(name = "NativePurchases")
 public class NativePurchasesPlugin extends Plugin {
 
-    private final String PLUGIN_VERSION = "7.11.2";
+    private final String PLUGIN_VERSION = "7.11.3";
     public static final String TAG = "NativePurchases";
     private static final Phaser semaphoreReady = new Phaser(1);
     private BillingClient billingClient;
@@ -405,9 +405,8 @@ public class NativePurchasesPlugin extends Plugin {
                             }
                             productDetailsParamsList.add(productDetailsParams.build());
                         }
-                        BillingFlowParams.Builder billingFlowBuilder = BillingFlowParams.newBuilder().setProductDetailsParamsList(
-                            productDetailsParamsList
-                        );
+                        BillingFlowParams.Builder billingFlowBuilder = BillingFlowParams.newBuilder()
+                            .setProductDetailsParamsList(productDetailsParamsList);
                         if (accountIdentifier != null && !accountIdentifier.isEmpty()) {
                             billingFlowBuilder.setObfuscatedAccountId(accountIdentifier);
                         }
@@ -584,7 +583,7 @@ public class NativePurchasesPlugin extends Plugin {
                             Log.d(
                                 TAG,
                                 "Formatted price: " +
-                                    selectedOfferDetails.getPricingPhases().getPricingPhaseList().get(0).getFormattedPrice()
+                                selectedOfferDetails.getPricingPhases().getPricingPhaseList().get(0).getFormattedPrice()
                             );
                             Log.d(
                                 TAG,
@@ -699,12 +698,12 @@ public class NativePurchasesPlugin extends Plugin {
                                 Log.d(
                                     TAG,
                                     "Formatted price: " +
-                                        selectedOfferDetails.getPricingPhases().getPricingPhaseList().get(0).getFormattedPrice()
+                                    selectedOfferDetails.getPricingPhases().getPricingPhaseList().get(0).getFormattedPrice()
                                 );
                                 Log.d(
                                     TAG,
                                     "Currency: " +
-                                        selectedOfferDetails.getPricingPhases().getPricingPhaseList().get(0).getPriceCurrencyCode()
+                                    selectedOfferDetails.getPricingPhases().getPricingPhaseList().get(0).getPriceCurrencyCode()
                                 );
                             }
                             product.put("isFamilyShareable", false);
