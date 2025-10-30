@@ -25,7 +25,7 @@ public class NativePurchasesPlugin: CAPPlugin, CAPBridgedPlugin {
     private var transactionUpdatesTask: Task<Void, Never>?
 
     @objc func getPluginVersion(_ call: CAPPluginCall) {
-        call.resolve(["version": self.pluginVersion])
+        call.resolve(["version": self.PLUGIN_VERSION])
     }
 
     override public func load() {
