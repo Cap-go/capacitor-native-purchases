@@ -21,7 +21,7 @@ public class NativePurchasesPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "manageSubscriptions", returnType: CAPPluginReturnPromise)
     ]
 
-    private let PLUGIN_VERSION: String = "7.12.1"
+    private let pluginVersion: String = "7.12.1"
     private var transactionUpdatesTask: Task<Void, Never>?
 
     @objc func getPluginVersion(_ call: CAPPluginCall) {
@@ -62,7 +62,7 @@ public class NativePurchasesPlugin: CAPPlugin, CAPBridgedPlugin {
                     }
 
                     // Build payload similar to purchase response
-                    let payload = await TransactionHelpers.buildTransactionResponse(from: transaction)
+                    let payload = await TransactionHelpers.buildTransactionResponse(from: transaction, alwaysIncludeWillCancel: true)
 
                     // Finish the transaction to avoid blocking future purchases
                     await transaction.finish()

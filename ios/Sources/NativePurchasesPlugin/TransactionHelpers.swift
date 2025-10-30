@@ -11,8 +11,13 @@ import StoreKit
 @available(iOS 15.0, *)
 internal class TransactionHelpers {
 
-    static func buildTransactionResponse(from transaction: Transaction) async -> [String: Any] {
+    static func buildTransactionResponse(from transaction: Transaction, alwaysIncludeWillCancel: Bool = false) async -> [String: Any] {
         var response: [String: Any] = ["transactionId": String(transaction.id)]
+
+        // Always include willCancel key with NSNull() default if requested (for transaction listener)
+        if alwaysIncludeWillCancel {
+            response["willCancel"] = NSNull()
+        }
 
         // Get receipt data
         if let receiptBase64 = getReceiptData() {
