@@ -10,6 +10,20 @@
 
 This plugin allows you to implement in-app purchases and subscriptions in your Capacitor app using native APIs.
 
+## Why Native Purchases?
+
+The only **free**, **battle-tested** in-app purchase plugin for Capacitor with full feature parity:
+
+- **StoreKit 2 (iOS)** - Uses Apple's latest purchase APIs for iOS 15+
+- **Google Play Billing 7.x (Android)** - Implements the newest billing library
+- **Complete feature set** - In-app products AND subscriptions with base plans
+- **Same JavaScript API** - Compatible interface with paid alternatives
+- **Comprehensive validation** - Built-in receipt/token validation examples
+- **Modern package management** - Supports both Swift Package Manager (SPM) and CocoaPods (SPM-ready for Capacitor 8)
+- **Production-ready** - Extensive documentation, testing guides, refund handling
+
+Perfect for apps monetizing through one-time purchases or recurring subscriptions.
+
 ## Documentation
 
 The most complete doc is available here: https://capgo.app/docs/plugins/native-purchases/
