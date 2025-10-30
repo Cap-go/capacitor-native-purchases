@@ -405,8 +405,9 @@ public class NativePurchasesPlugin extends Plugin {
                             }
                             productDetailsParamsList.add(productDetailsParams.build());
                         }
-                        BillingFlowParams.Builder billingFlowBuilder = BillingFlowParams.newBuilder()
-                            .setProductDetailsParamsList(productDetailsParamsList);
+                        BillingFlowParams.Builder billingFlowBuilder = BillingFlowParams.newBuilder().setProductDetailsParamsList(
+                            productDetailsParamsList
+                        );
                         if (accountIdentifier != null && !accountIdentifier.isEmpty()) {
                             billingFlowBuilder.setObfuscatedAccountId(accountIdentifier);
                         }
@@ -583,7 +584,7 @@ public class NativePurchasesPlugin extends Plugin {
                             Log.d(
                                 TAG,
                                 "Formatted price: " +
-                                selectedOfferDetails.getPricingPhases().getPricingPhaseList().get(0).getFormattedPrice()
+                                    selectedOfferDetails.getPricingPhases().getPricingPhaseList().get(0).getFormattedPrice()
                             );
                             Log.d(
                                 TAG,
@@ -698,12 +699,12 @@ public class NativePurchasesPlugin extends Plugin {
                                 Log.d(
                                     TAG,
                                     "Formatted price: " +
-                                    selectedOfferDetails.getPricingPhases().getPricingPhaseList().get(0).getFormattedPrice()
+                                        selectedOfferDetails.getPricingPhases().getPricingPhaseList().get(0).getFormattedPrice()
                                 );
                                 Log.d(
                                     TAG,
                                     "Currency: " +
-                                    selectedOfferDetails.getPricingPhases().getPricingPhaseList().get(0).getPriceCurrencyCode()
+                                        selectedOfferDetails.getPricingPhases().getPricingPhaseList().get(0).getPriceCurrencyCode()
                                 );
                             }
                             product.put("isFamilyShareable", false);

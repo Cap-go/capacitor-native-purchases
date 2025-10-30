@@ -21,11 +21,11 @@ public class NativePurchasesPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "manageSubscriptions", returnType: CAPPluginReturnPromise)
     ]
 
-    private let PLUGIN_VERSION: String = "7.12.0"
+    private let pluginVersion: String = "7.12.0"
     private var transactionUpdatesTask: Task<Void, Never>?
 
     @objc func getPluginVersion(_ call: CAPPluginCall) {
-        call.resolve(["version": self.PLUGIN_VERSION])
+        call.resolve(["version": self.pluginVersion])
     }
 
     override public func load() {
@@ -62,42 +62,7 @@ public class NativePurchasesPlugin: CAPPlugin, CAPBridgedPlugin {
                     }
 
                     // Build payload similar to purchase response
-                    var payload: [String: Any] = ["transactionId": String(transaction.id)]
-
-                    // Always include willCancel key with NSNull() default
-                    payload["willCancel"] = NSNull()
-
-                    if let appStoreReceiptURL = Bundle.main.appStoreReceiptURL,
-                       FileManager.default.fileExists(atPath: appStoreReceiptURL.path),
-                       let receiptData = try? Data(contentsOf: appStoreReceiptURL) {
-                        payload["receipt"] = receiptData.base64EncodedString()
-                    }
-
-                    payload["productIdentifier"] = transaction.productID
-                    payload["purchaseDate"] = dateFormatter.string(from: transaction.purchaseDate)
-                    payload["productType"] = transaction.productType == .autoRenewable ? "subs" : "inapp"
-
-                    if transaction.productType == .autoRenewable {
-                        payload["originalPurchaseDate"] = dateFormatter.string(from: transaction.originalPurchaseDate)
-                        if let expirationDate = transaction.expirationDate {
-                            payload["expirationDate"] = dateFormatter.string(from: expirationDate)
-                            payload["isActive"] = expirationDate > Date()
-                        }
-                    }
-
-                    let subscriptionStatus = await transaction.subscriptionStatus
-                    if let subscriptionStatus = subscriptionStatus {
-                        if subscriptionStatus.state == .subscribed {
-                            let renewalInfo = subscriptionStatus.renewalInfo
-                            switch renewalInfo {
-                            case .verified(let value):
-                                payload["willCancel"] = !value.willAutoRenew
-                            case .unverified:
-                                // willCancel remains NSNull() for unverified renewalInfo
-                                break
-                            }
-                        }
-                    }
+                    let payload = await TransactionHelpers.buildTransactionResponse(from: transaction)
 
                     // Finish the transaction to avoid blocking future purchases
                     await transaction.finish()
@@ -112,6 +77,8 @@ public class NativePurchasesPlugin: CAPPlugin, CAPBridgedPlugin {
         }
         transactionUpdatesTask = task
     }
+
+    // MARK: - Plugin Methods
 
     @objc func isBillingSupported(_ call: CAPPluginCall) {
         if #available(iOS 15, *) {
@@ -131,6 +98,7 @@ public class NativePurchasesPlugin: CAPPlugin, CAPBridgedPlugin {
             let productIdentifier = call.getString("productIdentifier", "")
             let quantity = call.getInt("quantity", 1)
             let appAccountToken = call.getString("appAccountToken")
+
             if productIdentifier.isEmpty {
                 call.reject("productIdentifier is Empty, give an id")
                 return
@@ -143,90 +111,12 @@ public class NativePurchasesPlugin: CAPPlugin, CAPBridgedPlugin {
                         call.reject("Cannot find product for id \(productIdentifier)")
                         return
                     }
-                    var purchaseOptions = Set<Product.PurchaseOption>()
-                    purchaseOptions.insert(Product.PurchaseOption.quantity(quantity))
 
-                    // Add appAccountToken if provided
-                    if let accountToken = appAccountToken, !accountToken.isEmpty {
-                        if let tokenData = UUID(uuidString: accountToken) {
-                            purchaseOptions.insert(Product.PurchaseOption.appAccountToken(tokenData))
-                        }
-                    }
-
+                    let purchaseOptions = buildPurchaseOptions(quantity: quantity, appAccountToken: appAccountToken)
                     let result = try await product.purchase(options: purchaseOptions)
                     print("purchaseProduct result \(result)")
-                    switch result {
-                    case let .success(.verified(transaction)):
-                        // Successful purchase
-                        var response: [String: Any] = ["transactionId": transaction.id]
 
-                        // Get receipt data
-                        if let appStoreReceiptURL = Bundle.main.appStoreReceiptURL,
-                           FileManager.default.fileExists(atPath: appStoreReceiptURL.path),
-                           let receiptData = try? Data(contentsOf: appStoreReceiptURL) {
-                            let receiptBase64 = receiptData.base64EncodedString()
-                            response["receipt"] = receiptBase64
-                        }
-
-                        // Add detailed transaction information
-                        response["productIdentifier"] = transaction.productID
-                        response["purchaseDate"] = ISO8601DateFormatter().string(from: transaction.purchaseDate)
-                        response["productType"] = transaction.productType == .autoRenewable ? "subs" : "inapp"
-                        if let token = transaction.appAccountToken {
-                            let tokenString = token.uuidString
-                            response["appAccountToken"] = tokenString
-                        }
-
-                        // Add subscription-specific information
-                        if transaction.productType == .autoRenewable {
-                            response["originalPurchaseDate"] = ISO8601DateFormatter().string(from: transaction.originalPurchaseDate)
-                            if let expirationDate = transaction.expirationDate {
-                                response["expirationDate"] = ISO8601DateFormatter().string(from: expirationDate)
-                                let isActive = expirationDate > Date()
-                                response["isActive"] = isActive
-                            }
-                        }
-
-                        let subscriptionStatus = await transaction.subscriptionStatus
-                        if let subscriptionStatus = subscriptionStatus {
-                            // You can use 'state' here if needed
-                            let state = subscriptionStatus.state
-                            if state == .subscribed {
-                                // Use Objective-C reflection to access advancedCommerceInfo
-                                let renewalInfo = subscriptionStatus.renewalInfo
-
-                                switch renewalInfo {
-                                case .verified(let value):
-                                    //                                            if #available(iOS 18.4, *) {
-                                    //                                                // This should work but may need runtime access
-                                    //                                                let advancedInfo = value.advancedCommerceInfo
-                                    //                                                print("Advanced commerce info: \(advancedInfo)")
-                                    //                                            }
-                                    //                                            print("[InAppPurchase] Subscription renewalInfo verified.")
-                                    response["willCancel"] = !value.willAutoRenew
-                                case .unverified:
-                                    print("[InAppPurchase] Subscription renewalInfo not verified.")
-                                    response["willCancel"] = NSNull()
-                                }
-                            }
-                        }
-
-                        await transaction.finish()
-                        call.resolve(response)
-                    case let .success(.unverified(_, error)):
-                        // Successful purchase but transaction/receipt can't be verified
-                        // Could be a jailbroken phone
-                        call.reject(error.localizedDescription)
-                    case .pending:
-                        // Transaction waiting on SCA (Strong Customer Authentication) or
-                        // approval from Ask to Buy
-                        call.reject("Transaction pending")
-                    case .userCancelled:
-                        // ^^^
-                        call.reject("User cancelled")
-                    @unknown default:
-                        call.reject("Unknown error")
-                    }
+                    await handlePurchaseResult(result, call: call)
                 } catch {
                     print(error)
                     call.reject(error.localizedDescription)
@@ -235,6 +125,36 @@ public class NativePurchasesPlugin: CAPPlugin, CAPBridgedPlugin {
         } else {
             print("Not implemented under ios 15")
             call.reject("Not implemented under ios 15")
+        }
+    }
+
+    @available(iOS 15.0, *)
+    private func buildPurchaseOptions(quantity: Int, appAccountToken: String?) -> Set<Product.PurchaseOption> {
+        var purchaseOptions = Set<Product.PurchaseOption>()
+        purchaseOptions.insert(Product.PurchaseOption.quantity(quantity))
+
+        if let accountToken = appAccountToken, !accountToken.isEmpty, let tokenData = UUID(uuidString: accountToken) {
+            purchaseOptions.insert(Product.PurchaseOption.appAccountToken(tokenData))
+        }
+
+        return purchaseOptions
+    }
+
+    @available(iOS 15.0, *)
+    private func handlePurchaseResult(_ result: Product.PurchaseResult, call: CAPPluginCall) async {
+        switch result {
+        case let .success(.verified(transaction)):
+            let response = await TransactionHelpers.buildTransactionResponse(from: transaction)
+            await transaction.finish()
+            call.resolve(response)
+        case let .success(.unverified(_, error)):
+            call.reject(error.localizedDescription)
+        case .pending:
+            call.reject("Transaction pending")
+        case .userCancelled:
+            call.reject("User cancelled")
+        @unknown default:
+            call.reject("Unknown error")
         }
     }
 
@@ -325,151 +245,7 @@ public class NativePurchasesPlugin: CAPPlugin, CAPBridgedPlugin {
             DispatchQueue.global().async {
                 Task {
                     do {
-                        var allPurchases: [[String: Any]] = []
-
-                        // Get all current entitlements (active subscriptions)
-                        for await result in Transaction.currentEntitlements {
-                            if case .verified(let transaction) = result {
-                                let transactionAccountToken = transaction.appAccountToken?.uuidString
-                                if let filter = appAccountTokenFilter {
-                                    guard let token = transactionAccountToken, token == filter else {
-                                        continue
-                                    }
-                                }
-                                var purchaseData: [String: Any] = ["transactionId": String(transaction.id)]
-
-                                // Get receipt data
-                                if let appStoreReceiptURL = Bundle.main.appStoreReceiptURL,
-                                   FileManager.default.fileExists(atPath: appStoreReceiptURL.path),
-                                   let receiptData = try? Data(contentsOf: appStoreReceiptURL) {
-                                    let receiptBase64 = receiptData.base64EncodedString()
-                                    purchaseData["receipt"] = receiptBase64
-                                }
-
-                                // Add detailed transaction information
-                                purchaseData["productIdentifier"] = transaction.productID
-                                purchaseData["purchaseDate"] = ISO8601DateFormatter().string(from: transaction.purchaseDate)
-                                purchaseData["productType"] = transaction.productType == .autoRenewable ? "subs" : "inapp"
-                                if let token = transactionAccountToken {
-                                    purchaseData["appAccountToken"] = token
-                                }
-
-                                // Add subscription-specific information
-                                if transaction.productType == .autoRenewable {
-                                    purchaseData["originalPurchaseDate"] = ISO8601DateFormatter().string(from: transaction.originalPurchaseDate)
-                                    if let expirationDate = transaction.expirationDate {
-                                        purchaseData["expirationDate"] = ISO8601DateFormatter().string(from: expirationDate)
-                                        let isActive = expirationDate > Date()
-                                        purchaseData["isActive"] = isActive
-                                    }
-                                }
-
-                                let subscriptionStatus = await transaction.subscriptionStatus
-                                if let subscriptionStatus = subscriptionStatus {
-                                    // You can use 'state' here if needed
-                                    let state = subscriptionStatus.state
-                                    if state == .subscribed {
-                                        // Use Objective-C reflection to access advancedCommerceInfo
-                                        let renewalInfo = subscriptionStatus.renewalInfo
-
-                                        switch renewalInfo {
-                                        case .verified(let value):
-                                            //                                            if #available(iOS 18.4, *) {
-                                            //                                                // This should work but may need runtime access
-                                            //                                                let advancedInfo = value.advancedCommerceInfo
-                                            //                                                print("Advanced commerce info: \(advancedInfo)")
-                                            //                                            }
-                                            //                                            print("[InAppPurchase] Subscription renewalInfo verified.")
-                                            purchaseData["willCancel"] = !value.willAutoRenew
-                                        case .unverified:
-                                            print("[InAppPurchase] Subscription renewalInfo not verified.")
-                                            purchaseData["willCancel"] = NSNull()
-                                        }
-                                    }
-                                }
-
-                                allPurchases.append(purchaseData)
-                            }
-                        }
-
-                        // Also get all transactions (including non-consumables and expired subscriptions)
-                        for await result in Transaction.all {
-                            if case .verified(let transaction) = result {
-                                let transactionIdString = String(transaction.id)
-                                let transactionAccountToken = transaction.appAccountToken?.uuidString
-
-                                if let filter = appAccountTokenFilter {
-                                    guard let token = transactionAccountToken, token == filter else {
-                                        continue
-                                    }
-                                }
-
-                                // Check if we already have this transaction
-                                let alreadyExists = allPurchases.contains { purchase in
-                                    if let existingId = purchase["transactionId"] as? String {
-                                        return existingId == transactionIdString
-                                    }
-                                    return false
-                                }
-
-                                if !alreadyExists {
-                                    var purchaseData: [String: Any] = ["transactionId": transactionIdString]
-
-                                    // Get receipt data
-                                    if let appStoreReceiptURL = Bundle.main.appStoreReceiptURL,
-                                       FileManager.default.fileExists(atPath: appStoreReceiptURL.path),
-                                       let receiptData = try? Data(contentsOf: appStoreReceiptURL) {
-                                        let receiptBase64 = receiptData.base64EncodedString()
-                                        purchaseData["receipt"] = receiptBase64
-                                    }
-
-                                    // Add detailed transaction information
-                                    purchaseData["productIdentifier"] = transaction.productID
-                                    purchaseData["purchaseDate"] = ISO8601DateFormatter().string(from: transaction.purchaseDate)
-                                    purchaseData["productType"] = transaction.productType == .autoRenewable ? "subs" : "inapp"
-                                    if let token = transactionAccountToken {
-                                        purchaseData["appAccountToken"] = token
-                                    }
-
-                                    // Add subscription-specific information
-                                    if transaction.productType == .autoRenewable {
-                                        purchaseData["originalPurchaseDate"] = ISO8601DateFormatter().string(from: transaction.originalPurchaseDate)
-                                        if let expirationDate = transaction.expirationDate {
-                                            purchaseData["expirationDate"] = ISO8601DateFormatter().string(from: expirationDate)
-                                            let isActive = expirationDate > Date()
-                                            purchaseData["isActive"] = isActive
-                                        }
-                                    }
-
-                                    let subscriptionStatus = await transaction.subscriptionStatus
-                                    if let subscriptionStatus = subscriptionStatus {
-                                        // You can use 'state' here if needed
-                                        let state = subscriptionStatus.state
-                                        if state == .subscribed {
-                                            // Use Objective-C reflection to access advancedCommerceInfo
-                                            let renewalInfo = subscriptionStatus.renewalInfo
-
-                                            switch renewalInfo {
-                                            case .verified(let value):
-                                                //                                            if #available(iOS 18.4, *) {
-                                                //                                                // This should work but may need runtime access
-                                                //                                                let advancedInfo = value.advancedCommerceInfo
-                                                //                                                print("Advanced commerce info: \(advancedInfo)")
-                                                //                                            }
-                                                //                                            print("[InAppPurchase] Subscription renewalInfo verified.")
-                                                purchaseData["willCancel"] = !value.willAutoRenew
-                                            case .unverified:
-                                                print("[InAppPurchase] Subscription renewalInfo not verified.")
-                                                purchaseData["willCancel"] = NSNull()
-                                            }
-                                        }
-                                    }
-
-                                    allPurchases.append(purchaseData)
-                                }
-                            }
-                        }
-
+                        let allPurchases = await TransactionHelpers.collectAllPurchases(appAccountTokenFilter: appAccountTokenFilter)
                         call.resolve(["purchases": allPurchases])
                     } catch {
                         print("getPurchases error: \(error)")
