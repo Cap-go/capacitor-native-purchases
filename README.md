@@ -653,6 +653,514 @@ const { purchases } = await NativePurchases.getPurchases({
 - **User Management**: Query purchases for specific users
 - **Analytics**: Better insights into user purchasing behavior
 
+## Understanding Transaction Properties
+
+When you inspect purchases using `getPurchases()` or `restorePurchases()`, you receive an array of `Transaction` objects. Understanding which properties are available and reliable for different scenarios is crucial for proper implementation.
+
+### Transaction Properties by Platform & Product Type
+
+Here's a comprehensive breakdown of which properties you can expect and rely on:
+
+| Property | iOS IAP | iOS Subscription | Android IAP | Android Subscription | Notes |
+|----------|---------|------------------|-------------|---------------------|-------|
+| `transactionId` | ✅ Always | ✅ Always | ✅ Always | ✅ Always | Primary identifier for the transaction |
+| `receipt` | ✅ Always | ✅ Always | ❌ Never | ❌ Never | iOS only - base64 receipt for validation |
+| `productIdentifier` | ✅ Always | ✅ Always | ✅ Always | ✅ Always | Product ID purchased |
+| `purchaseDate` | ✅ Always | ✅ Always | ✅ Always | ✅ Always | ISO 8601 format |
+| `productType` | ✅ Always | ✅ Always | ✅ Always | ✅ Always | "inapp" or "subs" |
+| `quantity` | ✅ Always | ✅ Always | ✅ Always 1 | ✅ Always 1 | iOS supports multiple, Android always 1 |
+| `appAccountToken` | ✅ If provided | ✅ If provided | ✅ If provided | ✅ If provided | Set if passed during purchase |
+| `isActive` | ❌ Not set | ✅ Always | ❌ Not set | ❌ Not set | **iOS subscriptions ONLY** - calculated as expiration > now |
+| `willCancel` | ❌ Not set | ✅ Always | ✅ Always null | ✅ Always null | iOS: subscription renewal status; Android: always null |
+| `originalPurchaseDate` | ❌ Not set | ✅ Always | ❌ Not set | ❌ Not set | **iOS subscriptions ONLY** |
+| `expirationDate` | ❌ Not set | ✅ Always | ❌ Not set | ❌ Not set | **iOS subscriptions ONLY** |
+| `purchaseState` | ❌ Not set | ❌ Not set | ✅ Always | ✅ Always | **Android ONLY** - "PURCHASED", "PENDING", "0" (numeric) |
+| `orderId` | ❌ Not set | ❌ Not set | ✅ Always | ✅ Always | **Android ONLY** |
+| `purchaseToken` | ❌ Not set | ❌ Not set | ✅ Always | ✅ Always | **Android ONLY** - for validation |
+| `isAcknowledged` | ❌ Not set | ❌ Not set | ✅ Always | ✅ Always | **Android ONLY** |
+
+### Validating Purchases: Platform-Specific Best Practices
+
+#### iOS In-App Purchases (One-Time)
+
+```typescript
+const { purchases } = await NativePurchases.getPurchases({
+  productType: PURCHASE_TYPE.INAPP
+});
+
+// Example response for iOS IAP:
+// {
+//   "transactionId": "2000001043762129",
+//   "receipt": "base64EncodedReceiptData...",
+//   "productIdentifier": "com.yourapp.premium",
+//   "purchaseDate": "2025-10-28T06:03:19Z",
+//   "productType": "inapp"
+// }
+
+purchases.forEach(purchase => {
+  // For iOS IAP, the mere presence in the list generally indicates a valid purchase
+  // However, for security, you should validate the receipt on your server
+
+  if (purchase.productIdentifier === 'com.yourapp.premium') {
+    // Option 1: Basic client-side check (not recommended for production)
+    if (purchase.receipt && purchase.transactionId) {
+      grantPremiumAccess();
+    }
+
+    // Option 2: Server-side validation (RECOMMENDED)
+    validateReceiptOnServer(purchase.receipt).then(isValid => {
+      if (isValid) {
+        grantPremiumAccess();
+      }
+    });
+  }
+});
+```
+
+**Key Points for iOS IAP:**
+- ✅ If a purchase appears in `getPurchases()`, it's generally valid
+- ❌ `isActive` is **NOT set** for one-time IAP purchases (only for subscriptions)
+- ❌ `expirationDate` and `originalPurchaseDate` are **NOT set** for IAP
+- 🔒 **Always validate the receipt on your server for production apps**
+- ⚠️ Refunded purchases may still appear but will fail server validation
+
+#### Android In-App Purchases (One-Time)
+
+```typescript
+const { purchases } = await NativePurchases.getPurchases({
+  productType: PURCHASE_TYPE.INAPP
+});
+
+// Example response for Android IAP:
+// {
+//   "transactionId": "GPA.1234-5678-9012-34567",
+//   "productIdentifier": "com.yourapp.premium",
+//   "purchaseDate": "2025-10-28T06:03:19Z",
+//   "purchaseState": "PURCHASED",
+//   "orderId": "GPA.1234-5678-9012-34567",
+//   "purchaseToken": "long-token-string...",
+//   "isAcknowledged": true,
+//   "productType": "inapp"
+// }
+
+purchases.forEach(purchase => {
+  // For Android IAP, ALWAYS check purchaseState
+  const isValidPurchase =
+    purchase.purchaseState === 'PURCHASED' &&
+    purchase.isAcknowledged === true;
+
+  if (purchase.productIdentifier === 'com.yourapp.premium' && isValidPurchase) {
+    grantPremiumAccess();
+
+    // For extra security, validate on server (RECOMMENDED)
+    validatePurchaseTokenOnServer(purchase.purchaseToken);
+  }
+});
+```
+
+**Key Points for Android IAP:**
+- ✅ **ALWAYS check** `purchaseState === "PURCHASED"` or `purchaseState === "1"` - this is critical
+- ✅ Check `isAcknowledged === true` (this plugin auto-acknowledges)
+- ❌ `isActive` is **NOT set** on Android (for either IAP or subscriptions)
+- ❌ `expirationDate` and `originalPurchaseDate` are **NOT set** on Android
+- 🔒 For production, validate `purchaseToken` on your server with Google Play API
+
+#### iOS Subscriptions
+
+```typescript
+const { purchases } = await NativePurchases.getPurchases({
+  productType: PURCHASE_TYPE.SUBS
+});
+
+// Example response for active iOS subscription:
+// {
+//   "transactionId": "2000001043762130",
+//   "receipt": "base64EncodedReceiptData...",
+//   "productIdentifier": "com.yourapp.premium.monthly",
+//   "purchaseDate": "2025-10-28T06:03:19Z",
+//   "originalPurchaseDate": "2025-09-28T06:03:19Z",
+//   "expirationDate": "2025-11-28T06:03:19Z",
+//   "isActive": true,
+//   "willCancel": false,
+//   "productType": "subs",
+//   "isTrialPeriod": false,
+//   "isInIntroPricePeriod": false
+// }
+
+purchases.forEach(purchase => {
+  // Check if subscription is currently active
+  const isSubscriptionActive = purchase.isActive === true;
+
+  // Alternative: Check expiration date
+  const expirationDate = new Date(purchase.expirationDate);
+  const isActiveByDate = expirationDate > new Date();
+
+  // Check if user has cancelled (still active until expiration)
+  const willAutoRenew = purchase.willCancel === false;
+
+  if (isSubscriptionActive) {
+    grantSubscriptionAccess();
+
+    if (willAutoRenew) {
+      console.log('Subscription will renew on', purchase.expirationDate);
+    } else {
+      console.log('Subscription cancelled, expires on', purchase.expirationDate);
+    }
+  }
+});
+```
+
+**Key Points for iOS Subscriptions:**
+- ✅ `isActive` is reliable for subscriptions
+- ✅ `expirationDate` can be used to check validity
+- ✅ `willCancel` tells you if subscription will auto-renew
+- ⚠️ Even cancelled subscriptions show `isActive: true` until expiration
+- 🔒 Validate receipt on server to detect refunds/revocations
+
+#### Android Subscriptions
+
+```typescript
+const { purchases } = await NativePurchases.getPurchases({
+  productType: PURCHASE_TYPE.SUBS
+});
+
+// Example response for active Android subscription:
+// {
+//   "transactionId": "GPA.1234-5678-9012-34568",
+//   "productIdentifier": "com.yourapp.premium.monthly",
+//   "purchaseDate": "2025-10-28T06:03:19Z",
+//   "originalPurchaseDate": "2025-09-28T06:03:19Z",
+//   "expirationDate": "2025-11-28T06:03:19Z",
+//   "isActive": true,
+//   "purchaseState": "PURCHASED",
+//   "orderId": "GPA.1234-5678-9012-34568",
+//   "purchaseToken": "long-token-string...",
+//   "isAcknowledged": true,
+//   "productType": "subs",
+//   "isTrialPeriod": false
+// }
+
+purchases.forEach(purchase => {
+  // Check if subscription is active using multiple signals
+  const isActiveSubscription =
+    purchase.purchaseState === 'PURCHASED' &&
+    purchase.isActive === true &&
+    purchase.isAcknowledged === true;
+
+  // Alternative: Check expiration date
+  const expirationDate = new Date(purchase.expirationDate);
+  const isActiveByDate = expirationDate > new Date();
+
+  if (isActiveSubscription || isActiveByDate) {
+    grantSubscriptionAccess();
+  }
+});
+```
+
+**Key Points for Android Subscriptions:**
+- ✅ Check `purchaseState === "PURCHASED"` or `purchaseState === "1"`
+- ❌ `isActive` is **NOT set** on Android (even for subscriptions)
+- ❌ `expirationDate` is **NOT set** on Android - must query Google Play API
+- ❌ `originalPurchaseDate` is **NOT set** on Android
+- ✅ `willCancel` is ALWAYS set to `null` on Android
+- 🔒 For subscription status and expiration, query Google Play Developer API on your server
+
+### Handling Refunds and Cancellations
+
+Understanding how refunds and cancellations affect your transaction data is critical for proper access control.
+
+#### iOS Refund Behavior
+
+**What happens when a user requests a refund:**
+
+1. **For In-App Purchases (IAP):**
+   - The transaction **may still appear** in `getPurchases()` and `restorePurchases()`
+   - `isActive` is **NOT set** for IAP purchases (only for subscriptions)
+   - The receipt will **NOT disappear** from the device
+   - ✅ **SOLUTION:** Validate the receipt with Apple's servers - refunded transactions will be marked as invalid
+
+2. **For Subscriptions:**
+   - The transaction **will still appear** in purchase history
+   - `isActive` **will be set to `false`** (subscriptions only set this field)
+   - `expirationDate` will be set to the refund date (in the past)
+   - ✅ **SOLUTION:** Check `isActive === false` OR `expirationDate < now` OR validate receipt on server
+
+**Example: Detecting iOS refunds**
+
+```typescript
+async function checkIOSPurchaseValidity(purchase: Transaction) {
+  // Client-side check (not foolproof)
+  if (purchase.isActive === false) {
+    console.log('Purchase appears to be refunded or expired');
+    return false;
+  }
+
+  // Server-side validation (RECOMMENDED)
+  const validationResult = await fetch('https://your-server.com/validate-receipt', {
+    method: 'POST',
+    body: JSON.stringify({
+      receipt: purchase.receipt,
+      productId: purchase.productIdentifier
+    })
+  }).then(r => r.json());
+
+  if (!validationResult.isValid || validationResult.isRefunded) {
+    console.log('Receipt validation failed - purchase refunded or invalid');
+    return false;
+  }
+
+  return true;
+}
+```
+
+**Sandbox vs Production Behavior:**
+- ✅ Refund behavior is **consistent** between sandbox and production
+- ⚠️ Sandbox refunds are processed instantly, production may take hours/days
+- ✅ Receipt validation works the same in both environments
+
+#### Android Refund Behavior
+
+**What happens when a user requests a refund:**
+
+1. **For In-App Purchases (IAP):**
+   - The transaction **typically disappears entirely** from `getPurchases()`
+   - Google Play removes refunded purchases from the purchase history
+   - No receipt or transaction will be returned
+   - ✅ **SOLUTION:** If a previously-seen purchase is no longer in the list, it was likely refunded
+
+2. **For Subscriptions:**
+   - The transaction **may disappear** OR
+   - `isActive` will be set to `false`
+   - `purchaseState` may be undefined or the transaction won't be returned at all
+   - ✅ **SOLUTION:** Track purchases on your server and listen for Google Play real-time developer notifications
+
+**Example: Detecting Android refunds**
+
+```typescript
+// Store previously seen purchases in local storage or your database
+const previousPurchases = getPreviouslyStoredPurchases();
+
+const { purchases } = await NativePurchases.getPurchases({
+  productType: PURCHASE_TYPE.INAPP
+});
+
+// Check for missing purchases (likely refunded)
+previousPurchases.forEach(oldPurchase => {
+  const stillExists = purchases.find(
+    p => p.transactionId === oldPurchase.transactionId
+  );
+
+  if (!stillExists) {
+    console.log(`Purchase ${oldPurchase.productIdentifier} no longer exists - likely refunded`);
+    revokePremiumAccess(oldPurchase.productIdentifier);
+  }
+});
+
+// Check current purchases for validity
+purchases.forEach(purchase => {
+  const isValid =
+    purchase.purchaseState === 'PURCHASED' &&
+    purchase.isAcknowledged === true;
+
+  if (!isValid) {
+    console.log('Invalid purchase state detected');
+    // Don't grant access
+  }
+});
+
+// Store current purchases for next comparison
+storePurchases(purchases);
+```
+
+**Sandbox vs Production Behavior:**
+- ⚠️ Sandbox test accounts can make unlimited "purchases" without payment
+- ⚠️ Sandbox refunds are **instant** - purchase disappears immediately
+- ⚠️ Production refunds may take **several hours** before purchase disappears
+- ✅ Testing refunds in production requires real money and real refund requests
+
+**IMPORTANT: Without Server-Side Validation:**
+
+If you're **not using a backend validator** (not recommended for production), here's what to expect:
+
+| Scenario | iOS Behavior | Android Behavior |
+|----------|-------------|------------------|
+| User requests IAP refund | Transaction may still appear in `restorePurchases()`, check `isActive` | Transaction disappears from `getPurchases()` |
+| User cancels subscription | `willCancel: true`, still active until expiration | Transaction remains, check `isActive` and `expirationDate` |
+| Subscription expires naturally | `isActive: false`, `expirationDate` in past | Transaction disappears OR `isActive: false` |
+| User refunds subscription | Transaction remains with `isActive: false` | Transaction may disappear |
+
+**RECOMMENDATION: Always implement server-side validation**
+- Listen to Apple's App Store Server Notifications (iOS)
+- Listen to Google Play Real-Time Developer Notifications (Android)
+- Validate receipts/tokens on your server before granting access
+- See the [Backend Validation](#backend-validation) section for implementation
+
+### Sandbox vs Production Differences
+
+#### iOS: Sandbox vs Production
+
+**Similarities:**
+- ✅ Transaction structure is identical
+- ✅ All properties return the same data format
+- ✅ `receipt` validation works (use sandbox Apple endpoint)
+- ✅ Refund behavior is consistent
+
+**Differences:**
+
+| Aspect | Sandbox | Production |
+|--------|---------|-----------|
+| Payment processing | Instant, no real money | Real payment, takes seconds |
+| Receipt validation endpoint | `https://sandbox.itunes.apple.com/verifyReceipt` | `https://buy.itunes.apple.com/verifyReceipt` |
+| Subscription duration | Compressed (1 week = 5 minutes) | Real duration (1 week = 7 days) |
+| Refund processing | Instant (via StoreKit Testing) | Takes hours/days, must contact Apple |
+| Test user requirements | Sandbox Apple ID required | Real Apple ID |
+| Transaction IDs | Real format, unique per test | Real format, unique per purchase |
+| `receipt` data | Valid test receipt | Valid production receipt |
+
+**Testing Refunds in Sandbox:**
+1. Use StoreKit Configuration file (local testing) for instant refunds
+2. Or sandbox testing with sandbox Apple ID
+3. Refunds are instant and can be tested repeatedly
+4. Receipt validation will show refunded status immediately
+
+#### Android: Sandbox vs Production
+
+**Similarities:**
+- ✅ Transaction structure is identical
+- ✅ All properties return the same data format
+- ✅ Purchase state values are the same
+
+**Differences:**
+
+| Aspect | License Testing (Sandbox) | Production |
+|--------|--------------------------|-----------|
+| Payment processing | No payment required | Real payment required |
+| Purchase token validation | Works with Google Play API | Works with Google Play API |
+| Transaction IDs | Test format: `GPA.1234-...` | Real format: `GPA.1234-...` |
+| Refund processing | Instant (test account only) | Takes hours, appears as purchase disappearing |
+| Test user requirements | Gmail added to license testers | Real Google account |
+| `purchaseState` values | Same as production | Same as sandbox |
+| Refund detection | Purchase disappears immediately | Purchase disappears after hours/days |
+
+**Testing Refunds in Android Sandbox:**
+1. **License testers** can make unlimited purchases without payment
+2. Refunds are **instant** - purchase disappears from `getPurchases()` immediately
+3. Use **Internal Testing** track for most realistic testing
+4. Real refunds in production require real purchases and real refund requests via Google Play
+
+**Key Difference:**
+- In **sandbox/test**, refunded purchases disappear instantly
+- In **production**, refunded purchases may remain visible for hours before disappearing
+- Always implement server-side validation with Google Play Developer API to catch refunds reliably
+
+### Recommended Access Control Logic
+
+Based on the above, here's the recommended approach for each platform and product type:
+
+```typescript
+import { NativePurchases, PURCHASE_TYPE, Transaction } from '@capgo/native-purchases';
+import { Capacitor } from '@capacitor/core';
+
+async function checkUserAccess(productId: string, productType: PURCHASE_TYPE): Promise<boolean> {
+  try {
+    const { purchases } = await NativePurchases.getPurchases({ productType });
+    const purchase = purchases.find(p => p.productIdentifier === productId);
+
+    if (!purchase) {
+      return false; // No purchase found
+    }
+
+    const platform = Capacitor.getPlatform();
+
+    if (platform === 'ios') {
+      // iOS Logic
+      if (productType === PURCHASE_TYPE.INAPP) {
+        // For IAP: presence in list + receipt validation
+        // Note: isActive is NOT set for iOS IAP
+        if (!purchase.receipt) return false;
+
+        // IMPORTANT: Validate receipt on server for production
+        const isValid = await validateReceiptOnServer(purchase.receipt);
+        return isValid;
+
+      } else {
+        // For subscriptions: check isActive and expiration
+        // iOS subscriptions ALWAYS have isActive and expirationDate
+        if (purchase.isActive === false) return false;
+        if (purchase.expirationDate) {
+          const expiration = new Date(purchase.expirationDate);
+          if (expiration < new Date()) return false;
+        }
+        return true;
+      }
+
+    } else if (platform === 'android') {
+      // Android Logic
+      if (productType === PURCHASE_TYPE.INAPP) {
+        // For IAP: check purchase state and acknowledgment
+        // Note: Android does NOT set isActive, expirationDate, or originalPurchaseDate
+        const isValid =
+          (purchase.purchaseState === 'PURCHASED' || purchase.purchaseState === '1') &&
+          purchase.isAcknowledged === true;
+
+        if (!isValid) return false;
+
+        // IMPORTANT: Validate purchaseToken on server for production
+        await validatePurchaseTokenOnServer(purchase.purchaseToken);
+        return true;
+
+      } else {
+        // For subscriptions: check purchase state only
+        // Android does NOT set isActive, expirationDate, or originalPurchaseDate
+        // You MUST use Google Play Developer API on your server to get subscription details
+        const isValidState =
+          (purchase.purchaseState === 'PURCHASED' || purchase.purchaseState === '1') &&
+          purchase.isAcknowledged === true;
+
+        if (!isValidState) return false;
+
+        // CRITICAL: Validate subscription status on server with Google Play API
+        // The Purchase object doesn't include expiration dates
+        const serverStatus = await validateAndGetSubscriptionStatus(purchase.purchaseToken);
+        return serverStatus.isActive && serverStatus.expirationDate > new Date();
+      }
+    }
+
+    return false;
+  } catch (error) {
+    console.error('Error checking user access:', error);
+    return false;
+  }
+}
+
+// Example usage
+async function grantAccessBasedOnPurchase() {
+  // Check for premium IAP
+  const hasPremium = await checkUserAccess(
+    'com.yourapp.premium',
+    PURCHASE_TYPE.INAPP
+  );
+
+  // Check for active subscription
+  const hasSubscription = await checkUserAccess(
+    'com.yourapp.premium.monthly',
+    PURCHASE_TYPE.SUBS
+  );
+
+  if (hasPremium || hasSubscription) {
+    unlockPremiumFeatures();
+  }
+}
+```
+
+**Critical Takeaways:**
+1. ✅ For **iOS IAP**: `isActive` is NOT set - validate receipt on server
+2. ✅ For **iOS Subscriptions**: `isActive` and `expirationDate` ARE set - use them!
+3. ✅ For **Android IAP**: Check `purchaseState === "PURCHASED"` (or "1")
+4. ✅ For **Android Subscriptions**: `isActive` and `expirationDate` are NOT set - must use Google Play API on server
+5. ✅ For **Refunds**: iOS purchases may linger (validate server-side), Android purchases disappear
+6. 🔒 **Always implement server-side validation for production apps**
+
 ### API Reference
 
 #### Core Methods
@@ -1075,26 +1583,26 @@ Remove all registered listeners
 
 #### Transaction
 
-| Prop                       | Type                         | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
-| -------------------------- | ---------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **`transactionId`**        | <code>string</code>          | Id associated to the transaction.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
-| **`receipt`**              | <code>string</code>          | Receipt data for validation (iOS only - base64 encoded receipt)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
-| **`appAccountToken`**      | <code>string \| null</code>  | An optional obfuscated identifier that uniquely associates the transaction with a user account in your app. PURPOSE: - Fraud detection: Helps platforms detect irregular activity (e.g., many devices purchasing on the same account) - User linking: Links purchases to in-game characters, avatars, or in-app profiles PLATFORM DIFFERENCES: - iOS: Must be a valid UUID format (e.g., "550e8400-e29b-41d4-a716-446655440000") Apple's StoreKit 2 requires UUID format for the appAccountToken parameter - Android: Can be any obfuscated string (max 64 chars), maps to Google Play's ObfuscatedAccountId Google recommends using encryption or one-way hash SECURITY REQUIREMENTS (especially for Android): - DO NOT store Personally Identifiable Information (PII) like emails in cleartext - Use encryption or a one-way hash to generate an obfuscated identifier - Maximum length: 64 characters (both platforms) - Storing PII in cleartext will result in purchases being blocked by Google Play IMPLEMENTATION EXAMPLE: ```typescript // For iOS: Generate a deterministic UUID from user ID import { v5 as uuidv5 } from 'uuid'; const NAMESPACE = '6ba7b810-9dad-11d1-80b4-00c04fd430c8'; // Your app's namespace UUID const appAccountToken = uuidv5(userId, NAMESPACE); // For Android: Can also use UUID or any hashed value // The same UUID approach works for both platforms ``` |
-| **`productIdentifier`**    | <code>string</code>          | <a href="#product">Product</a> Id associated with the transaction.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
-| **`purchaseDate`**         | <code>string</code>          | Purchase date of the transaction in ISO 8601 format.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
-| **`originalPurchaseDate`** | <code>string</code>          | Original purchase date of the transaction in ISO 8601 format (for subscriptions).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
-| **`expirationDate`**       | <code>string</code>          | Expiration date of the transaction in ISO 8601 format (for subscriptions).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
-| **`isActive`**             | <code>boolean</code>         | Whether the transaction is still active/valid.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
-| **`willCancel`**           | <code>boolean \| null</code> | Whether the subscription will be cancelled at the end of the billing cycle, or null if not cancelled. Only available on iOS.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
-| **`purchaseState`**        | <code>string</code>          | Purchase state of the transaction.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
-| **`orderId`**              | <code>string</code>          | Order ID associated with the transaction (Android).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| **`purchaseToken`**        | <code>string</code>          | Purchase token associated with the transaction (Android).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
-| **`isAcknowledged`**       | <code>boolean</code>         | Whether the purchase has been acknowledged (Android).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
-| **`quantity`**             | <code>number</code>          | Quantity purchased.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| **`productType`**          | <code>string</code>          | <a href="#product">Product</a> type (inapp or subs).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
-| **`isTrialPeriod`**        | <code>boolean</code>         | Whether the transaction is a trial period.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
-| **`isInIntroPricePeriod`** | <code>boolean</code>         | Whether the transaction is in intro price period.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
-| **`isInGracePeriod`**      | <code>boolean</code>         | Whether the transaction is in grace period.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| Prop                       | Type                         | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | Default           | Since |
+| -------------------------- | ---------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------- | ----- |
+| **`transactionId`**        | <code>string</code>          | Unique identifier for the transaction.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |                   | 1.0.0 |
+| **`receipt`**              | <code>string</code>          | Receipt data for validation (base64 encoded StoreKit receipt). Send this to your backend for server-side validation with Apple's receipt verification API. The receipt remains available even after refund - server validation is required to detect refunded transactions.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |                   | 1.0.0 |
+| **`appAccountToken`**      | <code>string \| null</code>  | An optional obfuscated identifier that uniquely associates the transaction with a user account in your app. PURPOSE: - Fraud detection: Helps platforms detect irregular activity (e.g., many devices purchasing on the same account) - User linking: Links purchases to in-game characters, avatars, or in-app profiles PLATFORM DIFFERENCES: - iOS: Must be a valid UUID format (e.g., "550e8400-e29b-41d4-a716-446655440000") Apple's StoreKit 2 requires UUID format for the appAccountToken parameter - Android: Can be any obfuscated string (max 64 chars), maps to Google Play's ObfuscatedAccountId Google recommends using encryption or one-way hash SECURITY REQUIREMENTS (especially for Android): - DO NOT store Personally Identifiable Information (PII) like emails in cleartext - Use encryption or a one-way hash to generate an obfuscated identifier - Maximum length: 64 characters (both platforms) - Storing PII in cleartext will result in purchases being blocked by Google Play IMPLEMENTATION EXAMPLE: ```typescript // For iOS: Generate a deterministic UUID from user ID import { v5 as uuidv5 } from 'uuid'; const NAMESPACE = '6ba7b810-9dad-11d1-80b4-00c04fd430c8'; // Your app's namespace UUID const appAccountToken = uuidv5(userId, NAMESPACE); // For Android: Can also use UUID or any hashed value // The same UUID approach works for both platforms ``` |                   |       |
+| **`productIdentifier`**    | <code>string</code>          | <a href="#product">Product</a> identifier associated with the transaction.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |                   | 1.0.0 |
+| **`purchaseDate`**         | <code>string</code>          | Purchase date of the transaction in ISO 8601 format.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |                   | 1.0.0 |
+| **`originalPurchaseDate`** | <code>string</code>          | Original purchase date of the transaction in ISO 8601 format. For subscription renewals, this shows the date of the original subscription purchase, while purchaseDate shows the date of the current renewal.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |                   | 1.0.0 |
+| **`expirationDate`**       | <code>string</code>          | Expiration date of the transaction in ISO 8601 format. Check this date to determine if a subscription is still valid. Compare with current date: if expirationDate &gt; now, subscription is active.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |                   | 1.0.0 |
+| **`isActive`**             | <code>boolean</code>         | Whether the subscription is still active/valid. For iOS subscriptions, check if isActive === true to verify an active subscription. For expired or refunded iOS subscriptions, this will be false.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |                   | 1.0.0 |
+| **`willCancel`**           | <code>boolean \| null</code> | Whether the subscription will be cancelled at the end of the billing cycle. - `true`: User has cancelled but subscription remains active until expiration - `false`: Subscription will auto-renew - `null`: Status unknown or not available                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | <code>null</code> | 1.0.0 |
+| **`purchaseState`**        | <code>string</code>          | Purchase state of the transaction (numeric string value). **Android Values:** - `"1"`: Purchase completed and valid (PURCHASED state) - `"0"`: Payment pending (PENDING state, e.g., cash payment processing) - Other numeric values: Various other states Always check `purchaseState === "1"` on Android to verify a valid purchase. Refunded purchases typically disappear from getPurchases() rather than showing a different state.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |                   | 1.0.0 |
+| **`orderId`**              | <code>string</code>          | Order ID associated with the transaction. Use this for server-side verification on Android. This is the Google Play order ID.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |                   | 1.0.0 |
+| **`purchaseToken`**        | <code>string</code>          | Purchase token associated with the transaction. Send this to your backend for server-side validation with Google Play Developer API. This is the Android equivalent of iOS's receipt field.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |                   | 1.0.0 |
+| **`isAcknowledged`**       | <code>boolean</code>         | Whether the purchase has been acknowledged. Purchases must be acknowledged within 3 days or they will be refunded. This plugin automatically acknowledges purchases.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |                   | 1.0.0 |
+| **`quantity`**             | <code>number</code>          | Quantity purchased.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | <code>1</code>    | 1.0.0 |
+| **`productType`**          | <code>string</code>          | <a href="#product">Product</a> type. - `"inapp"`: One-time in-app purchase - `"subs"`: Subscription                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |                   | 1.0.0 |
+| **`isTrialPeriod`**        | <code>boolean</code>         | Whether the transaction is in a trial period. - `true`: Currently in free trial period - `false`: Not in trial period                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |                   | 1.0.0 |
+| **`isInIntroPricePeriod`** | <code>boolean</code>         | Whether the transaction is in an introductory price period. Introductory pricing is a discounted rate, different from a free trial. - `true`: Currently using introductory pricing - `false`: Not in intro period                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |                   | 1.0.0 |
+| **`isInGracePeriod`**      | <code>boolean</code>         | Whether the transaction is in a grace period. Grace period allows users to fix payment issues while maintaining access. You typically want to continue providing access during this time. - `true`: Subscription payment failed but user still has access - `false`: Not in grace period                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |                   | 1.0.0 |
 
 
 #### Product

@@ -145,11 +145,22 @@ export enum INTRO_ELIGIBILITY_STATUS {
 
 export interface Transaction {
   /**
-   * Id associated to the transaction.
+   * Unique identifier for the transaction.
+   *
+   * @since 1.0.0
+   * @platform ios Numeric string (e.g., "2000001043762129")
+   * @platform android Alphanumeric string (e.g., "GPA.1234-5678-9012-34567")
    */
   readonly transactionId: string;
   /**
-   * Receipt data for validation (iOS only - base64 encoded receipt)
+   * Receipt data for validation (base64 encoded StoreKit receipt).
+   *
+   * Send this to your backend for server-side validation with Apple's receipt verification API.
+   * The receipt remains available even after refund - server validation is required to detect refunded transactions.
+   *
+   * @since 1.0.0
+   * @platform ios Always present
+   * @platform android Not available (use purchaseToken instead)
    */
   readonly receipt?: string;
   /**
@@ -184,63 +195,173 @@ export interface Transaction {
    */
   readonly appAccountToken?: string | null;
   /**
-   * Product Id associated with the transaction.
+   * Product identifier associated with the transaction.
+   *
+   * @since 1.0.0
+   * @platform ios Always present
+   * @platform android Always present
    */
   readonly productIdentifier: string;
   /**
    * Purchase date of the transaction in ISO 8601 format.
+   *
+   * @since 1.0.0
+   * @example "2025-10-28T06:03:19Z"
+   * @platform ios Always present
+   * @platform android Always present
    */
   readonly purchaseDate: string;
   /**
-   * Original purchase date of the transaction in ISO 8601 format (for subscriptions).
+   * Original purchase date of the transaction in ISO 8601 format.
+   *
+   * For subscription renewals, this shows the date of the original subscription purchase,
+   * while purchaseDate shows the date of the current renewal.
+   *
+   * @since 1.0.0
+   * @platform ios Present for subscriptions only
+   * @platform android Not available
    */
   readonly originalPurchaseDate?: string;
   /**
-   * Expiration date of the transaction in ISO 8601 format (for subscriptions).
+   * Expiration date of the transaction in ISO 8601 format.
+   *
+   * Check this date to determine if a subscription is still valid.
+   * Compare with current date: if expirationDate > now, subscription is active.
+   *
+   * @since 1.0.0
+   * @platform ios Present for subscriptions only
+   * @platform android Not available (query Google Play Developer API instead)
    */
   readonly expirationDate?: string;
   /**
-   * Whether the transaction is still active/valid.
+   * Whether the subscription is still active/valid.
+   *
+   * For iOS subscriptions, check if isActive === true to verify an active subscription.
+   * For expired or refunded iOS subscriptions, this will be false.
+   *
+   * @since 1.0.0
+   * @platform ios Present for subscriptions only (true if expiration date is in the future)
+   * @platform android Not available (check purchaseState === "1" instead)
    */
   readonly isActive?: boolean;
   /**
-   * Whether the subscription will be cancelled at the end of the billing cycle, or null if not cancelled. Only available on iOS.
+   * Whether the subscription will be cancelled at the end of the billing cycle.
+   *
+   * - `true`: User has cancelled but subscription remains active until expiration
+   * - `false`: Subscription will auto-renew
+   * - `null`: Status unknown or not available
+   *
+   * @since 1.0.0
+   * @default null
+   * @platform ios Present for subscriptions only (boolean or null)
+   * @platform android Always null (use Google Play Developer API for cancellation status)
    */
   readonly willCancel: boolean | null;
   /**
-   * Purchase state of the transaction.
+   * Purchase state of the transaction (numeric string value).
+   *
+   * **Android Values:**
+   * - `"1"`: Purchase completed and valid (PURCHASED state)
+   * - `"0"`: Payment pending (PENDING state, e.g., cash payment processing)
+   * - Other numeric values: Various other states
+   *
+   * Always check `purchaseState === "1"` on Android to verify a valid purchase.
+   * Refunded purchases typically disappear from getPurchases() rather than showing a different state.
+   *
+   * @since 1.0.0
+   * @platform ios Not available (use isActive for subscriptions or receipt validation for IAP)
+   * @platform android Always present
    */
   readonly purchaseState?: string;
   /**
-   * Order ID associated with the transaction (Android).
+   * Order ID associated with the transaction.
+   *
+   * Use this for server-side verification on Android. This is the Google Play order ID.
+   *
+   * @since 1.0.0
+   * @example "GPA.1234-5678-9012-34567"
+   * @platform ios Not available
+   * @platform android Always present
    */
   readonly orderId?: string;
   /**
-   * Purchase token associated with the transaction (Android).
+   * Purchase token associated with the transaction.
+   *
+   * Send this to your backend for server-side validation with Google Play Developer API.
+   * This is the Android equivalent of iOS's receipt field.
+   *
+   * @since 1.0.0
+   * @platform ios Not available (use receipt instead)
+   * @platform android Always present
    */
   readonly purchaseToken?: string;
   /**
-   * Whether the purchase has been acknowledged (Android).
+   * Whether the purchase has been acknowledged.
+   *
+   * Purchases must be acknowledged within 3 days or they will be refunded.
+   * This plugin automatically acknowledges purchases.
+   *
+   * @since 1.0.0
+   * @platform ios Not available
+   * @platform android Always present (should be true after successful purchase)
    */
   readonly isAcknowledged?: boolean;
   /**
    * Quantity purchased.
+   *
+   * @since 1.0.0
+   * @default 1
+   * @platform ios 1 or higher (as specified in purchaseProduct call)
+   * @platform android Always 1 (Google Play doesn't support quantity > 1)
    */
   readonly quantity?: number;
   /**
-   * Product type (inapp or subs).
+   * Product type.
+   *
+   * - `"inapp"`: One-time in-app purchase
+   * - `"subs"`: Subscription
+   *
+   * @since 1.0.0
+   * @platform ios Always present
+   * @platform android Always present
    */
   readonly productType?: string;
   /**
-   * Whether the transaction is a trial period.
+   * Whether the transaction is in a trial period.
+   *
+   * - `true`: Currently in free trial period
+   * - `false`: Not in trial period
+   *
+   * @since 1.0.0
+   * @platform ios Present for subscriptions with trial offers
+   * @platform android Present for subscriptions with trial offers
    */
   readonly isTrialPeriod?: boolean;
   /**
-   * Whether the transaction is in intro price period.
+   * Whether the transaction is in an introductory price period.
+   *
+   * Introductory pricing is a discounted rate, different from a free trial.
+   *
+   * - `true`: Currently using introductory pricing
+   * - `false`: Not in intro period
+   *
+   * @since 1.0.0
+   * @platform ios Present for subscriptions with intro pricing
+   * @platform android Present for subscriptions with intro pricing
    */
   readonly isInIntroPricePeriod?: boolean;
   /**
-   * Whether the transaction is in grace period.
+   * Whether the transaction is in a grace period.
+   *
+   * Grace period allows users to fix payment issues while maintaining access.
+   * You typically want to continue providing access during this time.
+   *
+   * - `true`: Subscription payment failed but user still has access
+   * - `false`: Not in grace period
+   *
+   * @since 1.0.0
+   * @platform ios Present for subscriptions in grace period
+   * @platform android Present for subscriptions in grace period
    */
   readonly isInGracePeriod?: boolean;
 }
