@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## [7.12.4](https://github.com/Cap-go/capacitor-native-purchases/compare/7.12.3...7.12.4) (2025-10-30)
+
+
+### Bug Fixes
+
+* correct reference to plugin version constant in getPluginVersion method ([e0b0755](https://github.com/Cap-go/capacitor-native-purchases/commit/e0b075591a177fa1b8ee2dbbcf1d2247f1a432d1))
+
 ## [7.12.3](https://github.com/Cap-go/capacitor-native-purchases/compare/7.12.2...7.12.3) (2025-10-30)
 
 
