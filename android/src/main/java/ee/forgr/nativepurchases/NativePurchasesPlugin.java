@@ -39,7 +39,7 @@ import org.json.JSONArray;
 @CapacitorPlugin(name = "NativePurchases")
 public class NativePurchasesPlugin extends Plugin {
 
-    private final String PLUGIN_VERSION = "7.12.4";
+    private final String pluginVersion = "7.12.4";
     public static final String TAG = "NativePurchases";
     private static final Phaser semaphoreReady = new Phaser(1);
     private BillingClient billingClient;
@@ -289,8 +289,8 @@ public class NativePurchasesPlugin extends Plugin {
         Log.d(TAG, "getPluginVersion() called");
         try {
             final JSObject ret = new JSObject();
-            ret.put("version", this.PLUGIN_VERSION);
-            Log.d(TAG, "Returning plugin version: " + this.PLUGIN_VERSION);
+            ret.put("version", this.pluginVersion);
+            Log.d(TAG, "Returning plugin version: " + this.pluginVersion);
             call.resolve(ret);
         } catch (final Exception e) {
             Log.d(TAG, "Error getting plugin version: " + e.getMessage());
