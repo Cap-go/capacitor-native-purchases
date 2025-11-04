@@ -327,6 +327,40 @@ export interface Transaction {
    */
   readonly productType?: string;
   /**
+   * Indicates how the user obtained access to the product.
+   *
+   * - `"purchased"`: The user purchased the product directly
+   * - `"familyShared"`: The user has access through Family Sharing (another family member purchased it)
+   *
+   * This property is useful for:
+   * - Detecting family sharing usage for analytics
+   * - Implementing different features/limits for family-shared vs. directly purchased products
+   * - Understanding your user acquisition channels
+   *
+   * @since 7.12.8
+   * @platform ios Always present (iOS 15.0+, StoreKit 2)
+   * @platform android Not available
+   */
+  readonly ownershipType?: 'purchased' | 'familyShared';
+  /**
+   * Indicates the server environment where the transaction was processed.
+   *
+   * - `"Sandbox"`: Transaction belongs to testing in the sandbox environment
+   * - `"Production"`: Transaction belongs to a customer in the production environment
+   * - `"Xcode"`: Transaction from StoreKit Testing in Xcode
+   *
+   * This property is useful for:
+   * - Debugging and identifying test vs. production purchases
+   * - Analytics and reporting (filtering out sandbox transactions)
+   * - Server-side validation (knowing which Apple endpoint to use)
+   * - Preventing test purchases from affecting production metrics
+   *
+   * @since 7.12.8
+   * @platform ios Present on iOS 16.0+ only (not available on iOS 15)
+   * @platform android Not available
+   */
+  readonly environment?: 'Sandbox' | 'Production' | 'Xcode';
+  /**
    * Whether the transaction is in a trial period.
    *
    * - `true`: Currently in free trial period
