@@ -13,6 +13,10 @@ final class PurchaseActionDecider {
     private PurchaseActionDecider() {}
 
     static PurchaseAction decide(boolean isConsumable, Purchase purchase) {
+        return decide(isConsumable, purchase == null ? null : new PurchaseDetailsAdapter(purchase));
+    }
+
+    static PurchaseAction decide(boolean isConsumable, PurchaseDetails purchase) {
         if (purchase == null) {
             return PurchaseAction.NONE;
         }
@@ -26,5 +30,28 @@ final class PurchaseActionDecider {
             return PurchaseAction.NONE;
         }
         return PurchaseAction.ACKNOWLEDGE;
+    }
+
+    interface PurchaseDetails {
+        int getPurchaseState();
+        boolean isAcknowledged();
+    }
+
+    private static final class PurchaseDetailsAdapter implements PurchaseDetails {
+        private final Purchase purchase;
+
+        PurchaseDetailsAdapter(Purchase purchase) {
+            this.purchase = purchase;
+        }
+
+        @Override
+        public int getPurchaseState() {
+            return purchase.getPurchaseState();
+        }
+
+        @Override
+        public boolean isAcknowledged() {
+            return purchase.isAcknowledged();
+        }
     }
 }

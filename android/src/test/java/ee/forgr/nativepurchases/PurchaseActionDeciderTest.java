@@ -1,61 +1,63 @@
 package ee.forgr.nativepurchases;
 
 import static org.junit.Assert.assertEquals;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.when;
 
 import com.android.billingclient.api.Purchase;
+import ee.forgr.nativepurchases.PurchaseActionDecider.PurchaseDetails;
 import org.junit.Test;
 
 public class PurchaseActionDeciderTest {
 
     @Test
     public void decideReturnsConsumeForConsumables() {
-        Purchase purchase = mockPurchase(Purchase.PurchaseState.PURCHASED, true);
-
-        PurchaseAction action = PurchaseActionDecider.decide(true, purchase);
+        PurchaseAction action =
+                PurchaseActionDecider.decide(true, purchaseDetails(Purchase.PurchaseState.PURCHASED, true));
 
         assertEquals(PurchaseAction.CONSUME, action);
     }
 
     @Test
     public void decideAcknowledgesWhenNotConsumableAndNotAcknowledged() {
-        Purchase purchase = mockPurchase(Purchase.PurchaseState.PURCHASED, false);
-
-        PurchaseAction action = PurchaseActionDecider.decide(false, purchase);
+        PurchaseAction action =
+                PurchaseActionDecider.decide(false, purchaseDetails(Purchase.PurchaseState.PURCHASED, false));
 
         assertEquals(PurchaseAction.ACKNOWLEDGE, action);
     }
 
     @Test
     public void decideDoesNothingWhenAlreadyAcknowledged() {
-        Purchase purchase = mockPurchase(Purchase.PurchaseState.PURCHASED, true);
-
-        PurchaseAction action = PurchaseActionDecider.decide(false, purchase);
+        PurchaseAction action =
+                PurchaseActionDecider.decide(false, purchaseDetails(Purchase.PurchaseState.PURCHASED, true));
 
         assertEquals(PurchaseAction.NONE, action);
     }
 
     @Test
     public void decideIgnoresNonPurchasedStates() {
-        Purchase purchase = mockPurchase(Purchase.PurchaseState.PENDING, false);
-
-        PurchaseAction action = PurchaseActionDecider.decide(false, purchase);
+        PurchaseAction action =
+                PurchaseActionDecider.decide(false, purchaseDetails(Purchase.PurchaseState.PENDING, false));
 
         assertEquals(PurchaseAction.NONE, action);
     }
 
     @Test
     public void decideHandlesNullPurchase() {
-        PurchaseAction action = PurchaseActionDecider.decide(false, null);
+        PurchaseAction action = PurchaseActionDecider.decide(false, (PurchaseDetails) null);
 
         assertEquals(PurchaseAction.NONE, action);
     }
 
-    private Purchase mockPurchase(int state, boolean acknowledged) {
-        Purchase purchase = mock(Purchase.class);
-        when(purchase.getPurchaseState()).thenReturn(state);
-        when(purchase.isAcknowledged()).thenReturn(acknowledged);
-        return purchase;
+    private PurchaseDetails purchaseDetails(int state, boolean acknowledged) {
+        return new PurchaseDetails() {
+            @Override
+            public int getPurchaseState() {
+                return state;
+            }
+
+            @Override
+            public boolean isAcknowledged() {
+                return acknowledged;
+            }
+        };
     }
 }
