@@ -749,14 +749,16 @@ Restores a user's previous  and links their appUserIDs to any user's also using 
 ### purchaseProduct(...)
 
 ```typescript
-purchaseProduct(options: { productIdentifier: string; planIdentifier?: string; productType?: PURCHASE_TYPE; quantity?: number; appAccountToken?: string; }) => Promise<Transaction>
+purchaseProduct(options: { productIdentifier: string; planIdentifier?: string; productType?: PURCHASE_TYPE; quantity?: number; appAccountToken?: string; isConsumable?: boolean; }) => Promise<Transaction>
 ```
 
 Started purchase process for the given product.
 
 | Param         | Type                                                                                                                                                                        | Description               |
 | ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------- |
-| **`options`** | <code>{ productIdentifier: string; planIdentifier?: string; productType?: <a href="#purchase_type">PURCHASE_TYPE</a>; quantity?: number; appAccountToken?: string; }</code> | - The product to purchase |
+| **`options`** | <code>{ productIdentifier: string; planIdentifier?: string; productType?: <a href="#purchase_type">PURCHASE_TYPE</a>; quantity?: number; appAccountToken?: string; isConsumable?: boolean; }</code> | - The product to purchase |
+
+`isConsumable` is Android-only and tells the plugin to call `consumeAsync` for the purchase token once the entitlement has been granted.
 
 **Returns:** <code>Promise&lt;<a href="#transaction">Transaction</a>&gt;</code>
 

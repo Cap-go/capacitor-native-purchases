@@ -317,22 +317,24 @@ export interface NativePurchasesPlugin {
    */
   restorePurchases(): Promise<void>;
 
-  /**
-   * Started purchase process for the given product.
-   *
-   * @param options - The product to purchase
-   * @param options.productIdentifier - The product identifier of the product you want to purchase.
-   * @param options.productType - Only Android, the type of product, can be inapp or subs. Will use inapp by default.
-   * @param options.planIdentifier - Only Android, the identifier of the plan you want to purchase, require for for subs.
-   * @param options.quantity - Only iOS, the number of items you wish to purchase. Will use 1 by default.
-   * @param options.appAccountToken - Only iOS, UUID for the user's account. Used to link purchases to the user account for App Store Server Notifications.
-   */
+ /**
+  * Started purchase process for the given product.
+  *
+  * @param options - The product to purchase
+  * @param options.productIdentifier - The product identifier of the product you want to purchase.
+  * @param options.productType - Only Android, the type of product, can be inapp or subs. Will use inapp by default.
+  * @param options.planIdentifier - Only Android, the identifier of the plan you want to purchase, require for for subs.
+  * @param options.quantity - Only iOS, the number of items you wish to purchase. Will use 1 by default.
+  * @param options.appAccountToken - Only iOS, UUID for the user's account. Used to link purchases to the user account for App Store Server Notifications.
+   * @param options.isConsumable - Only Android, when true the plugin consumes the purchase token after granting the entitlement.
+  */
   purchaseProduct(options: {
     productIdentifier: string;
     planIdentifier?: string;
     productType?: PURCHASE_TYPE;
     quantity?: number;
     appAccountToken?: string;
+    isConsumable?: boolean;
   }): Promise<Transaction>;
 
   /**
