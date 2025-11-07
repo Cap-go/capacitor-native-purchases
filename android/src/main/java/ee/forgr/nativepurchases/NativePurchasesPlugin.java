@@ -120,19 +120,27 @@ public class NativePurchasesPlugin extends Plugin {
 
         if (purchase.getPurchaseState() == Purchase.PurchaseState.PURCHASED) {
             Log.d(TAG, "Purchase state is PURCHASED");
-            // Grant entitlement to the user, then acknowledge the purchase
-            //     if sub then acknowledgePurchase
-            //      if one time then consumePurchase
+            boolean isConsumable = purchaseCall != null && purchaseCall.getBoolean("isConsumable", false);
+            PurchaseAction action = PurchaseActionDecider.decide(isConsumable, purchase);
+
             AccountIdentifiers accountIdentifiers = purchase.getAccountIdentifiers();
             String purchaseAccountId = accountIdentifiers != null ? accountIdentifiers.getObfuscatedAccountId() : null;
             Log.d(TAG, "Purchase account identifier present: " + (purchaseAccountId != null ? "[REDACTED]" : "none"));
-            if (purchase.isAcknowledged()) {
-                Log.d(TAG, "Purchase already acknowledged, consuming...");
-                ConsumeParams consumeParams = ConsumeParams.newBuilder().setPurchaseToken(purchase.getPurchaseToken()).build();
-                billingClient.consumeAsync(consumeParams, this::onConsumeResponse);
-            } else {
-                Log.d(TAG, "Purchase not acknowledged, acknowledging...");
-                acknowledgePurchase(purchase.getPurchaseToken());
+
+            switch (action) {
+                case CONSUME:
+                    Log.d(TAG, "Purchase flagged as consumable, consuming...");
+                    ConsumeParams consumeParams = ConsumeParams.newBuilder().setPurchaseToken(purchase.getPurchaseToken()).build();
+                    billingClient.consumeAsync(consumeParams, this::onConsumeResponse);
+                    break;
+                case ACKNOWLEDGE:
+                    Log.d(TAG, "Purchase not acknowledged, acknowledging...");
+                    acknowledgePurchase(purchase.getPurchaseToken());
+                    break;
+                case NONE:
+                default:
+                    Log.d(TAG, "No additional purchase handling required");
+                    break;
             }
 
             JSObject ret = new JSObject();
@@ -307,12 +315,14 @@ public class NativePurchasesPlugin extends Plugin {
         Number quantity = call.getInt("quantity", 1);
         String appAccountToken = call.getString("appAccountToken");
         final String accountIdentifier = appAccountToken != null && !appAccountToken.isEmpty() ? appAccountToken : null;
+        boolean isConsumable = call.getBoolean("isConsumable", false);
 
         Log.d(TAG, "Product identifier: " + productIdentifier);
         Log.d(TAG, "Plan identifier: " + planIdentifier);
         Log.d(TAG, "Product type: " + productType);
         Log.d(TAG, "Quantity: " + quantity);
         Log.d(TAG, "Account identifier provided: " + (accountIdentifier != null ? "[REDACTED]" : "none"));
+        Log.d(TAG, "Is consumable: " + isConsumable);
 
         // cannot use quantity, because it's done in native modal
         Log.d("CapacitorPurchases", "purchaseProduct: " + productIdentifier);
@@ -341,6 +351,12 @@ public class NativePurchasesPlugin extends Plugin {
             call.reject("quantity is less than 1");
             return;
         }
+        if (isConsumable && productType.equals("subs")) {
+            Log.d(TAG, "isConsumable is not supported for subscriptions, ignoring flag");
+            isConsumable = false;
+        }
+
+        call.getData().put("isConsumable", isConsumable);
 
         // For subscriptions, always use the productIdentifier (subscription ID) to query
         // The planIdentifier is used later when setting the offer token
@@ -456,13 +472,12 @@ public class NativePurchasesPlugin extends Plugin {
                 Log.d(TAG, "Processing purchase: " + purchase.getOrderId());
                 Log.d(TAG, "Purchase state: " + purchase.getPurchaseState());
                 if (purchase.getPurchaseState() == Purchase.PurchaseState.PURCHASED) {
-                    if (purchase.isAcknowledged()) {
-                        Log.d(TAG, "Purchase already acknowledged, consuming");
-                        ConsumeParams consumeParams = ConsumeParams.newBuilder().setPurchaseToken(purchase.getPurchaseToken()).build();
-                        billingClient.consumeAsync(consumeParams, this::onConsumeResponse);
-                    } else {
+                    PurchaseAction action = PurchaseActionDecider.decide(false, purchase);
+                    if (action == PurchaseAction.ACKNOWLEDGE) {
                         Log.d(TAG, "Purchase not acknowledged, acknowledging");
                         acknowledgePurchase(purchase.getPurchaseToken());
+                    } else {
+                        Log.d(TAG, "Purchase already acknowledged, skipping consume");
                     }
                 }
             }

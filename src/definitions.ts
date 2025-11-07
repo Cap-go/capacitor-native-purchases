@@ -485,6 +485,7 @@ export interface NativePurchasesPlugin {
    *                                  - Android: Can be any obfuscated string (max 64 chars), maps to ObfuscatedAccountId
    *                                  SECURITY: DO NOT use PII like emails in cleartext - use UUID or hashed value.
    *                                  RECOMMENDED: Use UUID v5 with deterministic generation for cross-platform compatibility.
+   * @param options.isConsumable - Only Android, when true the purchase token is consumed after granting entitlement (for consumable in-app items). Defaults to false.
    */
   purchaseProduct(options: {
     productIdentifier: string;
@@ -492,6 +493,7 @@ export interface NativePurchasesPlugin {
     productType?: PURCHASE_TYPE;
     quantity?: number;
     appAccountToken?: string;
+    isConsumable?: boolean;
   }): Promise<Transaction>;
 
   /**
