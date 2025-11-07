@@ -3,28 +3,28 @@ package ee.forgr.nativepurchases;
 import com.android.billingclient.api.Purchase;
 
 enum PurchaseAction {
-  CONSUME,
-  ACKNOWLEDGE,
-  NONE,
+    CONSUME,
+    ACKNOWLEDGE,
+    NONE
 }
 
 final class PurchaseActionDecider {
 
-  private PurchaseActionDecider() {}
+    private PurchaseActionDecider() {}
 
-  static PurchaseAction decide(boolean isConsumable, Purchase purchase) {
-    if (purchase == null) {
-      return PurchaseAction.NONE;
+    static PurchaseAction decide(boolean isConsumable, Purchase purchase) {
+        if (purchase == null) {
+            return PurchaseAction.NONE;
+        }
+        if (purchase.getPurchaseState() != Purchase.PurchaseState.PURCHASED) {
+            return PurchaseAction.NONE;
+        }
+        if (isConsumable) {
+            return PurchaseAction.CONSUME;
+        }
+        if (purchase.isAcknowledged()) {
+            return PurchaseAction.NONE;
+        }
+        return PurchaseAction.ACKNOWLEDGE;
     }
-    if (purchase.getPurchaseState() != Purchase.PurchaseState.PURCHASED) {
-      return PurchaseAction.NONE;
-    }
-    if (isConsumable) {
-      return PurchaseAction.CONSUME;
-    }
-    if (purchase.isAcknowledged()) {
-      return PurchaseAction.NONE;
-    }
-    return PurchaseAction.ACKNOWLEDGE;
-  }
 }
