@@ -17,14 +17,68 @@ public class NativePurchasesPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "getProducts", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "getProduct", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "getPluginVersion", returnType: CAPPluginReturnPromise),
-        CAPPluginMethod(name: "getPurchases", returnType: CAPPluginReturnPromise)
+        CAPPluginMethod(name: "getPurchases", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "manageSubscriptions", returnType: CAPPluginReturnPromise)
     ]
 
-    private let PLUGIN_VERSION = "0.0.25"
+    private let pluginVersion: String = "7.12.7"
+    private var transactionUpdatesTask: Task<Void, Never>?
 
     @objc func getPluginVersion(_ call: CAPPluginCall) {
-        call.resolve(["version": self.PLUGIN_VERSION])
+        call.resolve(["version": self.pluginVersion])
     }
+
+    override public func load() {
+        super.load()
+        // Start listening to StoreKit transaction updates as early as possible
+        if #available(iOS 15.0, *) {
+            startTransactionUpdatesListener()
+        }
+    }
+
+    deinit {
+        if #available(iOS 15.0, *) { cancelTransactionUpdatesListener() }
+    }
+
+    private func cancelTransactionUpdatesListener() {
+        self.transactionUpdatesTask?.cancel()
+        self.transactionUpdatesTask = nil
+    }
+
+    @available(iOS 15.0, *)
+    private func startTransactionUpdatesListener() {
+        // Ensure only one listener is running
+        cancelTransactionUpdatesListener()
+        let task = Task.detached { [weak self] in
+            // Create a single ISO8601DateFormatter once per Task to avoid repeated allocations
+            let dateFormatter = ISO8601DateFormatter()
+
+            for await result in Transaction.updates {
+                guard !Task.isCancelled else { break }
+                do {
+                    guard case .verified(let transaction) = result else {
+                        // Ignore/unverified transactions; nothing to finish
+                        continue
+                    }
+
+                    // Build payload similar to purchase response
+                    let payload = await TransactionHelpers.buildTransactionResponse(from: transaction, alwaysIncludeWillCancel: true)
+
+                    // Finish the transaction to avoid blocking future purchases
+                    await transaction.finish()
+
+                    // Notify JS listeners on main thread, after slight delay
+                    try? await Task.sleep(nanoseconds: 500_000_000) // 0.5s delay
+                    await MainActor.run {
+                        self?.notifyListeners("transactionUpdated", data: payload)
+                    }
+                }
+            }
+        }
+        transactionUpdatesTask = task
+    }
+
+    // MARK: - Plugin Methods
 
     @objc func isBillingSupported(_ call: CAPPluginCall) {
         if #available(iOS 15, *) {
@@ -57,69 +111,12 @@ public class NativePurchasesPlugin: CAPPlugin, CAPBridgedPlugin {
                         call.reject("Cannot find product for id \(productIdentifier)")
                         return
                     }
-                    var purchaseOptions = Set<Product.PurchaseOption>()
-                    purchaseOptions.insert(Product.PurchaseOption.quantity(quantity))
 
-                    // Add appAccountToken if provided
-                    if let accountToken = appAccountToken, !accountToken.isEmpty {
-                        if let tokenData = UUID(uuidString: accountToken) {
-                            purchaseOptions.insert(Product.PurchaseOption.appAccountToken(tokenData))
-                        }
-                    }
-
+                    let purchaseOptions = buildPurchaseOptions(quantity: quantity, appAccountToken: appAccountToken)
                     let result = try await product.purchase(options: purchaseOptions)
                     print("purchaseProduct result \(result)")
-                    switch result {
-                    case let .success(.verified(transaction)):
-                        // Successful purchase
-                        var response: [String: Any] = ["transactionId": transaction.id]
 
-                        // Get receipt data
-                        if let appStoreReceiptURL = Bundle.main.appStoreReceiptURL,
-                           FileManager.default.fileExists(atPath: appStoreReceiptURL.path),
-                           let receiptData = try? Data(contentsOf: appStoreReceiptURL) {
-                            let receiptBase64 = receiptData.base64EncodedString()
-                            response["receipt"] = receiptBase64
-                        }
-
-                        // Add detailed transaction information
-                        response["productIdentifier"] = transaction.productID
-                        response["purchaseDate"] = ISO8601DateFormatter().string(from: transaction.purchaseDate)
-                        response["productType"] = transaction.productType == .autoRenewable ? "subs" : "inapp"
-                        
-                        // Add subscription-specific information
-                        if transaction.productType == .autoRenewable {
-                            response["originalPurchaseDate"] = ISO8601DateFormatter().string(from: transaction.originalPurchaseDate)
-                            if let expirationDate = transaction.expirationDate {
-                                response["expirationDate"] = ISO8601DateFormatter().string(from: expirationDate)
-                                let isActive = expirationDate > Date()
-                                response["isActive"] = isActive
-                            }
-                        }
-                        
-                        // Add cancellation information - ALWAYS set willCancel
-                        if let revocationDate = transaction.revocationDate {
-                            response["willCancel"] = ISO8601DateFormatter().string(from: revocationDate)
-                        } else {
-                            response["willCancel"] = nil
-                        }
-
-                        await transaction.finish()
-                        call.resolve(response)
-                    case let .success(.unverified(_, error)):
-                        // Successful purchase but transaction/receipt can't be verified
-                        // Could be a jailbroken phone
-                        call.reject(error.localizedDescription)
-                    case .pending:
-                        // Transaction waiting on SCA (Strong Customer Authentication) or
-                        // approval from Ask to Buy
-                        call.reject("Transaction pending")
-                    case .userCancelled:
-                        // ^^^
-                        call.reject("User cancelled")
-                    @unknown default:
-                        call.reject("Unknown error")
-                    }
+                    await handlePurchaseResult(result, call: call)
                 } catch {
                     print(error)
                     call.reject(error.localizedDescription)
@@ -128,6 +125,36 @@ public class NativePurchasesPlugin: CAPPlugin, CAPBridgedPlugin {
         } else {
             print("Not implemented under ios 15")
             call.reject("Not implemented under ios 15")
+        }
+    }
+
+    @available(iOS 15.0, *)
+    private func buildPurchaseOptions(quantity: Int, appAccountToken: String?) -> Set<Product.PurchaseOption> {
+        var purchaseOptions = Set<Product.PurchaseOption>()
+        purchaseOptions.insert(Product.PurchaseOption.quantity(quantity))
+
+        if let accountToken = appAccountToken, !accountToken.isEmpty, let tokenData = UUID(uuidString: accountToken) {
+            purchaseOptions.insert(Product.PurchaseOption.appAccountToken(tokenData))
+        }
+
+        return purchaseOptions
+    }
+
+    @available(iOS 15.0, *)
+    private func handlePurchaseResult(_ result: Product.PurchaseResult, call: CAPPluginCall) async {
+        switch result {
+        case let .success(.verified(transaction)):
+            let response = await TransactionHelpers.buildTransactionResponse(from: transaction)
+            await transaction.finish()
+            call.resolve(response)
+        case let .success(.unverified(_, error)):
+            call.reject(error.localizedDescription)
+        case .pending:
+            call.reject("Transaction pending")
+        case .userCancelled:
+            call.reject("User cancelled")
+        @unknown default:
+            call.reject("Unknown error")
         }
     }
 
@@ -212,108 +239,42 @@ public class NativePurchasesPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     @objc func getPurchases(_ call: CAPPluginCall) {
+        let appAccountTokenFilter = call.getString("appAccountToken")
         if #available(iOS 15.0, *) {
             print("getPurchases")
             DispatchQueue.global().async {
                 Task {
                     do {
-                        var allPurchases: [[String: Any]] = []
-
-                        // Get all current entitlements (active subscriptions)
-                        for await result in Transaction.currentEntitlements {
-                            if case .verified(let transaction) = result {
-                                var purchaseData: [String: Any] = ["transactionId": String(transaction.id)]
-
-                                // Get receipt data
-                                if let appStoreReceiptURL = Bundle.main.appStoreReceiptURL,
-                                   FileManager.default.fileExists(atPath: appStoreReceiptURL.path),
-                                   let receiptData = try? Data(contentsOf: appStoreReceiptURL) {
-                                    let receiptBase64 = receiptData.base64EncodedString()
-                                    purchaseData["receipt"] = receiptBase64
-                                }
-
-                                // Add detailed transaction information
-                                purchaseData["productIdentifier"] = transaction.productID
-                                purchaseData["purchaseDate"] = ISO8601DateFormatter().string(from: transaction.purchaseDate)
-                                purchaseData["productType"] = transaction.productType == .autoRenewable ? "subs" : "inapp"
-                                
-                                // Add subscription-specific information
-                                if transaction.productType == .autoRenewable {
-                                    purchaseData["originalPurchaseDate"] = ISO8601DateFormatter().string(from: transaction.originalPurchaseDate)
-                                    if let expirationDate = transaction.expirationDate {
-                                        purchaseData["expirationDate"] = ISO8601DateFormatter().string(from: expirationDate)
-                                        let isActive = expirationDate > Date()
-                                        purchaseData["isActive"] = isActive
-                                    }
-                                }
-                                
-                                // Add cancellation information - ALWAYS set willCancel
-                                if let revocationDate = transaction.revocationDate {
-                                    purchaseData["willCancel"] = ISO8601DateFormatter().string(from: revocationDate)
-                                } else {
-                                    purchaseData["willCancel"] = nil
-                                }
-
-                                allPurchases.append(purchaseData)
-                            }
-                        }
-
-                        // Also get all transactions (including non-consumables and expired subscriptions)
-                        for await result in Transaction.all {
-                            if case .verified(let transaction) = result {
-                                let transactionIdString = String(transaction.id)
-
-                                // Check if we already have this transaction
-                                let alreadyExists = allPurchases.contains { purchase in
-                                    if let existingId = purchase["transactionId"] as? String {
-                                        return existingId == transactionIdString
-                                    }
-                                    return false
-                                }
-
-                                if !alreadyExists {
-                                    var purchaseData: [String: Any] = ["transactionId": transactionIdString]
-
-                                    // Get receipt data
-                                    if let appStoreReceiptURL = Bundle.main.appStoreReceiptURL,
-                                       FileManager.default.fileExists(atPath: appStoreReceiptURL.path),
-                                       let receiptData = try? Data(contentsOf: appStoreReceiptURL) {
-                                        let receiptBase64 = receiptData.base64EncodedString()
-                                        purchaseData["receipt"] = receiptBase64
-                                    }
-
-                                    // Add detailed transaction information
-                                    purchaseData["productIdentifier"] = transaction.productID
-                                    purchaseData["purchaseDate"] = ISO8601DateFormatter().string(from: transaction.purchaseDate)
-                                    purchaseData["productType"] = transaction.productType == .autoRenewable ? "subs" : "inapp"
-                                    
-                                    // Add subscription-specific information
-                                    if transaction.productType == .autoRenewable {
-                                        purchaseData["originalPurchaseDate"] = ISO8601DateFormatter().string(from: transaction.originalPurchaseDate)
-                                        if let expirationDate = transaction.expirationDate {
-                                            purchaseData["expirationDate"] = ISO8601DateFormatter().string(from: expirationDate)
-                                            let isActive = expirationDate > Date()
-                                            purchaseData["isActive"] = isActive
-                                        }
-                                    }
-                                    
-                                    // Add cancellation information - ALWAYS set willCancel
-                                    if let revocationDate = transaction.revocationDate {
-                                        purchaseData["willCancel"] = ISO8601DateFormatter().string(from: revocationDate)
-                                    } else {
-                                        purchaseData["willCancel"] = nil
-                                    }
-
-                                    allPurchases.append(purchaseData)
-                                }
-                            }
-                        }
-
+                        let allPurchases = await TransactionHelpers.collectAllPurchases(appAccountTokenFilter: appAccountTokenFilter)
                         call.resolve(["purchases": allPurchases])
                     } catch {
                         print("getPurchases error: \(error)")
                         call.reject(error.localizedDescription)
                     }
+                }
+            }
+        } else {
+            print("Not implemented under iOS 15")
+            call.reject("Not implemented under iOS 15")
+        }
+    }
+
+    @objc func manageSubscriptions(_ call: CAPPluginCall) {
+        if #available(iOS 15.0, *) {
+            print("manageSubscriptions")
+            Task { @MainActor in
+                do {
+                    // Get the current window scene
+                    guard let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene else {
+                        call.reject("Unable to get window scene")
+                        return
+                    }
+                    // Open the App Store subscription management page
+                    try await AppStore.showManageSubscriptions(in: windowScene)
+                    call.resolve()
+                } catch {
+                    print("manageSubscriptions error: \(error)")
+                    call.reject(error.localizedDescription)
                 }
             }
         } else {

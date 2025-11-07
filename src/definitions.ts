@@ -1,3 +1,5 @@
+import type { PluginListenerHandle } from '@capacitor/core';
+
 export enum ATTRIBUTION_NETWORK {
   APPLE_SEARCH_ADS = 0,
   ADJUST = 1,
@@ -11,12 +13,12 @@ export enum PURCHASE_TYPE {
   /**
    * A type of SKU for in-app products.
    */
-  INAPP = "inapp",
+  INAPP = 'inapp',
 
   /**
    * A type of SKU for subscriptions.
    */
-  SUBS = "subs",
+  SUBS = 'subs',
 }
 
 /**
@@ -83,52 +85,52 @@ export enum PACKAGE_TYPE {
   /**
    * A package that was defined with a custom identifier.
    */
-  UNKNOWN = "UNKNOWN",
+  UNKNOWN = 'UNKNOWN',
 
   /**
    * A package that was defined with a custom identifier.
    */
-  CUSTOM = "CUSTOM",
+  CUSTOM = 'CUSTOM',
 
   /**
    * A package configured with the predefined lifetime identifier.
    */
-  LIFETIME = "LIFETIME",
+  LIFETIME = 'LIFETIME',
 
   /**
    * A package configured with the predefined annual identifier.
    */
-  ANNUAL = "ANNUAL",
+  ANNUAL = 'ANNUAL',
 
   /**
    * A package configured with the predefined six month identifier.
    */
-  SIX_MONTH = "SIX_MONTH",
+  SIX_MONTH = 'SIX_MONTH',
 
   /**
    * A package configured with the predefined three month identifier.
    */
-  THREE_MONTH = "THREE_MONTH",
+  THREE_MONTH = 'THREE_MONTH',
 
   /**
    * A package configured with the predefined two month identifier.
    */
-  TWO_MONTH = "TWO_MONTH",
+  TWO_MONTH = 'TWO_MONTH',
 
   /**
    * A package configured with the predefined monthly identifier.
    */
-  MONTHLY = "MONTHLY",
+  MONTHLY = 'MONTHLY',
 
   /**
    * A package configured with the predefined weekly identifier.
    */
-  WEEKLY = "WEEKLY",
+  WEEKLY = 'WEEKLY',
 }
 
 export enum INTRO_ELIGIBILITY_STATUS {
   /**
-   * RevenueCat doesn't have enough information to determine eligibility.
+   * doesn't have enough information to determine eligibility.
    */
   INTRO_ELIGIBILITY_STATUS_UNKNOWN = 0,
   /**
@@ -143,71 +145,223 @@ export enum INTRO_ELIGIBILITY_STATUS {
 
 export interface Transaction {
   /**
-   * RevenueCat Id associated to the transaction.
+   * Unique identifier for the transaction.
+   *
+   * @since 1.0.0
+   * @platform ios Numeric string (e.g., "2000001043762129")
+   * @platform android Alphanumeric string (e.g., "GPA.1234-5678-9012-34567")
    */
   readonly transactionId: string;
   /**
-   * Receipt data for validation (iOS only - base64 encoded receipt)
+   * Receipt data for validation (base64 encoded StoreKit receipt).
+   *
+   * Send this to your backend for server-side validation with Apple's receipt verification API.
+   * The receipt remains available even after refund - server validation is required to detect refunded transactions.
+   *
+   * @since 1.0.0
+   * @platform ios Always present
+   * @platform android Not available (use purchaseToken instead)
    */
   readonly receipt?: string;
   /**
-   * Product Id associated with the transaction.
+   * An optional obfuscated identifier that uniquely associates the transaction with a user account in your app.
+   *
+   * PURPOSE:
+   * - Fraud detection: Helps platforms detect irregular activity (e.g., many devices purchasing on the same account)
+   * - User linking: Links purchases to in-game characters, avatars, or in-app profiles
+   *
+   * PLATFORM DIFFERENCES:
+   * - iOS: Must be a valid UUID format (e.g., "550e8400-e29b-41d4-a716-446655440000")
+   *        Apple's StoreKit 2 requires UUID format for the appAccountToken parameter
+   * - Android: Can be any obfuscated string (max 64 chars), maps to Google Play's ObfuscatedAccountId
+   *           Google recommends using encryption or one-way hash
+   *
+   * SECURITY REQUIREMENTS (especially for Android):
+   * - DO NOT store Personally Identifiable Information (PII) like emails in cleartext
+   * - Use encryption or a one-way hash to generate an obfuscated identifier
+   * - Maximum length: 64 characters (both platforms)
+   * - Storing PII in cleartext will result in purchases being blocked by Google Play
+   *
+   * IMPLEMENTATION EXAMPLE:
+   * ```typescript
+   * // For iOS: Generate a deterministic UUID from user ID
+   * import { v5 as uuidv5 } from 'uuid';
+   * const NAMESPACE = '6ba7b810-9dad-11d1-80b4-00c04fd430c8'; // Your app's namespace UUID
+   * const appAccountToken = uuidv5(userId, NAMESPACE);
+   *
+   * // For Android: Can also use UUID or any hashed value
+   * // The same UUID approach works for both platforms
+   * ```
+   */
+  readonly appAccountToken?: string | null;
+  /**
+   * Product identifier associated with the transaction.
+   *
+   * @since 1.0.0
+   * @platform ios Always present
+   * @platform android Always present
    */
   readonly productIdentifier: string;
   /**
    * Purchase date of the transaction in ISO 8601 format.
+   *
+   * @since 1.0.0
+   * @example "2025-10-28T06:03:19Z"
+   * @platform ios Always present
+   * @platform android Always present
    */
   readonly purchaseDate: string;
   /**
-   * Original purchase date of the transaction in ISO 8601 format (for subscriptions).
+   * Original purchase date of the transaction in ISO 8601 format.
+   *
+   * For subscription renewals, this shows the date of the original subscription purchase,
+   * while purchaseDate shows the date of the current renewal.
+   *
+   * @since 1.0.0
+   * @platform ios Present for subscriptions only
+   * @platform android Not available
    */
   readonly originalPurchaseDate?: string;
   /**
-   * Expiration date of the transaction in ISO 8601 format (for subscriptions).
+   * Expiration date of the transaction in ISO 8601 format.
+   *
+   * Check this date to determine if a subscription is still valid.
+   * Compare with current date: if expirationDate > now, subscription is active.
+   *
+   * @since 1.0.0
+   * @platform ios Present for subscriptions only
+   * @platform android Not available (query Google Play Developer API instead)
    */
   readonly expirationDate?: string;
   /**
-   * Whether the transaction is still active/valid.
+   * Whether the subscription is still active/valid.
+   *
+   * For iOS subscriptions, check if isActive === true to verify an active subscription.
+   * For expired or refunded iOS subscriptions, this will be false.
+   *
+   * @since 1.0.0
+   * @platform ios Present for subscriptions only (true if expiration date is in the future)
+   * @platform android Not available (check purchaseState === "1" instead)
    */
   readonly isActive?: boolean;
   /**
-   * Date when the subscription was cancelled/revoked, or null if not cancelled. Only available on iOS.
+   * Whether the subscription will be cancelled at the end of the billing cycle.
+   *
+   * - `true`: User has cancelled but subscription remains active until expiration
+   * - `false`: Subscription will auto-renew
+   * - `null`: Status unknown or not available
+   *
+   * @since 1.0.0
+   * @default null
+   * @platform ios Present for subscriptions only (boolean or null)
+   * @platform android Always null (use Google Play Developer API for cancellation status)
    */
-  readonly willCancel: string | null;
+  readonly willCancel: boolean | null;
   /**
-   * Purchase state of the transaction.
+   * Purchase state of the transaction (numeric string value).
+   *
+   * **Android Values:**
+   * - `"1"`: Purchase completed and valid (PURCHASED state)
+   * - `"0"`: Payment pending (PENDING state, e.g., cash payment processing)
+   * - Other numeric values: Various other states
+   *
+   * Always check `purchaseState === "1"` on Android to verify a valid purchase.
+   * Refunded purchases typically disappear from getPurchases() rather than showing a different state.
+   *
+   * @since 1.0.0
+   * @platform ios Not available (use isActive for subscriptions or receipt validation for IAP)
+   * @platform android Always present
    */
   readonly purchaseState?: string;
   /**
-   * Order ID associated with the transaction (Android).
+   * Order ID associated with the transaction.
+   *
+   * Use this for server-side verification on Android. This is the Google Play order ID.
+   *
+   * @since 1.0.0
+   * @example "GPA.1234-5678-9012-34567"
+   * @platform ios Not available
+   * @platform android Always present
    */
   readonly orderId?: string;
   /**
-   * Purchase token associated with the transaction (Android).
+   * Purchase token associated with the transaction.
+   *
+   * Send this to your backend for server-side validation with Google Play Developer API.
+   * This is the Android equivalent of iOS's receipt field.
+   *
+   * @since 1.0.0
+   * @platform ios Not available (use receipt instead)
+   * @platform android Always present
    */
   readonly purchaseToken?: string;
   /**
-   * Whether the purchase has been acknowledged (Android).
+   * Whether the purchase has been acknowledged.
+   *
+   * Purchases must be acknowledged within 3 days or they will be refunded.
+   * This plugin automatically acknowledges purchases.
+   *
+   * @since 1.0.0
+   * @platform ios Not available
+   * @platform android Always present (should be true after successful purchase)
    */
   readonly isAcknowledged?: boolean;
   /**
    * Quantity purchased.
+   *
+   * @since 1.0.0
+   * @default 1
+   * @platform ios 1 or higher (as specified in purchaseProduct call)
+   * @platform android Always 1 (Google Play doesn't support quantity > 1)
    */
   readonly quantity?: number;
   /**
-   * Product type (inapp or subs).
+   * Product type.
+   *
+   * - `"inapp"`: One-time in-app purchase
+   * - `"subs"`: Subscription
+   *
+   * @since 1.0.0
+   * @platform ios Always present
+   * @platform android Always present
    */
   readonly productType?: string;
   /**
-   * Whether the transaction is a trial period.
+   * Whether the transaction is in a trial period.
+   *
+   * - `true`: Currently in free trial period
+   * - `false`: Not in trial period
+   *
+   * @since 1.0.0
+   * @platform ios Present for subscriptions with trial offers
+   * @platform android Present for subscriptions with trial offers
    */
   readonly isTrialPeriod?: boolean;
   /**
-   * Whether the transaction is in intro price period.
+   * Whether the transaction is in an introductory price period.
+   *
+   * Introductory pricing is a discounted rate, different from a free trial.
+   *
+   * - `true`: Currently using introductory pricing
+   * - `false`: Not in intro period
+   *
+   * @since 1.0.0
+   * @platform ios Present for subscriptions with intro pricing
+   * @platform android Present for subscriptions with intro pricing
    */
   readonly isInIntroPricePeriod?: boolean;
   /**
-   * Whether the transaction is in grace period.
+   * Whether the transaction is in a grace period.
+   *
+   * Grace period allows users to fix payment issues while maintaining access.
+   * You typically want to continue providing access during this time.
+   *
+   * - `true`: Subscription payment failed but user still has access
+   * - `false`: Not in grace period
+   *
+   * @since 1.0.0
+   * @platform ios Present for subscriptions in grace period
+   * @platform android Present for subscriptions in grace period
    */
   readonly isInGracePeriod?: boolean;
 }
@@ -317,17 +471,22 @@ export interface NativePurchasesPlugin {
    */
   restorePurchases(): Promise<void>;
 
- /**
-  * Started purchase process for the given product.
-  *
-  * @param options - The product to purchase
-  * @param options.productIdentifier - The product identifier of the product you want to purchase.
-  * @param options.productType - Only Android, the type of product, can be inapp or subs. Will use inapp by default.
-  * @param options.planIdentifier - Only Android, the identifier of the plan you want to purchase, require for for subs.
-  * @param options.quantity - Only iOS, the number of items you wish to purchase. Will use 1 by default.
-  * @param options.appAccountToken - Only iOS, UUID for the user's account. Used to link purchases to the user account for App Store Server Notifications.
-   * @param options.isConsumable - Only Android, when true the plugin consumes the purchase token after granting the entitlement.
-  */
+  /**
+   * Started purchase process for the given product.
+   *
+   * @param options - The product to purchase
+   * @param options.productIdentifier - The product identifier of the product you want to purchase.
+   * @param options.productType - Only Android, the type of product, can be inapp or subs. Will use inapp by default.
+   * @param options.planIdentifier - Only Android, the identifier of the base plan you want to purchase from Google Play Console. REQUIRED for Android subscriptions, ignored on iOS.
+   * @param options.quantity - Only iOS, the number of items you wish to purchase. Will use 1 by default.
+   * @param options.appAccountToken - Optional identifier uniquely associated with the user's account in your app.
+   *                                  PLATFORM REQUIREMENTS:
+   *                                  - iOS: Must be a valid UUID format (StoreKit 2 requirement)
+   *                                  - Android: Can be any obfuscated string (max 64 chars), maps to ObfuscatedAccountId
+   *                                  SECURITY: DO NOT use PII like emails in cleartext - use UUID or hashed value.
+   *                                  RECOMMENDED: Use UUID v5 with deterministic generation for cross-platform compatibility.
+   * @param options.isConsumable - Only Android, when true the purchase token is consumed after granting entitlement (for consumable in-app items). Defaults to false.
+   */
   purchaseProduct(options: {
     productIdentifier: string;
     planIdentifier?: string;
@@ -345,10 +504,7 @@ export interface NativePurchasesPlugin {
    * @param options.productType - Only Android, the type of product, can be inapp or subs. Will use inapp by default.
    * @returns - The requested product info
    */
-  getProducts(options: {
-    productIdentifiers: string[];
-    productType?: PURCHASE_TYPE;
-  }): Promise<{ products: Product[] }>;
+  getProducts(options: { productIdentifiers: string[]; productType?: PURCHASE_TYPE }): Promise<{ products: Product[] }>;
 
   /**
    * Gets the product info for a single product identifier.
@@ -358,10 +514,7 @@ export interface NativePurchasesPlugin {
    * @param options.productType - Only Android, the type of product, can be inapp or subs. Will use inapp by default.
    * @returns - The requested product info
    */
-  getProduct(options: {
-    productIdentifier: string;
-    productType?: PURCHASE_TYPE;
-  }): Promise<{ product: Product }>;
+  getProduct(options: { productIdentifier: string; productType?: PURCHASE_TYPE }): Promise<{ product: Product }>;
 
   /**
    * Check if billing is supported for the current device.
@@ -383,11 +536,41 @@ export interface NativePurchasesPlugin {
    *
    * @param options - Optional parameters for filtering purchases
    * @param options.productType - Only Android, filter by product type (inapp or subs). If not specified, returns both types.
+   * @param options.appAccountToken - Optional filter to restrict results to purchases that used the provided account token.
+   *                                   Must be the same identifier used during purchase (UUID format for iOS, any obfuscated string for Android).
+   *                                   iOS: UUID format required. Android: Maps to ObfuscatedAccountId.
    * @returns {Promise<{ purchases: Transaction[] }>} Promise that resolves with array of user's purchases
    * @throws An error if the purchase query fails
    * @since 7.2.0
    */
   getPurchases(options?: {
     productType?: PURCHASE_TYPE;
+    appAccountToken?: string;
   }): Promise<{ purchases: Transaction[] }>;
+
+  /**
+   * Opens the platform's native subscription management page.
+   * This allows users to view, modify, or cancel their subscriptions.
+   *
+   * - iOS: Opens the App Store subscription management page for the current app
+   * - Android: Opens the Google Play subscription management page
+   *
+   * @returns {Promise<void>} Promise that resolves when the management page is opened
+   * @throws An error if the subscription management page cannot be opened
+   * @since 7.10.0
+   */
+  manageSubscriptions(): Promise<void>;
+
+  /**
+   * Listen for StoreKit transaction updates delivered by Apple's Transaction.updates.
+   * Fires on app launch if there are unfinished transactions, and for any updates afterward.
+   * iOS only.
+   */
+  addListener(
+    eventName: 'transactionUpdated',
+    listenerFunc: (transaction: Transaction) => void,
+  ): Promise<PluginListenerHandle>;
+
+  /** Remove all registered listeners */
+  removeAllListeners(): Promise<void>;
 }

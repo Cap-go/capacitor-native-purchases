@@ -1,7 +1,7 @@
-import { Router } from "itty-router";
+import { Router } from 'itty-router';
 
-import { validateAppleReceipt } from "./apple";
-import { validateGoogleReceipt } from "./google";
+import { validateAppleReceipt } from './apple';
+import { validateGoogleReceipt } from './google';
 
 export interface Env {
   APPLE_SECRET: string; // Your Apple shared secret key
@@ -11,35 +11,35 @@ export interface Env {
 
 const router = Router();
 
-router.post("/apple", async (request: Request, env: Env) => {
+router.post('/apple', async (request: Request, env: Env) => {
   const { receipt } = await request.json<{ receipt: string }>();
 
   try {
     const verifyResponse = await validateAppleReceipt(receipt, env);
     return new Response(JSON.stringify(verifyResponse), {
-      headers: { "Content-Type": "application/json" },
+      headers: { 'Content-Type': 'application/json' },
     });
   } catch (error) {
-    console.error("Error validating Apple receipt:", error);
-    return new Response("Error validating Apple receipt", { status: 500 });
+    console.error('Error validating Apple receipt:', error);
+    return new Response('Error validating Apple receipt', { status: 500 });
   }
 });
 
-router.post("/google", async (request: Request, env: Env) => {
+router.post('/google', async (request: Request, env: Env) => {
   const { receipt } = await request.json<{ receipt: string }>();
 
   try {
     const verifyResponse = await validateGoogleReceipt(receipt, env);
     return new Response(JSON.stringify(verifyResponse), {
-      headers: { "Content-Type": "application/json" },
+      headers: { 'Content-Type': 'application/json' },
     });
   } catch (error) {
-    console.error("Error validating Google receipt:", error);
-    return new Response("Error validating Google receipt", { status: 500 });
+    console.error('Error validating Google receipt:', error);
+    return new Response('Error validating Google receipt', { status: 500 });
   }
 });
 
-router.all("*", () => new Response("Not Found", { status: 404 }));
+router.all('*', () => new Response('Not Found', { status: 404 }));
 
 export default {
   fetch: router.handle,

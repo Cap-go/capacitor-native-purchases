@@ -2,6 +2,17 @@
 
 This guide covers testing iOS in-app purchases and subscriptions using both Sandbox and StoreKit local testing methods.
 
+## App Store Connect Approval Checklist
+
+Before Apple approves in-app purchases for release, complete these compliance steps in App Store Connect:
+
+1. Accept the **Paid Applications Agreement** under **Agreements, Tax, and Banking** and finish the tax interviews. Apple blocks IAP review until this contract is active. [Apple documentation](https://developer.apple.com/help/app-store-connect/manage-agreements/complete-steps-to-activate-the-paid-applications-agreement)
+2. Add at least one **Bank Account** for payouts in the same Agreements, Tax, and Banking area. [Apple documentation](https://developer.apple.com/help/app-store-connect/manage-agreements/add-a-new-bank-account)
+3. Provide your **Company information** (legal entity name, address, and primary contact) and keep it in sync under **App Information → General Information**. [Apple documentation](https://developer.apple.com/help/app-store-connect/configure-app-information/configure-app-information)
+4. Publish a **Privacy Policy URL** in **App Information → Additional Information**; subscriptions require this link to appear both in metadata and in-app. [Apple documentation](https://developer.apple.com/help/app-store-connect/configure-app-information/add-privacy-policy-url)
+5. Publish a **Terms of Service / EULA URL** alongside the privacy policy. Subscriptions must expose this link inside the app and in the store listing. [Apple documentation](https://developer.apple.com/help/app-store-connect/configure-app-information/add-terms-of-use-url)
+6. Mirror the Privacy Policy and Terms of Service inside your paywall UI so users see them before purchasing. See [Paywall compliance template](./PAYWALL_COMPLIANCE_TEMPLATE.md) for an example layout you can adapt.
+
 > ⚠️ **CRITICAL**: Apple requires product information (names, prices) to be fetched from StoreKit, not hardcoded. See [Apple's Product Display Requirements](#apples-product-display-requirements) section.
 
 ## Testing Methods Overview

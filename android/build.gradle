@@ -49,8 +49,8 @@ repositories {
 
 
 dependencies {
-    implementation "com.google.guava:guava:33.4.8-android"
-    def billing_version = "7.1.1"
+    implementation "com.google.guava:guava:33.5.0-android"
+    def billing_version = "8.0.0"
     implementation "com.android.billingclient:billing:$billing_version"
     implementation fileTree(dir: 'libs', include: ['*.jar'])
     implementation project(':capacitor-android')
