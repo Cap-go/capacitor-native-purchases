@@ -1455,11 +1455,9 @@ purchaseProduct(options: { productIdentifier: string; planIdentifier?: string; p
 
 Started purchase process for the given product.
 
-| Param         | Type                                                                                                                                                                        | Description               |
-| ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------- |
+| Param         | Type                                                                                                                                                                                                | Description               |
+| ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------- |
 | **`options`** | <code>{ productIdentifier: string; planIdentifier?: string; productType?: <a href="#purchase_type">PURCHASE_TYPE</a>; quantity?: number; appAccountToken?: string; isConsumable?: boolean; }</code> | - The product to purchase |
-
-`isConsumable` is Android-only and tells the plugin to call `consumeAsync` for the purchase token once the entitlement has been granted.
 
 **Returns:** <code>Promise&lt;<a href="#transaction">Transaction</a>&gt;</code>
 
