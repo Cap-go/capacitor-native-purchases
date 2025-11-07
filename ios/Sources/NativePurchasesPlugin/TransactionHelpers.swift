@@ -29,6 +29,30 @@ internal class TransactionHelpers {
         response["purchaseDate"] = ISO8601DateFormatter().string(from: transaction.purchaseDate)
         response["productType"] = transaction.productType == .autoRenewable ? "subs" : "inapp"
 
+        // Add ownership type (purchased or familyShared)
+        switch transaction.ownershipType {
+        case .purchased:
+            response["ownershipType"] = "purchased"
+        case .familyShared:
+            response["ownershipType"] = "familyShared"
+        default:
+            response["ownershipType"] = "purchased"
+        }
+
+        // Add environment (Sandbox, Production, or Xcode) - iOS 16.0+
+        if #available(iOS 16.0, *) {
+            switch transaction.environment {
+            case .sandbox:
+                response["environment"] = "Sandbox"
+            case .production:
+                response["environment"] = "Production"
+            case .xcode:
+                response["environment"] = "Xcode"
+            default:
+                response["environment"] = "Production"
+            }
+        }
+
         if let token = transaction.appAccountToken {
             response["appAccountToken"] = token.uuidString
         }

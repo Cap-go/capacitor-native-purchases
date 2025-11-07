@@ -682,6 +682,8 @@ Here's a comprehensive breakdown of which properties you can expect and rely on:
 | `productIdentifier` | ✅ Always | ✅ Always | ✅ Always | ✅ Always | Product ID purchased |
 | `purchaseDate` | ✅ Always | ✅ Always | ✅ Always | ✅ Always | ISO 8601 format |
 | `productType` | ✅ Always | ✅ Always | ✅ Always | ✅ Always | "inapp" or "subs" |
+| `ownershipType` | ✅ Always | ✅ Always | ❌ Never | ❌ Never | **iOS only** - "purchased" or "familyShared" (iOS 15.0+, StoreKit 2) |
+| `environment` | ✅ iOS 16+ | ✅ iOS 16+ | ❌ Never | ❌ Never | **iOS only** - "Sandbox", "Production", or "Xcode" (iOS 16.0+ only, not available on iOS 15) |
 | `quantity` | ✅ Always | ✅ Always | ✅ Always 1 | ✅ Always 1 | iOS supports multiple, Android always 1 |
 | `appAccountToken` | ✅ If provided | ✅ If provided | ✅ If provided | ✅ If provided | Set if passed during purchase |
 | `isActive` | ❌ Not set | ✅ Always | ❌ Not set | ❌ Not set | **iOS subscriptions ONLY** - calculated as expiration > now |
