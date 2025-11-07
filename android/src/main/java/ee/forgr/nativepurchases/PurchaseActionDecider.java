@@ -38,6 +38,7 @@ final class PurchaseActionDecider {
     }
 
     private static final class PurchaseDetailsAdapter implements PurchaseDetails {
+
         private final Purchase purchase;
 
         PurchaseDetailsAdapter(Purchase purchase) {

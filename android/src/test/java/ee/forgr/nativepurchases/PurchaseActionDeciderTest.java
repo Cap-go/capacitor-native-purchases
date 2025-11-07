@@ -10,32 +10,28 @@ public class PurchaseActionDeciderTest {
 
     @Test
     public void decideReturnsConsumeForConsumables() {
-        PurchaseAction action =
-                PurchaseActionDecider.decide(true, purchaseDetails(Purchase.PurchaseState.PURCHASED, true));
+        PurchaseAction action = PurchaseActionDecider.decide(true, purchaseDetails(Purchase.PurchaseState.PURCHASED, true));
 
         assertEquals(PurchaseAction.CONSUME, action);
     }
 
     @Test
     public void decideAcknowledgesWhenNotConsumableAndNotAcknowledged() {
-        PurchaseAction action =
-                PurchaseActionDecider.decide(false, purchaseDetails(Purchase.PurchaseState.PURCHASED, false));
+        PurchaseAction action = PurchaseActionDecider.decide(false, purchaseDetails(Purchase.PurchaseState.PURCHASED, false));
 
         assertEquals(PurchaseAction.ACKNOWLEDGE, action);
     }
 
     @Test
     public void decideDoesNothingWhenAlreadyAcknowledged() {
-        PurchaseAction action =
-                PurchaseActionDecider.decide(false, purchaseDetails(Purchase.PurchaseState.PURCHASED, true));
+        PurchaseAction action = PurchaseActionDecider.decide(false, purchaseDetails(Purchase.PurchaseState.PURCHASED, true));
 
         assertEquals(PurchaseAction.NONE, action);
     }
 
     @Test
     public void decideIgnoresNonPurchasedStates() {
-        PurchaseAction action =
-                PurchaseActionDecider.decide(false, purchaseDetails(Purchase.PurchaseState.PENDING, false));
+        PurchaseAction action = PurchaseActionDecider.decide(false, purchaseDetails(Purchase.PurchaseState.PENDING, false));
 
         assertEquals(PurchaseAction.NONE, action);
     }
