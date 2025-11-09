@@ -62,7 +62,7 @@ public class NativePurchasesPlugin: CAPPlugin, CAPBridgedPlugin {
                     }
 
                     // Build payload similar to purchase response
-                    let payload = await TransactionHelpers.buildTransactionResponse(from: transaction, alwaysIncludeWillCancel: true)
+                    let payload = await TransactionHelpers.buildTransactionResponse(from: transaction, jwsRepresentation: result.jwsRepresentation, alwaysIncludeWillCancel: true)
 
                     // Finish the transaction to avoid blocking future purchases
                     await transaction.finish()
@@ -143,8 +143,14 @@ public class NativePurchasesPlugin: CAPPlugin, CAPBridgedPlugin {
     @available(iOS 15.0, *)
     private func handlePurchaseResult(_ result: Product.PurchaseResult, call: CAPPluginCall) async {
         switch result {
-        case let .success(.verified(transaction)):
-            let response = await TransactionHelpers.buildTransactionResponse(from: transaction)
+        case let .success(verificationResult):
+            guard case .verified(let transaction) = verificationResult else {
+                if case .unverified(_, let error) = verificationResult {
+                    call.reject(error.localizedDescription)
+                }
+                return
+            }
+            let response = await TransactionHelpers.buildTransactionResponse(from: transaction, jwsRepresentation: verificationResult.jwsRepresentation)
             await transaction.finish()
             call.resolve(response)
         case let .success(.unverified(_, error)):

@@ -11,7 +11,7 @@ import StoreKit
 @available(iOS 15.0, *)
 internal class TransactionHelpers {
 
-    static func buildTransactionResponse(from transaction: Transaction, alwaysIncludeWillCancel: Bool = false) async -> [String: Any] {
+    static func buildTransactionResponse(from transaction: Transaction, jwsRepresentation: String? = nil, alwaysIncludeWillCancel: Bool = false) async -> [String: Any] {
         var response: [String: Any] = ["transactionId": String(transaction.id)]
 
         // Always include willCancel key with NSNull() default if requested (for transaction listener)
@@ -19,9 +19,14 @@ internal class TransactionHelpers {
             response["willCancel"] = NSNull()
         }
 
-        // Get receipt data
+        // Get receipt data (may not exist in Xcode/sandbox testing)
         if let receiptBase64 = getReceiptData() {
             response["receipt"] = receiptBase64
+        }
+
+        // Add StoreKit 2 JWS representation (always available when passed from VerificationResult)
+        if let jws = jwsRepresentation {
+            response["jwsRepresentation"] = jws
         }
 
         // Add detailed transaction information
@@ -66,7 +71,7 @@ internal class TransactionHelpers {
         return response
     }
 
-    static func getReceiptData() -> String? {
+  static func getReceiptData() -> String? {
         guard let appStoreReceiptURL = Bundle.main.appStoreReceiptURL,
               FileManager.default.fileExists(atPath: appStoreReceiptURL.path),
               let receiptData = try? Data(contentsOf: appStoreReceiptURL) else {
@@ -129,7 +134,7 @@ internal class TransactionHelpers {
                 continue
             }
 
-            let purchaseData = await buildTransactionResponse(from: transaction)
+            let purchaseData = await buildTransactionResponse(from: transaction, jwsRepresentation: result.jwsRepresentation)
             allPurchases.append(purchaseData)
         }
     }
@@ -148,7 +153,7 @@ internal class TransactionHelpers {
             }
 
             if !alreadyExists {
-                let purchaseData = await buildTransactionResponse(from: transaction)
+                let purchaseData = await buildTransactionResponse(from: transaction, jwsRepresentation: result.jwsRepresentation)
                 allPurchases.append(purchaseData)
             }
         }
