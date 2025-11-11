@@ -41,6 +41,6 @@ For now, you can create simple placeholder images with the image names and descr
 ## Image Specifications
 
 - **Format**: PNG for screenshots, GIF for animations
-- **Size**: Keep reasonable file sizes (< 500KB for PNGs, < 2MB for GIFs)
+- **Size**: Keep reasonable file sizes (< 500KB for ONGs, < 2MB for GIFs)
 - **Quality**: High enough resolution to clearly show UI elements and text
 - **Naming**: Use descriptive kebab-case filenames as specified above 

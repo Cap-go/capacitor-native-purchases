@@ -29,7 +29,7 @@ extension Product {
         //         */
         //        readonly subscriptionGroupIdentifier: string;
         //        /**
-        //         * The Product subcription group identifier.
+        //         * The Product subscription group identifier.
         //         */
         //        readonly subscriptionPeriod: SubscriptionPeriod;
         //        /**

@@ -1636,7 +1636,7 @@ Remove all registered listeners
 | **`currencySymbol`**              | <code>string</code>                                                     | Currency symbol for price and original price.                            |
 | **`isFamilyShareable`**           | <code>boolean</code>                                                    | Boolean indicating if the product is sharable with family                |
 | **`subscriptionGroupIdentifier`** | <code>string</code>                                                     | Group identifier for the product.                                        |
-| **`subscriptionPeriod`**          | <code><a href="#subscriptionperiod">SubscriptionPeriod</a></code>       | The <a href="#product">Product</a> subcription group identifier.         |
+| **`subscriptionPeriod`**          | <code><a href="#subscriptionperiod">SubscriptionPeriod</a></code>       | The <a href="#product">Product</a> subscription group identifier.         |
 | **`introductoryPrice`**           | <code><a href="#skproductdiscount">SKProductDiscount</a> \| null</code> | The <a href="#product">Product</a> introductory Price.                   |
 | **`discounts`**                   | <code>SKProductDiscount[]</code>                                        | The <a href="#product">Product</a> discounts list.                       |
 
