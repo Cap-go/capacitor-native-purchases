@@ -317,7 +317,13 @@ export interface Transaction {
    * @platform ios Present for auto-renewable subscriptions (iOS 15+)
    * @platform android Not available
    */
-  readonly subscriptionState?: 'subscribed' | 'expired' | 'revoked' | 'inGracePeriod' | 'inBillingRetryPeriod' | 'unknown';
+  readonly subscriptionState?:
+    | 'subscribed'
+    | 'expired'
+    | 'revoked'
+    | 'inGracePeriod'
+    | 'inBillingRetryPeriod'
+    | 'unknown';
   /**
    * Purchase state of the transaction (numeric string value).
    *
