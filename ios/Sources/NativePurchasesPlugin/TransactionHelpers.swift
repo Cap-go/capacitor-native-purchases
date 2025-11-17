@@ -45,8 +45,6 @@ internal class TransactionHelpers {
 
         if #available(iOS 17.0, *) {
             response["transactionReason"] = transaction.reason.descriptionString
-        } else {
-            response["transactionReason"] = transaction.reasonStringRepresentation.lowercased()
         }
 
         // Add ownership type (purchased or familyShared)
