@@ -164,6 +164,17 @@ export interface Transaction {
    */
   readonly receipt?: string;
   /**
+   * StoreKit 2 JSON Web Signature (JWS) payload describing the verified transaction.
+   *
+   * Send this to your backend when using Apple's App Store Server API v2 instead of raw receipts.
+   * Only available when the transaction originated from StoreKit 2 APIs (e.g. Transaction.updates).
+   *
+   * @since 7.13.2
+   * @platform ios Present for StoreKit 2 transactions (iOS 15+)
+   * @platform android Not available
+   */
+  readonly jwsRepresentation?: string;
+  /**
    * An optional obfuscated identifier that uniquely associates the transaction with a user account in your app.
    *
    * PURPOSE:
@@ -212,6 +223,17 @@ export interface Transaction {
    */
   readonly purchaseDate: string;
   /**
+   * Indicates whether this transaction is the result of a subscription upgrade.
+   *
+   * Useful for understanding when StoreKit generated the transaction because
+   * the customer moved from a lower tier to a higher tier plan.
+   *
+   * @since 7.13.2
+   * @platform ios Present for auto-renewable subscriptions (iOS 15+)
+   * @platform android Not available
+   */
+  readonly isUpgraded?: boolean;
+  /**
    * Original purchase date of the transaction in ISO 8601 format.
    *
    * For subscription renewals, this shows the date of the original subscription purchase,
@@ -245,6 +267,29 @@ export interface Transaction {
    */
   readonly isActive?: boolean;
   /**
+   * Date the transaction was revoked/refunded, in ISO 8601 format.
+   *
+   * Present when Apple revokes access due to an issue (e.g., refund or developer issue).
+   *
+   * @since 7.13.2
+   * @platform ios Present for revoked transactions (iOS 15+)
+   * @platform android Not available
+   */
+  readonly revocationDate?: string;
+  /**
+   * Reason why Apple revoked the transaction.
+   *
+   * Possible values:
+   * - `"developerIssue"`: Developer-initiated refund or issue
+   * - `"other"`: Apple-initiated (customer refund, billing problem, etc.)
+   * - `"unknown"`: StoreKit didn't report a specific reason
+   *
+   * @since 7.13.2
+   * @platform ios Present for revoked transactions (iOS 15+)
+   * @platform android Not available
+   */
+  readonly revocationReason?: 'developerIssue' | 'other' | 'unknown';
+  /**
    * Whether the subscription will be cancelled at the end of the billing cycle.
    *
    * - `true`: User has cancelled but subscription remains active until expiration
@@ -257,6 +302,22 @@ export interface Transaction {
    * @platform android Always null (use Google Play Developer API for cancellation status)
    */
   readonly willCancel: boolean | null;
+  /**
+   * Current subscription state reported by StoreKit.
+   *
+   * Possible values:
+   * - `"subscribed"`: Auto-renewing and in good standing
+   * - `"expired"`: Lapsed with no access
+   * - `"revoked"`: Access removed due to refund or issue
+   * - `"inGracePeriod"`: Payment issue but still in grace access window
+   * - `"inBillingRetryPeriod"`: StoreKit retrying failed billing
+   * - `"unknown"`: StoreKit did not report a state
+   *
+   * @since 7.13.2
+   * @platform ios Present for auto-renewable subscriptions (iOS 15+)
+   * @platform android Not available
+   */
+  readonly subscriptionState?: 'subscribed' | 'expired' | 'revoked' | 'inGracePeriod' | 'inBillingRetryPeriod' | 'unknown';
   /**
    * Purchase state of the transaction (numeric string value).
    *
@@ -360,6 +421,18 @@ export interface Transaction {
    * @platform android Not available
    */
   readonly environment?: 'Sandbox' | 'Production' | 'Xcode';
+  /**
+   * Reason StoreKit generated the transaction.
+   *
+   * - `"purchase"`: Initial purchase that user made manually
+   * - `"renewal"`: Automatically generated renewal for an auto-renewable subscription
+   * - `"unknown"`: StoreKit did not return a reason
+   *
+   * @since 7.13.2
+   * @platform ios Present on iOS 17.0+ (StoreKit 2 transactions)
+   * @platform android Not available
+   */
+  readonly transactionReason?: 'purchase' | 'renewal' | 'unknown';
   /**
    * Whether the transaction is in a trial period.
    *
