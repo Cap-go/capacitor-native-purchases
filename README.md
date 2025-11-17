@@ -1429,6 +1429,7 @@ This approach balances immediate user gratification with proper server-side vali
 * [`getPurchases(...)`](#getpurchases)
 * [`manageSubscriptions()`](#managesubscriptions)
 * [`addListener('transactionUpdated', ...)`](#addlistenertransactionupdated-)
+* [`addListener('transactionVerificationFailed', ...)`](#addlistenertransactionverificationfailed-)
 * [`removeAllListeners()`](#removealllisteners)
 * [Interfaces](#interfaces)
 * [Enums](#enums)
@@ -1583,6 +1584,26 @@ iOS only.
 --------------------
 
 
+### addListener('transactionVerificationFailed', ...)
+
+```typescript
+addListener(eventName: 'transactionVerificationFailed', listenerFunc: (payload: TransactionVerificationFailedEvent) => void) => Promise<PluginListenerHandle>
+```
+
+Listen for StoreKit transaction verification failures delivered by Apple's <a href="#transaction">Transaction</a>.updates.
+Fires when the verification result is unverified.
+iOS only.
+
+| Param              | Type                                                                                                                    |
+| ------------------ | ----------------------------------------------------------------------------------------------------------------------- |
+| **`eventName`**    | <code>'transactionVerificationFailed'</code>                                                                            |
+| **`listenerFunc`** | <code>(payload: <a href="#transactionverificationfailedevent">TransactionVerificationFailedEvent</a>) =&gt; void</code> |
+
+**Returns:** <code>Promise&lt;<a href="#pluginlistenerhandle">PluginListenerHandle</a>&gt;</code>
+
+--------------------
+
+
 ### removeAllListeners()
 
 ```typescript
@@ -1669,6 +1690,14 @@ Remove all registered listeners
 | Prop         | Type                                      |
 | ------------ | ----------------------------------------- |
 | **`remove`** | <code>() =&gt; Promise&lt;void&gt;</code> |
+
+
+#### TransactionVerificationFailedEvent
+
+| Prop                | Type                | Description                                                 | Since  |
+| ------------------- | ------------------- | ----------------------------------------------------------- | ------ |
+| **`transactionId`** | <code>string</code> | Identifier of the transaction that failed verification.     | 7.13.2 |
+| **`error`**         | <code>string</code> | Localized error message describing why verification failed. | 7.13.2 |
 
 
 ### Enums

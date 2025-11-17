@@ -400,6 +400,25 @@ export interface Transaction {
   readonly isInGracePeriod?: boolean;
 }
 
+export interface TransactionVerificationFailedEvent {
+  /**
+   * Identifier of the transaction that failed verification.
+   *
+   * @since 7.13.2
+   * @platform ios Present when StoreKit reports an unverified transaction
+   * @platform android Not available
+   */
+  readonly transactionId: string;
+  /**
+   * Localized error message describing why verification failed.
+   *
+   * @since 7.13.2
+   * @platform ios Always present
+   * @platform android Not available
+   */
+  readonly error: string;
+}
+
 export interface SubscriptionPeriod {
   /**
    * The Subscription Period number of unit.
@@ -603,6 +622,15 @@ export interface NativePurchasesPlugin {
   addListener(
     eventName: 'transactionUpdated',
     listenerFunc: (transaction: Transaction) => void,
+  ): Promise<PluginListenerHandle>;
+  /**
+   * Listen for StoreKit transaction verification failures delivered by Apple's Transaction.updates.
+   * Fires when the verification result is unverified.
+   * iOS only.
+   */
+  addListener(
+    eventName: 'transactionVerificationFailed',
+    listenerFunc: (payload: TransactionVerificationFailedEvent) => void,
   ): Promise<PluginListenerHandle>;
 
   /** Remove all registered listeners */
