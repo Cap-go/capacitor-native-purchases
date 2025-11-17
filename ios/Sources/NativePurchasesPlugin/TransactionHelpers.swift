@@ -86,7 +86,7 @@ internal class TransactionHelpers {
         return response
     }
 
-    static func getReceiptData() -> String? {
+  static func getReceiptData() -> String? {
         guard let appStoreReceiptURL = Bundle.main.appStoreReceiptURL,
               FileManager.default.fileExists(atPath: appStoreReceiptURL.path),
               let receiptData = try? Data(contentsOf: appStoreReceiptURL) else {
@@ -234,4 +234,3 @@ private extension Product.SubscriptionInfo.RenewalState {
         }
     }
 }
-£
