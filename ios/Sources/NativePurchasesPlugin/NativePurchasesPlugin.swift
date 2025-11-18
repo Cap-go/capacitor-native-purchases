@@ -50,19 +50,12 @@ public class NativePurchasesPlugin: CAPPlugin, CAPBridgedPlugin {
         // Ensure only one listener is running
         cancelTransactionUpdatesListener()
         let task = Task.detached { [weak self] in
-            // Create a single ISO8601DateFormatter once per Task to avoid repeated allocations
-            let dateFormatter = ISO8601DateFormatter()
-
             for await result in Transaction.updates {
                 guard !Task.isCancelled else { break }
-                do {
-                    guard case .verified(let transaction) = result else {
-                        // Ignore/unverified transactions; nothing to finish
-                        continue
-                    }
-
+                switch result {
+                case .verified(let transaction):
                     // Build payload similar to purchase response
-                    let payload = await TransactionHelpers.buildTransactionResponse(from: transaction, alwaysIncludeWillCancel: true)
+                    let payload = await TransactionHelpers.buildTransactionResponse(from: transaction, jwsRepresentation: result.jwsRepresentation, alwaysIncludeWillCancel: true)
 
                     // Finish the transaction to avoid blocking future purchases
                     await transaction.finish()
@@ -71,6 +64,13 @@ public class NativePurchasesPlugin: CAPPlugin, CAPBridgedPlugin {
                     try? await Task.sleep(nanoseconds: 500_000_000) // 0.5s delay
                     await MainActor.run {
                         self?.notifyListeners("transactionUpdated", data: payload)
+                    }
+                case .unverified(let transaction, let error):
+                    await MainActor.run {
+                        self?.notifyListeners("transactionVerificationFailed", data: [
+                            "transactionId": String(transaction.id),
+                            "error": error.localizedDescription
+                        ])
                     }
                 }
             }
@@ -104,7 +104,7 @@ public class NativePurchasesPlugin: CAPPlugin, CAPBridgedPlugin {
                 return
             }
 
-            Task {
+            Task { @MainActor in
                 do {
                     let products = try await Product.products(for: [productIdentifier])
                     guard let product = products.first else {
@@ -112,11 +112,11 @@ public class NativePurchasesPlugin: CAPPlugin, CAPBridgedPlugin {
                         return
                     }
 
-                    let purchaseOptions = buildPurchaseOptions(quantity: quantity, appAccountToken: appAccountToken)
+                    let purchaseOptions = self.buildPurchaseOptions(quantity: quantity, appAccountToken: appAccountToken)
                     let result = try await product.purchase(options: purchaseOptions)
                     print("purchaseProduct result \(result)")
 
-                    await handlePurchaseResult(result, call: call)
+                    await self.handlePurchaseResult(result, call: call)
                 } catch {
                     print(error)
                     call.reject(error.localizedDescription)
@@ -141,14 +141,18 @@ public class NativePurchasesPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     @available(iOS 15.0, *)
+    @MainActor
     private func handlePurchaseResult(_ result: Product.PurchaseResult, call: CAPPluginCall) async {
         switch result {
-        case let .success(.verified(transaction)):
-            let response = await TransactionHelpers.buildTransactionResponse(from: transaction)
-            await transaction.finish()
-            call.resolve(response)
-        case let .success(.unverified(_, error)):
-            call.reject(error.localizedDescription)
+        case let .success(verificationResult):
+            switch verificationResult {
+            case .verified(let transaction):
+                let response = await TransactionHelpers.buildTransactionResponse(from: transaction, jwsRepresentation: verificationResult.jwsRepresentation)
+                await transaction.finish()
+                call.resolve(response)
+            case .unverified(_, let error):
+                call.reject(error.localizedDescription)
+            }
         case .pending:
             call.reject("Transaction pending")
         case .userCancelled:
@@ -161,16 +165,18 @@ public class NativePurchasesPlugin: CAPPlugin, CAPBridgedPlugin {
     @objc func restorePurchases(_ call: CAPPluginCall) {
         if #available(iOS 15.0, *) {
             print("restorePurchases")
-            DispatchQueue.global().async {
-                Task {
-                    do {
-                        try await AppStore.sync()
-                        // make finish() calls for all transactions and consume all consumables
-                        for transaction in SKPaymentQueue.default().transactions {
-                            SKPaymentQueue.default().finishTransaction(transaction)
-                        }
+            Task {
+                do {
+                    try await AppStore.sync()
+                    // make finish() calls for all transactions and consume all consumables
+                    for transaction in SKPaymentQueue.default().transactions {
+                        SKPaymentQueue.default().finishTransaction(transaction)
+                    }
+                    await MainActor.run {
                         call.resolve()
-                    } catch {
+                    }
+                } catch {
+                    await MainActor.run {
                         call.reject(error.localizedDescription)
                     }
                 }
@@ -185,17 +191,19 @@ public class NativePurchasesPlugin: CAPPlugin, CAPBridgedPlugin {
         if #available(iOS 15.0, *) {
             let productIdentifiers = call.getArray("productIdentifiers", String.self) ?? []
             print("productIdentifiers \(productIdentifiers)")
-            DispatchQueue.global().async {
-                Task {
-                    do {
-                        let products = try await Product.products(for: productIdentifiers)
-                        print("products \(products)")
-                        let productsJson: [[String: Any]] = products.map { $0.dictionary }
+            Task {
+                do {
+                    let products = try await Product.products(for: productIdentifiers)
+                    print("products \(products)")
+                    let productsJson: [[String: Any]] = products.map { $0.dictionary }
+                    await MainActor.run {
                         call.resolve([
                             "products": productsJson
                         ])
-                    } catch {
-                        print("error \(error)")
+                    }
+                } catch {
+                    print("error \(error)")
+                    await MainActor.run {
                         call.reject(error.localizedDescription)
                     }
                 }
@@ -215,19 +223,23 @@ public class NativePurchasesPlugin: CAPPlugin, CAPBridgedPlugin {
                 return
             }
 
-            DispatchQueue.global().async {
-                Task {
-                    do {
-                        let products = try await Product.products(for: [productIdentifier])
-                        print("products \(products)")
-                        if let product = products.first {
-                            let productJson = product.dictionary
+            Task {
+                do {
+                    let products = try await Product.products(for: [productIdentifier])
+                    print("products \(products)")
+                    if let product = products.first {
+                        let productJson = product.dictionary
+                        await MainActor.run {
                             call.resolve(["product": productJson])
-                        } else {
+                        }
+                    } else {
+                        await MainActor.run {
                             call.reject("Product not found")
                         }
-                    } catch {
-                        print(error)
+                    }
+                } catch {
+                    print(error)
+                    await MainActor.run {
                         call.reject(error.localizedDescription)
                     }
                 }
@@ -242,15 +254,10 @@ public class NativePurchasesPlugin: CAPPlugin, CAPBridgedPlugin {
         let appAccountTokenFilter = call.getString("appAccountToken")
         if #available(iOS 15.0, *) {
             print("getPurchases")
-            DispatchQueue.global().async {
-                Task {
-                    do {
-                        let allPurchases = await TransactionHelpers.collectAllPurchases(appAccountTokenFilter: appAccountTokenFilter)
-                        call.resolve(["purchases": allPurchases])
-                    } catch {
-                        print("getPurchases error: \(error)")
-                        call.reject(error.localizedDescription)
-                    }
+            Task {
+                let allPurchases = await TransactionHelpers.collectAllPurchases(appAccountTokenFilter: appAccountTokenFilter)
+                await MainActor.run {
+                    call.resolve(["purchases": allPurchases])
                 }
             }
         } else {

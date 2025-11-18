@@ -11,7 +11,7 @@ import StoreKit
 @available(iOS 15.0, *)
 internal class TransactionHelpers {
 
-    static func buildTransactionResponse(from transaction: Transaction, alwaysIncludeWillCancel: Bool = false) async -> [String: Any] {
+    static func buildTransactionResponse(from transaction: Transaction, jwsRepresentation: String? = nil, alwaysIncludeWillCancel: Bool = false) async -> [String: Any] {
         var response: [String: Any] = ["transactionId": String(transaction.id)]
 
         // Always include willCancel key with NSNull() default if requested (for transaction listener)
@@ -19,15 +19,33 @@ internal class TransactionHelpers {
             response["willCancel"] = NSNull()
         }
 
-        // Get receipt data
+        // Get receipt data (may not exist in Xcode/sandbox testing)
         if let receiptBase64 = getReceiptData() {
             response["receipt"] = receiptBase64
+        }
+
+        // Add StoreKit 2 JWS representation (always available when passed from VerificationResult)
+        if let jws = jwsRepresentation {
+            response["jwsRepresentation"] = jws
         }
 
         // Add detailed transaction information
         response["productIdentifier"] = transaction.productID
         response["purchaseDate"] = ISO8601DateFormatter().string(from: transaction.purchaseDate)
         response["productType"] = transaction.productType == .autoRenewable ? "subs" : "inapp"
+        response["isUpgraded"] = transaction.isUpgraded
+
+        if let revocationDate = transaction.revocationDate {
+            response["revocationDate"] = ISO8601DateFormatter().string(from: revocationDate)
+        }
+
+        if let revocationReason = transaction.revocationReason {
+            response["revocationReason"] = revocationReason.descriptionString
+        }
+
+        if #available(iOS 17.0, *) {
+            response["transactionReason"] = transaction.reason.descriptionString
+        }
 
         // Add ownership type (purchased or familyShared)
         switch transaction.ownershipType {
@@ -66,7 +84,7 @@ internal class TransactionHelpers {
         return response
     }
 
-    static func getReceiptData() -> String? {
+  static func getReceiptData() -> String? {
         guard let appStoreReceiptURL = Bundle.main.appStoreReceiptURL,
               FileManager.default.fileExists(atPath: appStoreReceiptURL.path),
               let receiptData = try? Data(contentsOf: appStoreReceiptURL) else {
@@ -89,6 +107,8 @@ internal class TransactionHelpers {
             response["willCancel"] = NSNull()
             return
         }
+
+        response["subscriptionState"] = subscriptionStatus.state.descriptionString
 
         if subscriptionStatus.state == .subscribed {
             let renewalInfo = subscriptionStatus.renewalInfo
@@ -123,20 +143,30 @@ internal class TransactionHelpers {
 
     static func collectCurrentEntitlements(appAccountTokenFilter: String?, into allPurchases: inout [[String: Any]]) async {
         for await result in Transaction.currentEntitlements {
-            guard case .verified(let transaction) = result else { continue }
+            guard case .verified(let transaction) = result else {
+                if case .unverified(_, let error) = result {
+                    print("Skipping unverified entitlement: \(error.localizedDescription)")
+                }
+                continue
+            }
 
             if shouldFilterTransaction(transaction, filter: appAccountTokenFilter) {
                 continue
             }
 
-            let purchaseData = await buildTransactionResponse(from: transaction)
+            let purchaseData = await buildTransactionResponse(from: transaction, jwsRepresentation: result.jwsRepresentation)
             allPurchases.append(purchaseData)
         }
     }
 
     static func collectAllTransactions(appAccountTokenFilter: String?, into allPurchases: inout [[String: Any]]) async {
         for await result in Transaction.all {
-            guard case .verified(let transaction) = result else { continue }
+            guard case .verified(let transaction) = result else {
+                if case .unverified(_, let error) = result {
+                    print("Skipping unverified transaction: \(error.localizedDescription)")
+                }
+                continue
+            }
 
             if shouldFilterTransaction(transaction, filter: appAccountTokenFilter) {
                 continue
@@ -148,9 +178,57 @@ internal class TransactionHelpers {
             }
 
             if !alreadyExists {
-                let purchaseData = await buildTransactionResponse(from: transaction)
+                let purchaseData = await buildTransactionResponse(from: transaction, jwsRepresentation: result.jwsRepresentation)
                 allPurchases.append(purchaseData)
             }
+        }
+    }
+}
+
+@available(iOS 15.0, *)
+private extension Transaction.RevocationReason {
+    var descriptionString: String {
+        switch self {
+        case .developerIssue:
+            return "developerIssue"
+        case .other:
+            return "other"
+        default:
+            return "unknown"
+        }
+    }
+}
+
+@available(iOS 17.0, *)
+private extension Transaction.Reason {
+    var descriptionString: String {
+        switch self {
+        case .purchase:
+            return "purchase"
+        case .renewal:
+            return "renewal"
+        default:
+            return "unknown"
+        }
+    }
+}
+
+@available(iOS 15.0, *)
+private extension Product.SubscriptionInfo.RenewalState {
+    var descriptionString: String {
+        switch self {
+        case .subscribed:
+            return "subscribed"
+        case .expired:
+            return "expired"
+        case .revoked:
+            return "revoked"
+        case .inGracePeriod:
+            return "inGracePeriod"
+        case .inBillingRetryPeriod:
+            return "inBillingRetryPeriod"
+        default:
+            return "unknown"
         }
     }
 }

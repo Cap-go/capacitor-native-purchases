@@ -47,6 +47,24 @@ const actions = [
       return await plugin.getProducts({ productIdentifiers });
     },
   },
+  {
+    id: 'get-purchases',
+    label: 'Get purchases',
+    description: 'Retrieves all known transactions/entitlements (optionally filtered by appAccountToken).',
+    inputs: [
+      {
+        name: 'appAccountToken',
+        label: 'App account token (optional)',
+        type: 'text',
+        placeholder: 'UUID string',
+      },
+    ],
+    run: async (values) => {
+      const token = values.appAccountToken?.trim();
+      const payload = token ? { appAccountToken: token } : {};
+      return await plugin.getPurchases(payload);
+    },
+  },
 ];
 
 const actionSelect = document.getElementById('action-select');
@@ -54,6 +72,21 @@ const formContainer = document.getElementById('action-form');
 const descriptionBox = document.getElementById('action-description');
 const runButton = document.getElementById('run-action');
 const output = document.getElementById('plugin-output');
+const eventLog = document.getElementById('event-log');
+
+function appendEventLog(eventName, payload) {
+  if (!eventLog) {
+    return;
+  }
+  const timestamp = new Date().toISOString();
+  let entry = `[${timestamp}] ${eventName}`;
+  if (payload !== undefined) {
+    entry += `\n${JSON.stringify(payload, null, 2)}`;
+  }
+  const previous =
+    !eventLog.textContent || eventLog.textContent === 'Listeners not registered yet.' ? '' : eventLog.textContent;
+  eventLog.textContent = previous ? `${entry}\n\n${previous}` : entry;
+}
 
 function buildForm(action) {
   formContainer.innerHTML = '';
@@ -199,4 +232,26 @@ runButton.addEventListener('click', async () => {
   }
 });
 
+async function setupTransactionListeners() {
+  try {
+    const updatedListener = await plugin.addListener('transactionUpdated', (payload) => {
+      appendEventLog('transactionUpdated', payload);
+    });
+    const failedListener = await plugin.addListener('transactionVerificationFailed', (payload) => {
+      appendEventLog('transactionVerificationFailed', payload);
+    });
+
+    window.addEventListener('beforeunload', () => {
+      updatedListener.remove();
+      failedListener.remove();
+    });
+
+    appendEventLog('Transaction listeners registered');
+  } catch (error) {
+    appendEventLog('listenerRegistrationFailed', { message: error?.message ?? String(error) });
+    console.error('Failed to register transaction listeners', error);
+  }
+}
+
+setupTransactionListeners();
 populateActions();
