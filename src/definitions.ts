@@ -619,7 +619,9 @@ export interface NativePurchasesPlugin {
    *                                  SECURITY: DO NOT use PII like emails in cleartext - use UUID or hashed value.
    *                                  RECOMMENDED: Use UUID v5 with deterministic generation for cross-platform compatibility.
    * @param options.isConsumable - Only Android, when true the purchase token is consumed after granting entitlement (for consumable in-app items). Defaults to false.
-   * @param options.autoAcknowledgePurchases - Only Android, when false the purchase will NOT be automatically acknowledged. You must manually call acknowledgePurchase() within 3 days or the purchase will be refunded. Defaults to true.
+   * @param options.autoAcknowledgePurchases - When false, the purchase/transaction will NOT be automatically acknowledged/finished. You must manually call acknowledgePurchase() or the purchase may be refunded. Defaults to true.
+   *                                           - **Android**: Must acknowledge within 3 days or Google Play will refund
+   *                                           - **iOS**: Unfinished transactions remain in the queue and may block future purchases
    */
   purchaseProduct(options: {
     productIdentifier: string;
@@ -697,29 +699,42 @@ export interface NativePurchasesPlugin {
   manageSubscriptions(): Promise<void>;
 
   /**
-   * Manually acknowledge a purchase on Android.
+   * Manually acknowledge/finish a purchase transaction.
    *
    * This method is only needed when you set `autoAcknowledgePurchases: false` in purchaseProduct().
-   * Purchases MUST be acknowledged within 3 days or they will be automatically refunded by Google Play.
+   *
+   * **Platform Behavior:**
+   * - **Android**: Acknowledges the purchase with Google Play. Must be called within 3 days or the purchase will be refunded.
+   * - **iOS**: Finishes the transaction with StoreKit 2. Unfinished transactions remain in the queue and may block future purchases.
    *
    * **Acknowledgment Options:**
-   * 1. **Client-side (this method)**: Call from your app after validation
-   * 2. **Server-side (recommended for security)**: Use Google Play Developer API v3
-   *    - Endpoint: POST https://androidpublisher.googleapis.com/androidpublisher/v3/applications/{packageName}/purchases/products/{productId}/tokens/{token}:acknowledge
-   *    - Requires OAuth 2.0 authentication with appropriate scopes
-   *    - See: https://developers.google.com/android-publisher/api-ref/rest/v3/purchases.products/acknowledge
    *
-   * When to use manual acknowledgment:
+   * **1. Client-side (this method)**: Call from your app after validation
+   * ```typescript
+   * await NativePurchases.acknowledgePurchase({
+   *   purchaseToken: transaction.purchaseToken  // Android: purchaseToken, iOS: transactionId
+   * });
+   * ```
+   *
+   * **2. Server-side (Android only, recommended for security)**: Use Google Play Developer API v3
+   * - Endpoint: `POST https://androidpublisher.googleapis.com/androidpublisher/v3/applications/{packageName}/purchases/products/{productId}/tokens/{token}:acknowledge`
+   * - Requires OAuth 2.0 authentication with appropriate scopes
+   * - See: https://developers.google.com/android-publisher/api-ref/rest/v3/purchases.products/acknowledge
+   * - For subscriptions: Use `/purchases/subscriptions/{subscriptionId}/tokens/{token}:acknowledge` instead
+   * - Note: iOS has no server-side finish API
+   *
+   * **When to use manual acknowledgment:**
    * - Server-side validation: Verify the purchase with your backend before acknowledging
    * - Entitlement delivery: Ensure user receives content/features before acknowledging
    * - Multi-step workflows: Complete all steps before final acknowledgment
-   * - Security: Prevent client-side manipulation by handling acknowledgment server-side
+   * - Security: Prevent client-side manipulation by handling acknowledgment server-side (Android only)
    *
    * @param options - The purchase to acknowledge
-   * @param options.purchaseToken - The purchase token from the Transaction object (Android)
-   * @returns {Promise<void>} Promise that resolves when the purchase is acknowledged
-   * @throws An error if acknowledgment fails
-   * @platform android Only available on Android (iOS automatically finishes transactions)
+   * @param options.purchaseToken - The purchase token (Android) or transaction ID as string (iOS) from the Transaction object
+   * @returns {Promise<void>} Promise that resolves when the purchase is acknowledged/finished
+   * @throws An error if acknowledgment/finishing fails or transaction not found
+   * @platform android Acknowledges the purchase with Google Play
+   * @platform ios Finishes the transaction with StoreKit 2
    * @since 7.14.0
    *
    * @example

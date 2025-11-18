@@ -99,11 +99,14 @@ public class NativePurchasesPlugin: CAPPlugin, CAPBridgedPlugin {
             let productIdentifier = call.getString("productIdentifier", "")
             let quantity = call.getInt("quantity", 1)
             let appAccountToken = call.getString("appAccountToken")
+            let autoAcknowledge = call.getBool("autoAcknowledgePurchases") ?? true
 
             if productIdentifier.isEmpty {
                 call.reject("productIdentifier is Empty, give an id")
                 return
             }
+
+            print("Auto-acknowledge enabled: \(autoAcknowledge)")
 
             Task { @MainActor in
                 do {
@@ -117,7 +120,7 @@ public class NativePurchasesPlugin: CAPPlugin, CAPBridgedPlugin {
                     let result = try await product.purchase(options: purchaseOptions)
                     print("purchaseProduct result \(result)")
 
-                    await self.handlePurchaseResult(result, call: call)
+                    await self.handlePurchaseResult(result, call: call, autoFinish: autoAcknowledge)
                 } catch {
                     print(error)
                     call.reject(error.localizedDescription)
@@ -143,13 +146,23 @@ public class NativePurchasesPlugin: CAPPlugin, CAPBridgedPlugin {
 
     @available(iOS 15.0, *)
     @MainActor
-    private func handlePurchaseResult(_ result: Product.PurchaseResult, call: CAPPluginCall) async {
+    private func handlePurchaseResult(_ result: Product.PurchaseResult, call: CAPPluginCall, autoFinish: Bool) async {
         switch result {
         case let .success(verificationResult):
             switch verificationResult {
             case .verified(let transaction):
                 let response = await TransactionHelpers.buildTransactionResponse(from: transaction, jwsRepresentation: verificationResult.jwsRepresentation)
-                await transaction.finish()
+
+                if autoFinish {
+                    print("Auto-finishing transaction: \(transaction.id)")
+                    await transaction.finish()
+                } else {
+                    print("Manual finish required for transaction: \(transaction.id)")
+                    print("Transaction will remain unfinished until acknowledgePurchase() is called")
+                    // Don't finish - transaction remains in StoreKit's queue
+                    // Can be retrieved later via Transaction.all
+                }
+
                 call.resolve(response)
             case .unverified(_, let error):
                 call.reject(error.localizedDescription)
@@ -292,10 +305,58 @@ public class NativePurchasesPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     @objc func acknowledgePurchase(_ call: CAPPluginCall) {
-        print("acknowledgePurchase called on iOS - not needed, iOS automatically finishes transactions")
-        // iOS automatically finishes transactions through StoreKit 2
-        // This method is provided for API compatibility but does nothing on iOS
-        call.resolve()
+        if #available(iOS 15.0, *) {
+            print("acknowledgePurchase called on iOS")
+
+            guard let purchaseToken = call.getString("purchaseToken") else {
+                call.reject("purchaseToken is required")
+                return
+            }
+
+            // On iOS, purchaseToken is the transactionId (UInt64 as string)
+            guard let transactionId = UInt64(purchaseToken) else {
+                call.reject("Invalid purchaseToken format")
+                return
+            }
+
+            Task {
+                // Search for the transaction in StoreKit's unfinished transactions
+                // This works even after app restart because StoreKit persists them
+                var foundTransaction: Transaction?
+
+                for await verificationResult in Transaction.all {
+                    switch verificationResult {
+                    case .verified(let transaction):
+                        if transaction.id == transactionId {
+                            foundTransaction = transaction
+                            break
+                        }
+                    case .unverified:
+                        continue
+                    }
+                    if foundTransaction != nil {
+                        break
+                    }
+                }
+
+                guard let transaction = foundTransaction else {
+                    await MainActor.run {
+                        call.reject("Transaction not found or already finished. Transaction ID: \(transactionId)")
+                    }
+                    return
+                }
+
+                print("Manually finishing transaction: \(transaction.id)")
+                await transaction.finish()
+
+                await MainActor.run {
+                    print("Transaction finished successfully")
+                    call.resolve()
+                }
+            }
+        } else {
+            call.reject("Not implemented under iOS 15")
+        }
     }
 
 }

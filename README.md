@@ -1571,23 +1571,35 @@ This allows users to view, modify, or cancel their subscriptions.
 acknowledgePurchase(options: { purchaseToken: string; }) => Promise<void>
 ```
 
-Manually acknowledge a purchase on Android.
+Manually acknowledge/finish a purchase transaction.
 
 This method is only needed when you set `autoAcknowledgePurchases: false` in purchaseProduct().
-Purchases MUST be acknowledged within 3 days or they will be automatically refunded by Google Play.
+
+**Platform Behavior:**
+- **Android**: Acknowledges the purchase with Google Play. Must be called within 3 days or the purchase will be refunded.
+- **iOS**: Finishes the transaction with StoreKit 2. Unfinished transactions remain in the queue and may block future purchases.
 
 **Acknowledgment Options:**
-1. **Client-side (this method)**: Call from your app after validation
-2. **Server-side (recommended for security)**: Use Google Play Developer API v3
-   - Endpoint: POST https://androidpublisher.googleapis.com/androidpublisher/v3/applications/{packageName}/purchases/products/{productId}/tokens/{token}:acknowledge
-   - Requires OAuth 2.0 authentication with appropriate scopes
-   - See: https://developers.google.com/android-publisher/api-ref/rest/v3/purchases.products/acknowledge
 
-When to use manual acknowledgment:
+**1. Client-side (this method)**: Call from your app after validation
+```typescript
+await NativePurchases.acknowledgePurchase({
+  purchaseToken: transaction.purchaseToken  // Android: purchaseToken, iOS: transactionId
+});
+```
+
+**2. Server-side (Android only, recommended for security)**: Use Google Play Developer API v3
+- Endpoint: `POST https://androidpublisher.googleapis.com/androidpublisher/v3/applications/{packageName}/purchases/products/{productId}/tokens/{token}:acknowledge`
+- Requires OAuth 2.0 authentication with appropriate scopes
+- See: https://developers.google.com/android-publisher/api-ref/rest/v3/purchases.products/acknowledge
+- For subscriptions: Use `/purchases/subscriptions/{subscriptionId}/tokens/{token}:acknowledge` instead
+- Note: iOS has no server-side finish API
+
+**When to use manual acknowledgment:**
 - Server-side validation: Verify the purchase with your backend before acknowledging
 - Entitlement delivery: Ensure user receives content/features before acknowledging
 - Multi-step workflows: Complete all steps before final acknowledgment
-- Security: Prevent client-side manipulation by handling acknowledgment server-side
+- Security: Prevent client-side manipulation by handling acknowledgment server-side (Android only)
 
 | Param         | Type                                    | Description                   |
 | ------------- | --------------------------------------- | ----------------------------- |
