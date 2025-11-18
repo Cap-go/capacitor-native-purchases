@@ -41,4 +41,8 @@ export class NativePurchasesWeb extends WebPlugin implements NativePurchasesPlug
   async manageSubscriptions(): Promise<void> {
     console.error('manageSubscriptions only mocked in web');
   }
+
+  async acknowledgePurchase(_options: { purchaseToken: string }): Promise<void> {
+    console.error('acknowledgePurchase only mocked in web');
+  }
 }

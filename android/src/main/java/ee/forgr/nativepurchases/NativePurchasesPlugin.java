@@ -121,6 +121,9 @@ public class NativePurchasesPlugin extends Plugin {
         if (purchase.getPurchaseState() == Purchase.PurchaseState.PURCHASED) {
             Log.d(TAG, "Purchase state is PURCHASED");
             boolean isConsumable = purchaseCall != null && purchaseCall.getBoolean("isConsumable", false);
+            boolean autoAcknowledge = purchaseCall != null ? purchaseCall.getBoolean("autoAcknowledgePurchases", true) : true;
+            Log.d(TAG, "Auto-acknowledge enabled: " + autoAcknowledge);
+
             PurchaseAction action = PurchaseActionDecider.decide(isConsumable, purchase);
 
             AccountIdentifiers accountIdentifiers = purchase.getAccountIdentifiers();
@@ -134,8 +137,12 @@ public class NativePurchasesPlugin extends Plugin {
                     billingClient.consumeAsync(consumeParams, this::onConsumeResponse);
                     break;
                 case ACKNOWLEDGE:
-                    Log.d(TAG, "Purchase not acknowledged, acknowledging...");
-                    acknowledgePurchase(purchase.getPurchaseToken());
+                    if (autoAcknowledge) {
+                        Log.d(TAG, "Purchase not acknowledged, auto-acknowledging...");
+                        acknowledgePurchase(purchase.getPurchaseToken());
+                    } else {
+                        Log.d(TAG, "Purchase not acknowledged, but auto-acknowledge is disabled. Developer must manually acknowledge.");
+                    }
                     break;
                 case NONE:
                 default:
@@ -316,6 +323,7 @@ public class NativePurchasesPlugin extends Plugin {
         String appAccountToken = call.getString("appAccountToken");
         final String accountIdentifier = appAccountToken != null && !appAccountToken.isEmpty() ? appAccountToken : null;
         boolean isConsumable = call.getBoolean("isConsumable", false);
+        boolean autoAcknowledgePurchases = call.getBoolean("autoAcknowledgePurchases", true);
 
         Log.d(TAG, "Product identifier: " + productIdentifier);
         Log.d(TAG, "Plan identifier: " + planIdentifier);
@@ -323,6 +331,7 @@ public class NativePurchasesPlugin extends Plugin {
         Log.d(TAG, "Quantity: " + quantity);
         Log.d(TAG, "Account identifier provided: " + (accountIdentifier != null ? "[REDACTED]" : "none"));
         Log.d(TAG, "Is consumable: " + isConsumable);
+        Log.d(TAG, "Auto-acknowledge purchases: " + autoAcknowledgePurchases);
 
         // cannot use quantity, because it's done in native modal
         Log.d("CapacitorPurchases", "purchaseProduct: " + productIdentifier);
@@ -357,6 +366,7 @@ public class NativePurchasesPlugin extends Plugin {
         }
 
         call.getData().put("isConsumable", isConsumable);
+        call.getData().put("autoAcknowledgePurchases", autoAcknowledgePurchases);
 
         // For subscriptions, always use the productIdentifier (subscription ID) to query
         // The planIdentifier is used later when setting the offer token
@@ -954,6 +964,52 @@ public class NativePurchasesPlugin extends Plugin {
         } catch (Exception e) {
             Log.d(TAG, "manageSubscriptions() error: " + e.getMessage());
             call.reject("Failed to open subscription management page", e);
+        }
+    }
+
+    @PluginMethod
+    public void acknowledgePurchase(PluginCall call) {
+        Log.d(TAG, "acknowledgePurchase() called");
+        String purchaseToken = call.getString("purchaseToken");
+
+        if (purchaseToken == null || purchaseToken.isEmpty()) {
+            Log.d(TAG, "Error: purchaseToken is empty");
+            call.reject("purchaseToken is required");
+            return;
+        }
+
+        Log.d(TAG, "Manually acknowledging purchase with token: " + purchaseToken);
+        this.initBillingClient(null);
+
+        try {
+            AcknowledgePurchaseParams acknowledgePurchaseParams = AcknowledgePurchaseParams.newBuilder()
+                .setPurchaseToken(purchaseToken)
+                .build();
+
+            billingClient.acknowledgePurchase(
+                acknowledgePurchaseParams,
+                new AcknowledgePurchaseResponseListener() {
+                    @Override
+                    public void onAcknowledgePurchaseResponse(@NonNull BillingResult billingResult) {
+                        Log.d(TAG, "onAcknowledgePurchaseResponse() called");
+                        Log.d(TAG, "Acknowledge result: " + billingResult.getResponseCode() + " - " + billingResult.getDebugMessage());
+
+                        if (billingResult.getResponseCode() == BillingClient.BillingResponseCode.OK) {
+                            Log.d(TAG, "Purchase acknowledged successfully");
+                            closeBillingClient();
+                            call.resolve();
+                        } else {
+                            Log.d(TAG, "Purchase acknowledgment failed");
+                            closeBillingClient();
+                            call.reject("Failed to acknowledge purchase: " + billingResult.getDebugMessage());
+                        }
+                    }
+                }
+            );
+        } catch (Exception e) {
+            Log.d(TAG, "Exception during acknowledgePurchase: " + e.getMessage());
+            closeBillingClient();
+            call.reject(e.getMessage());
         }
     }
 }

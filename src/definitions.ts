@@ -366,11 +366,12 @@ export interface Transaction {
    * Whether the purchase has been acknowledged.
    *
    * Purchases must be acknowledged within 3 days or they will be refunded.
-   * This plugin automatically acknowledges purchases.
+   * By default, this plugin automatically acknowledges purchases unless you set
+   * `autoAcknowledgePurchases: false` in purchaseProduct().
    *
    * @since 1.0.0
    * @platform ios Not available
-   * @platform android Always present (should be true after successful purchase)
+   * @platform android Always present (should be true after successful purchase or manual acknowledgment)
    */
   readonly isAcknowledged?: boolean;
   /**
@@ -618,6 +619,7 @@ export interface NativePurchasesPlugin {
    *                                  SECURITY: DO NOT use PII like emails in cleartext - use UUID or hashed value.
    *                                  RECOMMENDED: Use UUID v5 with deterministic generation for cross-platform compatibility.
    * @param options.isConsumable - Only Android, when true the purchase token is consumed after granting entitlement (for consumable in-app items). Defaults to false.
+   * @param options.autoAcknowledgePurchases - Only Android, when false the purchase will NOT be automatically acknowledged. You must manually call acknowledgePurchase() within 3 days or the purchase will be refunded. Defaults to true.
    */
   purchaseProduct(options: {
     productIdentifier: string;
@@ -626,6 +628,7 @@ export interface NativePurchasesPlugin {
     quantity?: number;
     appAccountToken?: string;
     isConsumable?: boolean;
+    autoAcknowledgePurchases?: boolean;
   }): Promise<Transaction>;
 
   /**
@@ -692,6 +695,59 @@ export interface NativePurchasesPlugin {
    * @since 7.10.0
    */
   manageSubscriptions(): Promise<void>;
+
+  /**
+   * Manually acknowledge a purchase on Android.
+   *
+   * This method is only needed when you set `autoAcknowledgePurchases: false` in purchaseProduct().
+   * Purchases MUST be acknowledged within 3 days or they will be automatically refunded by Google Play.
+   *
+   * **Acknowledgment Options:**
+   * 1. **Client-side (this method)**: Call from your app after validation
+   * 2. **Server-side (recommended for security)**: Use Google Play Developer API v3
+   *    - Endpoint: POST https://androidpublisher.googleapis.com/androidpublisher/v3/applications/{packageName}/purchases/products/{productId}/tokens/{token}:acknowledge
+   *    - Requires OAuth 2.0 authentication with appropriate scopes
+   *    - See: https://developers.google.com/android-publisher/api-ref/rest/v3/purchases.products/acknowledge
+   *
+   * When to use manual acknowledgment:
+   * - Server-side validation: Verify the purchase with your backend before acknowledging
+   * - Entitlement delivery: Ensure user receives content/features before acknowledging
+   * - Multi-step workflows: Complete all steps before final acknowledgment
+   * - Security: Prevent client-side manipulation by handling acknowledgment server-side
+   *
+   * @param options - The purchase to acknowledge
+   * @param options.purchaseToken - The purchase token from the Transaction object (Android)
+   * @returns {Promise<void>} Promise that resolves when the purchase is acknowledged
+   * @throws An error if acknowledgment fails
+   * @platform android Only available on Android (iOS automatically finishes transactions)
+   * @since 7.14.0
+   *
+   * @example
+   * ```typescript
+   * // Client-side acknowledgment
+   * const transaction = await NativePurchases.purchaseProduct({
+   *   productIdentifier: 'premium_feature',
+   *   autoAcknowledgePurchases: false
+   * });
+   *
+   * // Validate with your backend
+   * const isValid = await fetch('/api/validate-purchase', {
+   *   method: 'POST',
+   *   body: JSON.stringify({ purchaseToken: transaction.purchaseToken })
+   * });
+   *
+   * if (isValid) {
+   *   // Option 1: Acknowledge from client
+   *   await NativePurchases.acknowledgePurchase({
+   *     purchaseToken: transaction.purchaseToken
+   *   });
+   *
+   *   // Option 2: Or let your backend acknowledge via Google Play API
+   *   // Your backend calls Google Play Developer API
+   * }
+   * ```
+   */
+  acknowledgePurchase(options: { purchaseToken: string }): Promise<void>;
 
   /**
    * Listen for StoreKit transaction updates delivered by Apple's Transaction.updates.

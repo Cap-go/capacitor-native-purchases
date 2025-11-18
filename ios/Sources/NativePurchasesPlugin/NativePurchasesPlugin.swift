@@ -18,7 +18,8 @@ public class NativePurchasesPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "getProduct", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "getPluginVersion", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "getPurchases", returnType: CAPPluginReturnPromise),
-        CAPPluginMethod(name: "manageSubscriptions", returnType: CAPPluginReturnPromise)
+        CAPPluginMethod(name: "manageSubscriptions", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "acknowledgePurchase", returnType: CAPPluginReturnPromise)
     ]
 
     private let pluginVersion: String = "7.13.5"
@@ -288,6 +289,13 @@ public class NativePurchasesPlugin: CAPPlugin, CAPBridgedPlugin {
             print("Not implemented under iOS 15")
             call.reject("Not implemented under iOS 15")
         }
+    }
+
+    @objc func acknowledgePurchase(_ call: CAPPluginCall) {
+        print("acknowledgePurchase called on iOS - not needed, iOS automatically finishes transactions")
+        // iOS automatically finishes transactions through StoreKit 2
+        // This method is provided for API compatibility but does nothing on iOS
+        call.resolve()
     }
 
 }
