@@ -22,7 +22,7 @@ public class NativePurchasesPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "acknowledgePurchase", returnType: CAPPluginReturnPromise)
     ]
 
-    private let pluginVersion: String = "7.13.5"
+    private let pluginVersion: String = "7.14.0"
     private var transactionUpdatesTask: Task<Void, Never>?
 
     @objc func getPluginVersion(_ call: CAPPluginCall) {
