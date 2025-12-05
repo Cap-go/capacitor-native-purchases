@@ -499,6 +499,82 @@ export interface TransactionVerificationFailedEvent {
   readonly error: string;
 }
 
+/**
+ * Represents the App Transaction information from StoreKit 2.
+ * This provides details about when the user originally downloaded or purchased the app,
+ * which is useful for determining if users are entitled to features from earlier business models.
+ *
+ * @see https://developer.apple.com/documentation/storekit/supporting-business-model-changes-by-using-the-app-transaction
+ * @since 7.16.0
+ */
+export interface AppTransaction {
+  /**
+   * The app version that the user originally purchased or downloaded.
+   *
+   * Use this to determine if users who originally downloaded an earlier version
+   * should be entitled to features that were previously free or included.
+   *
+   * For iOS: This is the `CFBundleShortVersionString` (e.g., "1.0.0")
+   * For Android: This is the `versionName` from Google Play (e.g., "1.0.0")
+   *
+   * @example "1.0.0"
+   * @since 7.16.0
+   * @platform ios Always present (iOS 16+)
+   * @platform android Always present
+   */
+  readonly originalAppVersion: string;
+
+  /**
+   * The date when the user originally purchased or downloaded the app.
+   * ISO 8601 format.
+   *
+   * @example "2023-06-15T10:30:00Z"
+   * @since 7.16.0
+   * @platform ios Always present (iOS 16+)
+   * @platform android Always present
+   */
+  readonly originalPurchaseDate: string;
+
+  /**
+   * The bundle identifier of the app.
+   *
+   * @example "com.example.myapp"
+   * @since 7.16.0
+   * @platform ios Always present (iOS 16+)
+   * @platform android Always present (package name)
+   */
+  readonly bundleId: string;
+
+  /**
+   * The current app version installed on the device.
+   *
+   * @example "2.0.0"
+   * @since 7.16.0
+   * @platform ios Always present
+   * @platform android Always present
+   */
+  readonly appVersion: string;
+
+  /**
+   * The server environment where the app was originally purchased.
+   *
+   * @since 7.16.0
+   * @platform ios Present (iOS 16+)
+   * @platform android Not available (always null)
+   */
+  readonly environment?: 'Sandbox' | 'Production' | 'Xcode' | null;
+
+  /**
+   * The JWS (JSON Web Signature) representation of the app transaction.
+   * Can be sent to your backend for server-side verification.
+   *
+   * @since 7.16.0
+   * @platform ios Present (iOS 16+)
+   * @platform android Not available
+   */
+  readonly jwsRepresentation?: string;
+}
+
 export interface SubscriptionPeriod {
   /**
    * The Subscription Period number of unit.
@@ -603,6 +679,77 @@ export interface NativePurchasesPlugin {
    * Restores a user's previous  and links their appUserIDs to any user's also using those .
    */
   restorePurchases(): Promise<void>;
+
+  /**
+   * Gets the App Transaction information, which provides details about when the user
+   * originally downloaded or purchased the app.
+   *
+   * This is useful for implementing business model changes where you want to
+   * grandfather users who originally downloaded an earlier version of the app.
+   *
+   * **Use Case Example:**
+   * If your app was originally free but you're adding a subscription, you can use
+   * `originalAppVersion` to check if users downloaded before the subscription was added
+   * and give them free access.
+   *
+   * **Platform Notes:**
+   * - **iOS**: Requires iOS 16.0+. Uses StoreKit 2's `AppTransaction.shared`.
+   * - **Android**: Uses Google Play's install referrer data when available.
+   *
+   * @returns {Promise<{ appTransaction: AppTransaction }>} The app transaction info
+   * @throws An error if the app transaction cannot be retrieved (iOS 15 or earlier)
+   * @since 7.16.0
+   *
+   * @example
+   * ```typescript
+   * const { appTransaction } = await NativePurchases.getAppTransaction();
+   *
+   * // Check if user downloaded before version 2.0.0 (when subscription was added)
+   * if (compareVersions(appTransaction.originalAppVersion, '2.0.0') < 0) {
+   *   // User gets free access - they downloaded before subscriptions
+   *   grantFreeAccess();
+   * }
+   * ```
+   *
+   * @see https://developer.apple.com/documentation/storekit/supporting-business-model-changes-by-using-the-app-transaction
+   */
+  getAppTransaction(): Promise<{ appTransaction: AppTransaction }>;
+
+  /**
+   * Compares the original app version from the App Transaction against a target version
+   * to determine if the user is entitled to features from an earlier business model.
+   *
+   * This is a utility method that performs the version comparison natively, which can be
+   * more reliable than JavaScript-based comparison for semantic versioning.
+   *
+   * **Use Case:**
+   * Check if the user's original download version is older than a specific version
+   * to determine if they should be grandfathered into free features.
+   *
+   * @param options - The comparison options
+   * @param options.targetVersion - The version to compare against (e.g., "2.0.0")
+   * @returns {Promise<{ isOlderVersion: boolean; originalAppVersion: string }>}
+   *          - `isOlderVersion`: true if the user's original version is older than targetVersion
+   *          - `originalAppVersion`: The user's original app version for reference
+   * @throws An error if the app transaction cannot be retrieved
+   * @since 7.16.0
+   *
+   * @example
+   * ```typescript
+   * // Check if user downloaded before version 2.0.0 (when subscription was added)
+   * const result = await NativePurchases.isEntitledToOldBusinessModel({
+   *   targetVersion: '2.0.0'
+   * });
+   *
+   * if (result.isOlderVersion) {
+   *   console.log(`User downloaded v${result.originalAppVersion}, granting free access`);
+   *   grantFreeAccess();
+   * }
+   * ```
+   */
+  isEntitledToOldBusinessModel(options: {
+    targetVersion: string;
+  }): Promise<{ isOlderVersion: boolean; originalAppVersion: string }>;
 
   /**
    * Started purchase process for the given product.

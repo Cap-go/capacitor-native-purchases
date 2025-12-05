@@ -1421,6 +1421,8 @@ This approach balances immediate user gratification with proper server-side vali
 <docgen-index>
 
 * [`restorePurchases()`](#restorepurchases)
+* [`getAppTransaction()`](#getapptransaction)
+* [`isEntitledToOldBusinessModel(...)`](#isentitledtooldbusinessmodel)
 * [`purchaseProduct(...)`](#purchaseproduct)
 * [`getProducts(...)`](#getproducts)
 * [`getProduct(...)`](#getproduct)
@@ -1447,6 +1449,61 @@ restorePurchases() => Promise<void>
 ```
 
 Restores a user's previous  and links their appUserIDs to any user's also using those .
+
+--------------------
+
+
+### getAppTransaction()
+
+```typescript
+getAppTransaction() => Promise<{ appTransaction: AppTransaction; }>
+```
+
+Gets the App <a href="#transaction">Transaction</a> information, which provides details about when the user
+originally downloaded or purchased the app.
+
+This is useful for implementing business model changes where you want to
+grandfather users who originally downloaded an earlier version of the app.
+
+**Use Case Example:**
+If your app was originally free but you're adding a subscription, you can use
+`originalAppVersion` to check if users downloaded before the subscription was added
+and give them free access.
+
+**Platform Notes:**
+- **iOS**: Requires iOS 16.0+. Uses StoreKit 2's <a href="#apptransaction">`AppTransaction</a>.shared`.
+- **Android**: Uses Google Play's install referrer data when available.
+
+**Returns:** <code>Promise&lt;{ appTransaction: <a href="#apptransaction">AppTransaction</a>; }&gt;</code>
+
+**Since:** 7.16.0
+
+--------------------
+
+
+### isEntitledToOldBusinessModel(...)
+
+```typescript
+isEntitledToOldBusinessModel(options: { targetVersion: string; }) => Promise<{ isOlderVersion: boolean; originalAppVersion: string; }>
+```
+
+Compares the original app version from the App <a href="#transaction">Transaction</a> against a target version
+to determine if the user is entitled to features from an earlier business model.
+
+This is a utility method that performs the version comparison natively, which can be
+more reliable than JavaScript-based comparison for semantic versioning.
+
+**Use Case:**
+Check if the user's original download version is older than a specific version
+to determine if they should be grandfathered into free features.
+
+| Param         | Type                                    | Description              |
+| ------------- | --------------------------------------- | ------------------------ |
+| **`options`** | <code>{ targetVersion: string; }</code> | - The comparison options |
+
+**Returns:** <code>Promise&lt;{ isOlderVersion: boolean; originalAppVersion: string; }&gt;</code>
+
+**Since:** 7.16.0
 
 --------------------
 
@@ -1662,6 +1719,22 @@ Remove all registered listeners
 
 
 ### Interfaces
+
+
+#### AppTransaction
+
+Represents the App <a href="#transaction">Transaction</a> information from StoreKit 2.
+This provides details about when the user originally downloaded or purchased the app,
+which is useful for determining if users are entitled to features from earlier business models.
+
+| Prop                       | Type                                                      | Description                                                                                                                                                                                                                                                                                                                                                   | Since  |
+| -------------------------- | --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
+| **`originalAppVersion`**   | <code>string</code>                                       | The app version that the user originally purchased or downloaded. Use this to determine if users who originally downloaded an earlier version should be entitled to features that were previously free or included. For iOS: This is the `CFBundleShortVersionString` (e.g., "1.0.0") For Android: This is the `versionName` from Google Play (e.g., "1.0.0") | 7.16.0 |
+| **`originalPurchaseDate`** | <code>string</code>                                       | The date when the user originally purchased or downloaded the app. ISO 8601 format.                                                                                                                                                                                                                                                                           | 7.16.0 |
+| **`bundleId`**             | <code>string</code>                                       | The bundle identifier of the app.                                                                                                                                                                                                                                                                                                                             | 7.16.0 |
+| **`appVersion`**           | <code>string</code>                                       | The current app version installed on the device.                                                                                                                                                                                                                                                                                                              | 7.16.0 |
+| **`environment`**          | <code>'Sandbox' \| 'Production' \| 'Xcode' \| null</code> | The server environment where the app was originally purchased.                                                                                                                                                                                                                                                                                                | 7.16.0 |
+| **`jwsRepresentation`**    | <code>string</code>                                       | The JWS (JSON Web Signature) representation of the app transaction. Can be sent to your backend for server-side verification.                                                                                                                                                                                                                                 | 7.16.0 |
 
 
 #### Transaction

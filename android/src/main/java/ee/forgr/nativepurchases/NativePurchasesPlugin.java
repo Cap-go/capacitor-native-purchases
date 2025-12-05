@@ -1,5 +1,8 @@
 package ee.forgr.nativepurchases;
 
+import android.content.pm.PackageInfo;
+import android.content.pm.PackageManager;
+import android.os.Build;
 import android.util.Log;
 import androidx.annotation.NonNull;
 import com.android.billingclient.api.AccountIdentifiers;
@@ -1011,5 +1014,153 @@ public class NativePurchasesPlugin extends Plugin {
             closeBillingClient();
             call.reject(e.getMessage());
         }
+    }
+
+    @PluginMethod
+    public void getAppTransaction(PluginCall call) {
+        Log.d(TAG, "getAppTransaction() called");
+        try {
+            PackageManager pm = getContext().getPackageManager();
+            String packageName = getContext().getPackageName();
+
+            PackageInfo packageInfo;
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                packageInfo = pm.getPackageInfo(packageName, PackageManager.PackageInfoFlags.of(0));
+            } else {
+                packageInfo = pm.getPackageInfo(packageName, 0);
+            }
+
+            JSObject appTransaction = new JSObject();
+
+            // Get version name (e.g., "1.0.0")
+            String versionName = packageInfo.versionName != null ? packageInfo.versionName : "1.0.0";
+            appTransaction.put("appVersion", versionName);
+
+            // For Android, we can't get the "original" version when the user first downloaded
+            // from Google Play like iOS can. The firstInstallTime is per-device, not per-account.
+            // We use firstInstallTime date and current version as "original" which is the best we can do.
+            // For accurate original version tracking, developers should implement server-side tracking
+            // using Google Play Developer API or their own backend.
+            appTransaction.put("originalAppVersion", versionName);
+
+            // First install time on this device (milliseconds since epoch)
+            long firstInstallTime = packageInfo.firstInstallTime;
+            String originalPurchaseDate = new java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", java.util.Locale.US).format(
+                new java.util.Date(firstInstallTime)
+            );
+            appTransaction.put("originalPurchaseDate", originalPurchaseDate);
+
+            // Package name (bundle ID equivalent)
+            appTransaction.put("bundleId", packageName);
+
+            // Android doesn't have environment like iOS (Sandbox/Production)
+            appTransaction.put("environment", null);
+
+            // Android doesn't have JWS representation
+            // jwsRepresentation is not set (will be undefined in JS)
+
+            Log.d(TAG, "App transaction - version: " + versionName + ", firstInstall: " + originalPurchaseDate);
+
+            JSObject result = new JSObject();
+            result.put("appTransaction", appTransaction);
+            call.resolve(result);
+        } catch (PackageManager.NameNotFoundException e) {
+            Log.d(TAG, "getAppTransaction() error: " + e.getMessage());
+            call.reject("Failed to get package info: " + e.getMessage());
+        } catch (Exception e) {
+            Log.d(TAG, "getAppTransaction() error: " + e.getMessage());
+            call.reject("Failed to get app transaction: " + e.getMessage());
+        }
+    }
+
+    @PluginMethod
+    public void isEntitledToOldBusinessModel(PluginCall call) {
+        Log.d(TAG, "isEntitledToOldBusinessModel() called");
+        String targetVersion = call.getString("targetVersion");
+
+        if (targetVersion == null || targetVersion.isEmpty()) {
+            Log.d(TAG, "Error: targetVersion is empty");
+            call.reject("targetVersion is required");
+            return;
+        }
+
+        try {
+            PackageManager pm = getContext().getPackageManager();
+            String packageName = getContext().getPackageName();
+
+            PackageInfo packageInfo;
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                packageInfo = pm.getPackageInfo(packageName, PackageManager.PackageInfoFlags.of(0));
+            } else {
+                packageInfo = pm.getPackageInfo(packageName, 0);
+            }
+
+            // Get current version name as "original" version
+            // Note: On Android, we can't get the actual original version from Google Play
+            // This uses the current installed version which may not be accurate
+            String originalVersion = packageInfo.versionName != null ? packageInfo.versionName : "1.0.0";
+
+            // Compare versions
+            boolean isOlder = compareVersions(originalVersion, targetVersion) < 0;
+
+            Log.d(
+                TAG,
+                "isEntitledToOldBusinessModel - original: " + originalVersion + ", target: " + targetVersion + ", isOlder: " + isOlder
+            );
+
+            JSObject result = new JSObject();
+            result.put("isOlderVersion", isOlder);
+            result.put("originalAppVersion", originalVersion);
+            call.resolve(result);
+        } catch (PackageManager.NameNotFoundException e) {
+            Log.d(TAG, "isEntitledToOldBusinessModel() error: " + e.getMessage());
+            call.reject("Failed to get package info: " + e.getMessage());
+        } catch (Exception e) {
+            Log.d(TAG, "isEntitledToOldBusinessModel() error: " + e.getMessage());
+            call.reject("Failed to check business model entitlement: " + e.getMessage());
+        }
+    }
+
+    /**
+     * Compares two semantic version strings.
+     * Returns: negative if v1 < v2, zero if v1 == v2, positive if v1 > v2
+     */
+    private int compareVersions(String version1, String version2) {
+        String[] v1Parts = version1.split("\\.");
+        String[] v2Parts = version2.split("\\.");
+
+        int maxLength = Math.max(v1Parts.length, v2Parts.length);
+
+        for (int i = 0; i < maxLength; i++) {
+            int v1Value = 0;
+            int v2Value = 0;
+
+            if (i < v1Parts.length) {
+                try {
+                    // Handle versions with non-numeric suffixes like "1.0.0-beta"
+                    String v1Part = v1Parts[i].replaceAll("[^0-9].*", "");
+                    v1Value = v1Part.isEmpty() ? 0 : Integer.parseInt(v1Part);
+                } catch (NumberFormatException e) {
+                    v1Value = 0;
+                }
+            }
+
+            if (i < v2Parts.length) {
+                try {
+                    String v2Part = v2Parts[i].replaceAll("[^0-9].*", "");
+                    v2Value = v2Part.isEmpty() ? 0 : Integer.parseInt(v2Part);
+                } catch (NumberFormatException e) {
+                    v2Value = 0;
+                }
+            }
+
+            if (v1Value < v2Value) {
+                return -1;
+            } else if (v1Value > v2Value) {
+                return 1;
+            }
+        }
+
+        return 0;
     }
 }

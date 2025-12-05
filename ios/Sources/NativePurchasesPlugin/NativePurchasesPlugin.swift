@@ -19,7 +19,9 @@ public class NativePurchasesPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "getPluginVersion", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "getPurchases", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "manageSubscriptions", returnType: CAPPluginReturnPromise),
-        CAPPluginMethod(name: "acknowledgePurchase", returnType: CAPPluginReturnPromise)
+        CAPPluginMethod(name: "acknowledgePurchase", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "getAppTransaction", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "isEntitledToOldBusinessModel", returnType: CAPPluginReturnPromise)
     ]
 
     private let pluginVersion: String = "7.15.5"
@@ -357,6 +359,120 @@ public class NativePurchasesPlugin: CAPPlugin, CAPBridgedPlugin {
         } else {
             call.reject("Not implemented under iOS 15")
         }
+    }
+
+    @objc func getAppTransaction(_ call: CAPPluginCall) {
+        if #available(iOS 16.0, *) {
+            print("getAppTransaction called on iOS")
+            Task { @MainActor in
+                do {
+                    let verificationResult = try await AppTransaction.shared
+                    switch verificationResult {
+                    case .verified(let appTransaction):
+                        var response: [String: Any] = [:]
+
+                        // originalAppVersion is the CFBundleShortVersionString at the time of original download
+                        response["originalAppVersion"] = appTransaction.originalAppVersion
+
+                        // Original purchase date
+                        response["originalPurchaseDate"] = ISO8601DateFormatter().string(from: appTransaction.originalPurchaseDate)
+
+                        // Bundle ID
+                        response["bundleId"] = appTransaction.bundleID
+
+                        // Current app version
+                        response["appVersion"] = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? ""
+
+                        // Environment
+                        switch appTransaction.environment {
+                        case .sandbox:
+                            response["environment"] = "Sandbox"
+                        case .production:
+                            response["environment"] = "Production"
+                        case .xcode:
+                            response["environment"] = "Xcode"
+                        default:
+                            response["environment"] = "Production"
+                        }
+
+                        // JWS representation for server-side verification
+                        response["jwsRepresentation"] = verificationResult.jwsRepresentation
+
+                        call.resolve(["appTransaction": response])
+
+                    case .unverified(_, let error):
+                        call.reject("App transaction verification failed: \(error.localizedDescription)")
+                    }
+                } catch {
+                    print("getAppTransaction error: \(error)")
+                    call.reject("Failed to get app transaction: \(error.localizedDescription)")
+                }
+            }
+        } else {
+            print("getAppTransaction not implemented under iOS 16")
+            call.reject("App Transaction requires iOS 16.0 or later")
+        }
+    }
+
+    @objc func isEntitledToOldBusinessModel(_ call: CAPPluginCall) {
+        guard let targetVersion = call.getString("targetVersion"), !targetVersion.isEmpty else {
+            call.reject("targetVersion is required")
+            return
+        }
+
+        if #available(iOS 16.0, *) {
+            print("isEntitledToOldBusinessModel called with targetVersion: \(targetVersion)")
+            Task { @MainActor in
+                do {
+                    let verificationResult = try await AppTransaction.shared
+                    switch verificationResult {
+                    case .verified(let appTransaction):
+                        let originalVersion = appTransaction.originalAppVersion
+
+                        // Compare versions using semantic versioning
+                        let isOlder = self.compareVersions(originalVersion, targetVersion) < 0
+
+                        call.resolve([
+                            "isOlderVersion": isOlder,
+                            "originalAppVersion": originalVersion
+                        ])
+
+                    case .unverified(_, let error):
+                        call.reject("App transaction verification failed: \(error.localizedDescription)")
+                    }
+                } catch {
+                    print("isEntitledToOldBusinessModel error: \(error)")
+                    call.reject("Failed to get app transaction: \(error.localizedDescription)")
+                }
+            }
+        } else {
+            print("isEntitledToOldBusinessModel not implemented under iOS 16")
+            call.reject("App Transaction requires iOS 16.0 or later")
+        }
+    }
+
+    // MARK: - Version Comparison Helper
+
+    /// Compares two semantic version strings.
+    /// Returns: negative if v1 < v2, zero if v1 == v2, positive if v1 > v2
+    private func compareVersions(_ version1: String, _ version2: String) -> Int {
+        let v1Components = version1.split(separator: ".").compactMap { Int($0) }
+        let v2Components = version2.split(separator: ".").compactMap { Int($0) }
+
+        let maxLength = max(v1Components.count, v2Components.count)
+
+        for i in 0..<maxLength {
+            let v1Value = i < v1Components.count ? v1Components[i] : 0
+            let v2Value = i < v2Components.count ? v2Components[i] : 0
+
+            if v1Value < v2Value {
+                return -1
+            } else if v1Value > v2Value {
+                return 1
+            }
+        }
+
+        return 0
     }
 
 }

@@ -1,6 +1,6 @@
 import { WebPlugin } from '@capacitor/core';
 
-import type { NativePurchasesPlugin, Product, PURCHASE_TYPE, Transaction } from './definitions';
+import type { AppTransaction, NativePurchasesPlugin, Product, PURCHASE_TYPE, Transaction } from './definitions';
 
 export class NativePurchasesWeb extends WebPlugin implements NativePurchasesPlugin {
   async restorePurchases(): Promise<void> {
@@ -44,5 +44,28 @@ export class NativePurchasesWeb extends WebPlugin implements NativePurchasesPlug
 
   async acknowledgePurchase(_options: { purchaseToken: string }): Promise<void> {
     console.error('acknowledgePurchase only mocked in web');
+  }
+
+  async getAppTransaction(): Promise<{ appTransaction: AppTransaction }> {
+    console.error('getAppTransaction only mocked in web');
+    return {
+      appTransaction: {
+        originalAppVersion: '1.0.0',
+        originalPurchaseDate: new Date().toISOString(),
+        bundleId: 'com.example.app',
+        appVersion: '1.0.0',
+        environment: null,
+      },
+    };
+  }
+
+  async isEntitledToOldBusinessModel(_options: {
+    targetVersion: string;
+  }): Promise<{ isOlderVersion: boolean; originalAppVersion: string }> {
+    console.error('isEntitledToOldBusinessModel only mocked in web');
+    return {
+      isOlderVersion: false,
+      originalAppVersion: '1.0.0',
+    };
   }
 }
