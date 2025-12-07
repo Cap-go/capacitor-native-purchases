@@ -60,7 +60,8 @@ export class NativePurchasesWeb extends WebPlugin implements NativePurchasesPlug
   }
 
   async isEntitledToOldBusinessModel(_options: {
-    targetVersion: string;
+    targetVersion?: string;
+    targetBuildNumber?: string;
   }): Promise<{ isOlderVersion: boolean; originalAppVersion: string }> {
     console.error('isEntitledToOldBusinessModel only mocked in web');
     return {

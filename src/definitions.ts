@@ -726,19 +726,25 @@ export interface NativePurchasesPlugin {
    * Check if the user's original download version is older than a specific version
    * to determine if they should be grandfathered into free features.
    *
+   * **Platform Differences:**
+   * - iOS: Uses build number (CFBundleVersion) from AppTransaction. Requires iOS 16+.
+   * - Android: Uses version name from PackageInfo (current installed version, not original).
+   *
    * @param options - The comparison options
-   * @param options.targetVersion - The version to compare against (e.g., "2.0.0")
+   * @param options.targetVersion - The Android version name to compare against (e.g., "2.0.0"). Used on Android only.
+   * @param options.targetBuildNumber - The iOS build number to compare against (e.g., "42"). Used on iOS only.
    * @returns {Promise<{ isOlderVersion: boolean; originalAppVersion: string }>}
-   *          - `isOlderVersion`: true if the user's original version is older than targetVersion
-   *          - `originalAppVersion`: The user's original app version for reference
+   *          - `isOlderVersion`: true if the user's original version is older than target
+   *          - `originalAppVersion`: The user's original app version/build number for reference
    * @throws An error if the app transaction cannot be retrieved
    * @since 7.16.0
    *
    * @example
    * ```typescript
-   * // Check if user downloaded before version 2.0.0 (when subscription was added)
+   * // Check if user downloaded before version 2.0.0/build 42 (when subscription was added)
    * const result = await NativePurchases.isEntitledToOldBusinessModel({
-   *   targetVersion: '2.0.0'
+   *   targetVersion: '2.0.0',
+   *   targetBuildNumber: '42'
    * });
    *
    * if (result.isOlderVersion) {
@@ -748,7 +754,8 @@ export interface NativePurchasesPlugin {
    * ```
    */
   isEntitledToOldBusinessModel(options: {
-    targetVersion: string;
+    targetVersion?: string;
+    targetBuildNumber?: string;
   }): Promise<{ isOlderVersion: boolean; originalAppVersion: string }>;
 
   /**
