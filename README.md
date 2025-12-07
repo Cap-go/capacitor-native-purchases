@@ -1484,7 +1484,7 @@ and give them free access.
 ### isEntitledToOldBusinessModel(...)
 
 ```typescript
-isEntitledToOldBusinessModel(options: { targetVersion: string; }) => Promise<{ isOlderVersion: boolean; originalAppVersion: string; }>
+isEntitledToOldBusinessModel(options: { targetVersion?: string; targetBuildNumber?: string; }) => Promise<{ isOlderVersion: boolean; originalAppVersion: string; }>
 ```
 
 Compares the original app version from the App <a href="#transaction">Transaction</a> against a target version
@@ -1497,9 +1497,13 @@ more reliable than JavaScript-based comparison for semantic versioning.
 Check if the user's original download version is older than a specific version
 to determine if they should be grandfathered into free features.
 
-| Param         | Type                                    | Description              |
-| ------------- | --------------------------------------- | ------------------------ |
-| **`options`** | <code>{ targetVersion: string; }</code> | - The comparison options |
+**Platform Differences:**
+- iOS: Uses build number (CFBundleVersion) from <a href="#apptransaction">AppTransaction</a>. Requires iOS 16+.
+- Android: Uses version name from PackageInfo (current installed version, not original).
+
+| Param         | Type                                                                 | Description              |
+| ------------- | -------------------------------------------------------------------- | ------------------------ |
+| **`options`** | <code>{ targetVersion?: string; targetBuildNumber?: string; }</code> | - The comparison options |
 
 **Returns:** <code>Promise&lt;{ isOlderVersion: boolean; originalAppVersion: string; }&gt;</code>
 

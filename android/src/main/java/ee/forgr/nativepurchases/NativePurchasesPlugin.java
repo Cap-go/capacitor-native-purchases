@@ -1080,7 +1080,7 @@ public class NativePurchasesPlugin extends Plugin {
 
         if (targetVersion == null || targetVersion.isEmpty()) {
             Log.d(TAG, "Error: targetVersion is empty");
-            call.reject("targetVersion is required");
+            call.reject("targetVersion is required on Android");
             return;
         }
 

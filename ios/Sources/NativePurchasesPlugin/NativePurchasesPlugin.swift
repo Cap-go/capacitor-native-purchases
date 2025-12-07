@@ -371,7 +371,7 @@ public class NativePurchasesPlugin: CAPPlugin, CAPBridgedPlugin {
                     case .verified(let appTransaction):
                         var response: [String: Any] = [:]
 
-                        // originalAppVersion is the CFBundleShortVersionString at the time of original download
+                        // originalAppVersion is the CFBundleVersion (build number) at the time of original download
                         response["originalAppVersion"] = appTransaction.originalAppVersion
 
                         // Original purchase date
@@ -380,8 +380,8 @@ public class NativePurchasesPlugin: CAPPlugin, CAPBridgedPlugin {
                         // Bundle ID
                         response["bundleId"] = appTransaction.bundleID
 
-                        // Current app version
-                        response["appVersion"] = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? ""
+                        // Current app version (build number)
+                        response["appVersion"] = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? ""
 
                         // Environment
                         switch appTransaction.environment {
@@ -415,26 +415,26 @@ public class NativePurchasesPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     @objc func isEntitledToOldBusinessModel(_ call: CAPPluginCall) {
-        guard let targetVersion = call.getString("targetVersion"), !targetVersion.isEmpty else {
-            call.reject("targetVersion is required")
+        guard let targetBuildNumber = call.getString("targetBuildNumber"), !targetBuildNumber.isEmpty else {
+            call.reject("targetBuildNumber is required on iOS")
             return
         }
 
         if #available(iOS 16.0, *) {
-            print("isEntitledToOldBusinessModel called with targetVersion: \(targetVersion)")
+            print("isEntitledToOldBusinessModel called with targetBuildNumber: \(targetBuildNumber)")
             Task { @MainActor in
                 do {
                     let verificationResult = try await AppTransaction.shared
                     switch verificationResult {
                     case .verified(let appTransaction):
-                        let originalVersion = appTransaction.originalAppVersion
+                        let originalBuildNumber = appTransaction.originalAppVersion
 
-                        // Compare versions using semantic versioning
-                        let isOlder = self.compareVersions(originalVersion, targetVersion) < 0
+                        // Compare build numbers (integers)
+                        let isOlder = self.compareVersions(originalBuildNumber, targetBuildNumber) < 0
 
                         call.resolve([
                             "isOlderVersion": isOlder,
-                            "originalAppVersion": originalVersion
+                            "originalAppVersion": originalBuildNumber
                         ])
 
                     case .unverified(_, let error):
@@ -453,26 +453,12 @@ public class NativePurchasesPlugin: CAPPlugin, CAPBridgedPlugin {
 
     // MARK: - Version Comparison Helper
 
-    /// Compares two semantic version strings.
+    /// Compares two build numbers as integers.
     /// Returns: negative if v1 < v2, zero if v1 == v2, positive if v1 > v2
     private func compareVersions(_ version1: String, _ version2: String) -> Int {
-        let v1Components = version1.split(separator: ".").compactMap { Int($0) }
-        let v2Components = version2.split(separator: ".").compactMap { Int($0) }
-
-        let maxLength = max(v1Components.count, v2Components.count)
-
-        for i in 0..<maxLength {
-            let v1Value = i < v1Components.count ? v1Components[i] : 0
-            let v2Value = i < v2Components.count ? v2Components[i] : 0
-
-            if v1Value < v2Value {
-                return -1
-            } else if v1Value > v2Value {
-                return 1
-            }
-        }
-
-        return 0
+        let v1Int = Int(version1) ?? 0
+        let v2Int = Int(version2) ?? 0
+        return v1Int - v2Int
     }
 
 }
