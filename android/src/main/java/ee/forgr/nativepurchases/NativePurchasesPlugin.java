@@ -112,7 +112,7 @@ public class NativePurchasesPlugin extends Plugin {
         } else {
             Log.d(TAG, "Billing client was already null");
         }
-        
+
         // Clear pending call and error state
         if (pendingCall != null) {
             Log.w(TAG, "Warning: Clearing pending call that was never resolved/rejected");
@@ -243,11 +243,11 @@ public class NativePurchasesPlugin extends Plugin {
     private void initBillingClient(PluginCall purchaseCall) {
         Log.d(TAG, "initBillingClient() called");
         Log.d(TAG, "purchaseCall is null: " + (purchaseCall == null));
-        
+
         // Store the pending call so we can reject it if billing setup fails
         this.pendingCall = purchaseCall;
         this.lastBillingError = null;
-        
+
         semaphoreWait();
         closeBillingClient();
         semaphoreUp();
@@ -298,20 +298,21 @@ public class NativePurchasesPlugin extends Plugin {
                     } else {
                         Log.e(TAG, "Billing setup failed with code: " + billingResult.getResponseCode());
                         Log.e(TAG, "Error message: " + billingResult.getDebugMessage());
-                        
+
                         // Store the error for later use
                         lastBillingError = billingResult;
-                        
+
                         // Release the latch so the waiting thread can continue
                         semaphoreReady.countDown();
-                        
+
                         // Reject the pending call if there is one
                         if (pendingCall != null) {
                             Log.d(TAG, "Rejecting pending call due to billing setup failure");
                             String errorMessage = "Billing service unavailable";
                             switch (billingResult.getResponseCode()) {
                                 case BillingClient.BillingResponseCode.SERVICE_UNAVAILABLE:
-                                    errorMessage = "Billing service unavailable. Please check your internet connection and Google Play Services.";
+                                    errorMessage =
+                                        "Billing service unavailable. Please check your internet connection and Google Play Services.";
                                     break;
                                 case BillingClient.BillingResponseCode.BILLING_UNAVAILABLE:
                                     errorMessage = "Billing is not available on this device.";
@@ -344,13 +345,13 @@ public class NativePurchasesPlugin extends Plugin {
             Log.d(TAG, "Waiting for billing client setup to finish");
             semaphoreReady.await();
             Log.d(TAG, "Billing client setup wait completed");
-            
+
             // Check if billing setup failed
             if (lastBillingError != null) {
                 Log.e(TAG, "Billing setup failed, throwing exception");
                 throw new RuntimeException("Billing setup failed: " + lastBillingError.getDebugMessage());
             }
-            
+
             Log.d(TAG, "Billing client setup completed successfully");
         } catch (InterruptedException e) {
             Log.e(TAG, "InterruptedException while waiting for billing setup: " + e.getMessage());
@@ -505,9 +506,8 @@ public class NativePurchasesPlugin extends Plugin {
                             }
                             productDetailsParamsList.add(productDetailsParams.build());
                         }
-                        BillingFlowParams.Builder billingFlowBuilder = BillingFlowParams.newBuilder().setProductDetailsParamsList(
-                            productDetailsParamsList
-                        );
+                        BillingFlowParams.Builder billingFlowBuilder = BillingFlowParams.newBuilder()
+                            .setProductDetailsParamsList(productDetailsParamsList);
                         if (accountIdentifier != null && !accountIdentifier.isEmpty()) {
                             billingFlowBuilder.setObfuscatedAccountId(accountIdentifier);
                         }
@@ -697,7 +697,7 @@ public class NativePurchasesPlugin extends Plugin {
                             Log.d(
                                 TAG,
                                 "Formatted price: " +
-                                    selectedOfferDetails.getPricingPhases().getPricingPhaseList().get(0).getFormattedPrice()
+                                selectedOfferDetails.getPricingPhases().getPricingPhaseList().get(0).getFormattedPrice()
                             );
                             Log.d(
                                 TAG,
@@ -819,12 +819,12 @@ public class NativePurchasesPlugin extends Plugin {
                                 Log.d(
                                     TAG,
                                     "Formatted price: " +
-                                        selectedOfferDetails.getPricingPhases().getPricingPhaseList().get(0).getFormattedPrice()
+                                    selectedOfferDetails.getPricingPhases().getPricingPhaseList().get(0).getFormattedPrice()
                                 );
                                 Log.d(
                                     TAG,
                                     "Currency: " +
-                                        selectedOfferDetails.getPricingPhases().getPricingPhaseList().get(0).getPriceCurrencyCode()
+                                    selectedOfferDetails.getPricingPhases().getPricingPhaseList().get(0).getPriceCurrencyCode()
                                 );
                             }
                             product.put("isFamilyShareable", false);
