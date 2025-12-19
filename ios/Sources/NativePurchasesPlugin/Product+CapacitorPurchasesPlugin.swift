@@ -8,7 +8,6 @@
 import Foundation
 import StoreKit
 
-@available(iOS 15.0, *)
 extension Product {
 
     var dictionary: [String: Any] {

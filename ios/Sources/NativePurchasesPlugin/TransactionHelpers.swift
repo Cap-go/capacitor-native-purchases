@@ -1,87 +1,61 @@
-//
-//  TransactionHelpers.swift
-//  CapgoNativePurchases
-//
-//  Created by Martin DONADIEU
-//
-
 import Foundation
 import StoreKit
 
-@available(iOS 15.0, *)
 internal class TransactionHelpers {
 
-    static func buildTransactionResponse(from transaction: Transaction, jwsRepresentation: String? = nil, alwaysIncludeWillCancel: Bool = false) async -> [String: Any] {
+    static func buildTransactionResponse(
+        from transaction: Transaction,
+        jwsRepresentation: String? = nil,
+        alwaysIncludeWillCancel: Bool = false
+    ) async -> [String: Any] {
         var response: [String: Any] = ["transactionId": String(transaction.id)]
 
-        // Always include willCancel key with NSNull() default if requested (for transaction listener)
         if alwaysIncludeWillCancel {
             response["willCancel"] = NSNull()
         }
 
-        // Get receipt data (may not exist in Xcode/sandbox testing)
-        if let receiptBase64 = getReceiptData() {
-            response["receipt"] = receiptBase64
-        }
+        addReceiptAndJws(to: &response, jws: jwsRepresentation)
+        addTransactionDetails(to: &response, transaction: transaction)
 
-        // Add StoreKit 2 JWS representation (always available when passed from VerificationResult)
-        if let jws = jwsRepresentation {
-            response["jwsRepresentation"] = jws
-        }
-
-        // Add detailed transaction information
-        response["productIdentifier"] = transaction.productID
-        response["purchaseDate"] = ISO8601DateFormatter().string(from: transaction.purchaseDate)
-        response["productType"] = transaction.productType == .autoRenewable ? "subs" : "inapp"
-        response["isUpgraded"] = transaction.isUpgraded
-
-        if let revocationDate = transaction.revocationDate {
-            response["revocationDate"] = ISO8601DateFormatter().string(from: revocationDate)
-        }
-
-        if let revocationReason = transaction.revocationReason {
-            response["revocationReason"] = revocationReason.descriptionString
-        }
-
-        if #available(iOS 17.0, *) {
-            response["transactionReason"] = transaction.reason.descriptionString
-        }
-
-        // Add ownership type (purchased or familyShared)
-        switch transaction.ownershipType {
-        case .purchased:
-            response["ownershipType"] = "purchased"
-        case .familyShared:
-            response["ownershipType"] = "familyShared"
-        default:
-            response["ownershipType"] = "purchased"
-        }
-
-        // Add environment (Sandbox, Production, or Xcode) - iOS 16.0+
-        if #available(iOS 16.0, *) {
-            switch transaction.environment {
-            case .sandbox:
-                response["environment"] = "Sandbox"
-            case .production:
-                response["environment"] = "Production"
-            case .xcode:
-                response["environment"] = "Xcode"
-            default:
-                response["environment"] = "Production"
-            }
-        }
-
-        if let token = transaction.appAccountToken {
-            response["appAccountToken"] = token.uuidString
-        }
-
-        // Add subscription-specific information
         if transaction.productType == .autoRenewable {
             addSubscriptionInfo(to: &response, transaction: transaction)
             await addRenewalInfo(to: &response, transaction: transaction)
         }
 
         return response
+    }
+
+    private static func addReceiptAndJws(to response: inout [String: Any], jws: String?) {
+        if let receiptBase64 = getReceiptData() {
+            response["receipt"] = receiptBase64
+        }
+        if let jws = jws {
+            response["jwsRepresentation"] = jws
+        }
+    }
+
+    private static func addTransactionDetails(to response: inout [String: Any], transaction: Transaction) {
+        response["productIdentifier"] = transaction.productID
+        response["purchaseDate"] = ISO8601DateFormatter().string(from: transaction.purchaseDate)
+        response["productType"] = transaction.productType == .autoRenewable ? "subs" : "inapp"
+        response["isUpgraded"] = transaction.isUpgraded
+        response["ownershipType"] = transaction.ownershipType.descriptionString
+
+        if let revocationDate = transaction.revocationDate {
+            response["revocationDate"] = ISO8601DateFormatter().string(from: revocationDate)
+        }
+        if let revocationReason = transaction.revocationReason {
+            response["revocationReason"] = revocationReason.descriptionString
+        }
+        if #available(iOS 17.0, *) {
+            response["transactionReason"] = transaction.reason.descriptionString
+        }
+        if #available(iOS 16.0, *) {
+            response["environment"] = transaction.environment.descriptionString
+        }
+        if let token = transaction.appAccountToken {
+            response["appAccountToken"] = token.uuidString
+        }
     }
 
     static func getReceiptData() -> String? {
@@ -94,7 +68,9 @@ internal class TransactionHelpers {
     }
 
     static func addSubscriptionInfo(to response: inout [String: Any], transaction: Transaction) {
-        response["originalPurchaseDate"] = ISO8601DateFormatter().string(from: transaction.originalPurchaseDate)
+        response["originalPurchaseDate"] = ISO8601DateFormatter().string(
+            from: transaction.originalPurchaseDate
+        )
         if let expirationDate = transaction.expirationDate {
             response["expirationDate"] = ISO8601DateFormatter().string(from: expirationDate)
             response["isActive"] = expirationDate > Date()
@@ -102,8 +78,7 @@ internal class TransactionHelpers {
     }
 
     static func addRenewalInfo(to response: inout [String: Any], transaction: Transaction) async {
-        let subscriptionStatus = await transaction.subscriptionStatus
-        guard let subscriptionStatus = subscriptionStatus else {
+        guard let subscriptionStatus = await transaction.subscriptionStatus else {
             response["willCancel"] = NSNull()
             return
         }
@@ -111,11 +86,9 @@ internal class TransactionHelpers {
         response["subscriptionState"] = subscriptionStatus.state.descriptionString
 
         if subscriptionStatus.state == .subscribed {
-            let renewalInfo = subscriptionStatus.renewalInfo
-            switch renewalInfo {
-            case .verified(let value):
+            if case .verified(let value) = subscriptionStatus.renewalInfo {
                 response["willCancel"] = !value.willAutoRenew
-            case .unverified:
+            } else {
                 response["willCancel"] = NSNull()
             }
         } else {
@@ -123,78 +96,49 @@ internal class TransactionHelpers {
         }
     }
 
-    static func shouldFilterTransaction(_ transaction: Transaction, filter: String?) -> Bool {
-        guard let filter = filter else { return false }
-        let transactionAccountToken = transaction.appAccountToken?.uuidString
-        return transactionAccountToken != filter
-    }
-
     static func collectAllPurchases(appAccountTokenFilter: String?) async -> [[String: Any]] {
         var allPurchases: [[String: Any]] = []
+        var seenIds = Set<String>()
 
-        // Get all current entitlements (active subscriptions)
-        await collectCurrentEntitlements(appAccountTokenFilter: appAccountTokenFilter, into: &allPurchases)
+        for await result in Transaction.currentEntitlements {
+            guard case .verified(let transaction) = result else { continue }
+            if let filter = appAccountTokenFilter,
+               transaction.appAccountToken?.uuidString != filter { continue }
 
-        // Also get all transactions (including non-consumables and expired subscriptions)
-        await collectAllTransactions(appAccountTokenFilter: appAccountTokenFilter, into: &allPurchases)
+            let idStr = String(transaction.id)
+            seenIds.insert(idStr)
+            let data = await buildTransactionResponse(
+                from: transaction,
+                jwsRepresentation: result.jwsRepresentation
+            )
+            allPurchases.append(data)
+        }
+
+        for await result in Transaction.all {
+            guard case .verified(let transaction) = result else { continue }
+            if let filter = appAccountTokenFilter,
+               transaction.appAccountToken?.uuidString != filter { continue }
+
+            let idStr = String(transaction.id)
+            if seenIds.contains(idStr) { continue }
+
+            let data = await buildTransactionResponse(
+                from: transaction,
+                jwsRepresentation: result.jwsRepresentation
+            )
+            allPurchases.append(data)
+        }
 
         return allPurchases
     }
-
-    static func collectCurrentEntitlements(appAccountTokenFilter: String?, into allPurchases: inout [[String: Any]]) async {
-        for await result in Transaction.currentEntitlements {
-            guard case .verified(let transaction) = result else {
-                if case .unverified(_, let error) = result {
-                    print("Skipping unverified entitlement: \(error.localizedDescription)")
-                }
-                continue
-            }
-
-            if shouldFilterTransaction(transaction, filter: appAccountTokenFilter) {
-                continue
-            }
-
-            let purchaseData = await buildTransactionResponse(from: transaction, jwsRepresentation: result.jwsRepresentation)
-            allPurchases.append(purchaseData)
-        }
-    }
-
-    static func collectAllTransactions(appAccountTokenFilter: String?, into allPurchases: inout [[String: Any]]) async {
-        for await result in Transaction.all {
-            guard case .verified(let transaction) = result else {
-                if case .unverified(_, let error) = result {
-                    print("Skipping unverified transaction: \(error.localizedDescription)")
-                }
-                continue
-            }
-
-            if shouldFilterTransaction(transaction, filter: appAccountTokenFilter) {
-                continue
-            }
-
-            let transactionIdString = String(transaction.id)
-            let alreadyExists = allPurchases.contains { purchase in
-                (purchase["transactionId"] as? String) == transactionIdString
-            }
-
-            if !alreadyExists {
-                let purchaseData = await buildTransactionResponse(from: transaction, jwsRepresentation: result.jwsRepresentation)
-                allPurchases.append(purchaseData)
-            }
-        }
-    }
 }
 
-@available(iOS 15.0, *)
 private extension Transaction.RevocationReason {
     var descriptionString: String {
         switch self {
-        case .developerIssue:
-            return "developerIssue"
-        case .other:
-            return "other"
-        default:
-            return "unknown"
+        case .developerIssue: return "developerIssue"
+        case .other: return "other"
+        default: return "unknown"
         }
     }
 }
@@ -203,32 +147,44 @@ private extension Transaction.RevocationReason {
 private extension Transaction.Reason {
     var descriptionString: String {
         switch self {
-        case .purchase:
-            return "purchase"
-        case .renewal:
-            return "renewal"
-        default:
-            return "unknown"
+        case .purchase: return "purchase"
+        case .renewal: return "renewal"
+        default: return "unknown"
         }
     }
 }
 
-@available(iOS 15.0, *)
+private extension Transaction.OwnershipType {
+    var descriptionString: String {
+        switch self {
+        case .purchased: return "purchased"
+        case .familyShared: return "familyShared"
+        default: return "purchased"
+        }
+    }
+}
+
+@available(iOS 16.0, *)
+private extension AppStore.Environment {
+    var descriptionString: String {
+        switch self {
+        case .sandbox: return "Sandbox"
+        case .production: return "Production"
+        case .xcode: return "Xcode"
+        default: return "Production"
+        }
+    }
+}
+
 private extension Product.SubscriptionInfo.RenewalState {
     var descriptionString: String {
         switch self {
-        case .subscribed:
-            return "subscribed"
-        case .expired:
-            return "expired"
-        case .revoked:
-            return "revoked"
-        case .inGracePeriod:
-            return "inGracePeriod"
-        case .inBillingRetryPeriod:
-            return "inBillingRetryPeriod"
-        default:
-            return "unknown"
+        case .subscribed: return "subscribed"
+        case .expired: return "expired"
+        case .revoked: return "revoked"
+        case .inGracePeriod: return "inGracePeriod"
+        case .inBillingRetryPeriod: return "inBillingRetryPeriod"
+        default: return "unknown"
         }
     }
 }
