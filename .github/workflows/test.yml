@@ -44,15 +44,16 @@ jobs:
     steps:
       - name: Check out
         uses: actions/checkout@v6
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '20'
+      - uses: oven-sh/setup-bun@v2
       - name: Install dependencies
         id: install_code
-        run: npm install
+        run: bun i
+      - name: Lint
+        id: lint_code
+        run: bun run lint
       - name: Build
         id: build_code
-        run: npm run build
+        run: bun run build
       - name: Verify
         id: verify_code
-        run: npm run verify:web
+        run: bun run verify:web
