@@ -52,10 +52,32 @@ public class NativePurchasesPlugin extends Plugin {
     @PluginMethod
     public void isBillingSupported(PluginCall call) {
         Log.d(TAG, "isBillingSupported() called");
-        JSObject ret = new JSObject();
-        ret.put("isBillingSupported", true);
-        Log.d(TAG, "isBillingSupported() returning true");
-        call.resolve(ret);
+        try {
+            // Try to initialize billing client to check if billing is actually available
+            // Pass null so initBillingClient doesn't reject the call - we'll handle the result ourselves
+            this.initBillingClient(null);
+            // If initialization succeeded, billing is supported
+            JSObject ret = new JSObject();
+            ret.put("isBillingSupported", true);
+            Log.d(TAG, "isBillingSupported() returning true - billing client initialized successfully");
+            closeBillingClient();
+            call.resolve(ret);
+        } catch (RuntimeException e) {
+            Log.e(TAG, "isBillingSupported() - billing client initialization failed: " + e.getMessage());
+            closeBillingClient();
+            // Return false instead of rejecting - this is a check method
+            JSObject ret = new JSObject();
+            ret.put("isBillingSupported", false);
+            Log.d(TAG, "isBillingSupported() returning false - billing not available");
+            call.resolve(ret);
+        } catch (Exception e) {
+            Log.e(TAG, "isBillingSupported() - unexpected error: " + e.getMessage());
+            closeBillingClient();
+            JSObject ret = new JSObject();
+            ret.put("isBillingSupported", false);
+            Log.d(TAG, "isBillingSupported() returning false - unexpected error");
+            call.resolve(ret);
+        }
     }
 
     @Override
