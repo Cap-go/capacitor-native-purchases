@@ -46,14 +46,38 @@ public class NativePurchasesPlugin extends Plugin {
     public static final String TAG = "NativePurchases";
     private static final Phaser semaphoreReady = new Phaser(1);
     private BillingClient billingClient;
+    private PluginCall pendingCall = null;
+    private BillingResult lastBillingError = null;
 
     @PluginMethod
     public void isBillingSupported(PluginCall call) {
         Log.d(TAG, "isBillingSupported() called");
-        JSObject ret = new JSObject();
-        ret.put("isBillingSupported", true);
-        Log.d(TAG, "isBillingSupported() returning true");
-        call.resolve(ret);
+        try {
+            // Try to initialize billing client to check if billing is actually available
+            // Pass null so initBillingClient doesn't reject the call - we'll handle the result ourselves
+            this.initBillingClient(null);
+            // If initialization succeeded, billing is supported
+            JSObject ret = new JSObject();
+            ret.put("isBillingSupported", true);
+            Log.d(TAG, "isBillingSupported() returning true - billing client initialized successfully");
+            closeBillingClient();
+            call.resolve(ret);
+        } catch (RuntimeException e) {
+            Log.e(TAG, "isBillingSupported() - billing client initialization failed: " + e.getMessage());
+            closeBillingClient();
+            // Return false instead of rejecting - this is a check method
+            JSObject ret = new JSObject();
+            ret.put("isBillingSupported", false);
+            Log.d(TAG, "isBillingSupported() returning false - billing not available");
+            call.resolve(ret);
+        } catch (Exception e) {
+            Log.e(TAG, "isBillingSupported() - unexpected error: " + e.getMessage());
+            closeBillingClient();
+            JSObject ret = new JSObject();
+            ret.put("isBillingSupported", false);
+            Log.d(TAG, "isBillingSupported() returning false - unexpected error");
+            call.resolve(ret);
+        }
     }
 
     @Override
@@ -110,6 +134,13 @@ public class NativePurchasesPlugin extends Plugin {
         } else {
             Log.d(TAG, "Billing client was already null");
         }
+
+        // Clear pending call and error state
+        if (pendingCall != null) {
+            Log.w(TAG, "Warning: Clearing pending call that was never resolved/rejected");
+            pendingCall = null;
+        }
+        lastBillingError = null;
     }
 
     private void handlePurchase(Purchase purchase, PluginCall purchaseCall) {
@@ -233,6 +264,12 @@ public class NativePurchasesPlugin extends Plugin {
 
     private void initBillingClient(PluginCall purchaseCall) {
         Log.d(TAG, "initBillingClient() called");
+        Log.d(TAG, "purchaseCall is null: " + (purchaseCall == null));
+
+        // Store the pending call so we can reject it if billing setup fails
+        this.pendingCall = purchaseCall;
+        this.lastBillingError = null;
+
         semaphoreWait();
         closeBillingClient();
         semaphoreUp();
@@ -278,9 +315,43 @@ public class NativePurchasesPlugin extends Plugin {
                     if (billingResult.getResponseCode() == BillingClient.BillingResponseCode.OK) {
                         Log.d(TAG, "Billing setup successful, client is ready");
                         // The BillingClient is ready. You can query purchases here.
+                        lastBillingError = null;
                         semaphoreReady.countDown();
                     } else {
-                        Log.d(TAG, "Billing setup failed");
+                        Log.e(TAG, "Billing setup failed with code: " + billingResult.getResponseCode());
+                        Log.e(TAG, "Error message: " + billingResult.getDebugMessage());
+
+                        // Store the error for later use
+                        lastBillingError = billingResult;
+
+                        // Release the latch so the waiting thread can continue
+                        semaphoreReady.countDown();
+
+                        // Reject the pending call if there is one
+                        if (pendingCall != null) {
+                            Log.d(TAG, "Rejecting pending call due to billing setup failure");
+                            String errorMessage = "Billing service unavailable";
+                            switch (billingResult.getResponseCode()) {
+                                case BillingClient.BillingResponseCode.SERVICE_UNAVAILABLE:
+                                    errorMessage =
+                                        "Billing service unavailable. Please check your internet connection and Google Play Services.";
+                                    break;
+                                case BillingClient.BillingResponseCode.BILLING_UNAVAILABLE:
+                                    errorMessage = "Billing is not available on this device.";
+                                    break;
+                                case BillingClient.BillingResponseCode.FEATURE_NOT_SUPPORTED:
+                                    errorMessage = "This billing feature is not supported.";
+                                    break;
+                                case BillingClient.BillingResponseCode.SERVICE_DISCONNECTED:
+                                    errorMessage = "Billing service disconnected. Please try again.";
+                                    break;
+                                default:
+                                    errorMessage = "Billing setup failed: " + billingResult.getDebugMessage();
+                                    break;
+                            }
+                            pendingCall.reject("BILLING_SETUP_FAILED", errorMessage);
+                            pendingCall = null;
+                        }
                     }
                 }
 
@@ -295,10 +366,26 @@ public class NativePurchasesPlugin extends Plugin {
         try {
             Log.d(TAG, "Waiting for billing client setup to finish");
             semaphoreReady.await();
-            Log.d(TAG, "Billing client setup completed");
+            Log.d(TAG, "Billing client setup wait completed");
+
+            // Check if billing setup failed
+            if (lastBillingError != null) {
+                Log.e(TAG, "Billing setup failed, throwing exception");
+                throw new RuntimeException("Billing setup failed: " + lastBillingError.getDebugMessage());
+            }
+
+            Log.d(TAG, "Billing client setup completed successfully");
         } catch (InterruptedException e) {
-            Log.d(TAG, "InterruptedException while waiting for billing setup: " + e.getMessage());
+            Log.e(TAG, "InterruptedException while waiting for billing setup: " + e.getMessage());
             e.printStackTrace();
+            if (pendingCall != null) {
+                pendingCall.reject("BILLING_INTERRUPTED", "Billing setup was interrupted");
+                pendingCall = null;
+            }
+        } catch (RuntimeException e) {
+            Log.e(TAG, "RuntimeException during billing setup: " + e.getMessage());
+            // Don't reject here - already rejected in onBillingSetupFinished
+            throw e;
         }
     }
 
@@ -383,7 +470,14 @@ public class NativePurchasesPlugin extends Plugin {
         );
         QueryProductDetailsParams params = QueryProductDetailsParams.newBuilder().setProductList(productList).build();
         Log.d(TAG, "Initializing billing client for purchase");
-        this.initBillingClient(call);
+        try {
+            this.initBillingClient(call);
+        } catch (RuntimeException e) {
+            Log.e(TAG, "Failed to initialize billing client: " + e.getMessage());
+            closeBillingClient();
+            // Call already rejected in initBillingClient
+            return;
+        }
         try {
             Log.d(TAG, "Querying product details for purchase");
             billingClient.queryProductDetailsAsync(
@@ -520,7 +614,14 @@ public class NativePurchasesPlugin extends Plugin {
     public void restorePurchases(PluginCall call) {
         Log.d(TAG, "restorePurchases() called");
         Log.d(NativePurchasesPlugin.TAG, "restorePurchases");
-        this.initBillingClient(null);
+        try {
+            this.initBillingClient(call);
+        } catch (RuntimeException e) {
+            Log.e(TAG, "Failed to initialize billing client: " + e.getMessage());
+            closeBillingClient();
+            // Call already rejected in initBillingClient
+            return;
+        }
         this.processUnfinishedPurchases();
         call.resolve();
         Log.d(TAG, "restorePurchases() completed");
@@ -541,7 +642,14 @@ public class NativePurchasesPlugin extends Plugin {
 
         QueryProductDetailsParams params = QueryProductDetailsParams.newBuilder().setProductList(productList).build();
         Log.d(TAG, "Initializing billing client for single product query");
-        this.initBillingClient(call);
+        try {
+            this.initBillingClient(call);
+        } catch (RuntimeException e) {
+            Log.e(TAG, "Failed to initialize billing client: " + e.getMessage());
+            closeBillingClient();
+            // Call already rejected in initBillingClient
+            return;
+        }
         try {
             Log.d(TAG, "Querying product details");
             billingClient.queryProductDetailsAsync(
@@ -655,7 +763,14 @@ public class NativePurchasesPlugin extends Plugin {
         Log.d(TAG, "Total products in query list: " + productList.size());
         QueryProductDetailsParams params = QueryProductDetailsParams.newBuilder().setProductList(productList).build();
         Log.d(TAG, "Initializing billing client for product query");
-        this.initBillingClient(call);
+        try {
+            this.initBillingClient(call);
+        } catch (RuntimeException e) {
+            Log.e(TAG, "Failed to initialize billing client: " + e.getMessage());
+            closeBillingClient();
+            // Call already rejected in initBillingClient
+            return;
+        }
         try {
             Log.d(TAG, "Querying product details");
             billingClient.queryProductDetailsAsync(
@@ -817,7 +932,14 @@ public class NativePurchasesPlugin extends Plugin {
             return;
         }
 
-        this.initBillingClient(null);
+        try {
+            this.initBillingClient(call);
+        } catch (RuntimeException e) {
+            Log.e(TAG, "Failed to initialize billing client: " + e.getMessage());
+            closeBillingClient();
+            // Call already rejected in initBillingClient
+            return;
+        }
 
         JSONArray allPurchases = new JSONArray();
         AtomicInteger pendingQueries = new AtomicInteger((queryInApp ? 1 : 0) + (querySubs ? 1 : 0));
@@ -982,7 +1104,14 @@ public class NativePurchasesPlugin extends Plugin {
         }
 
         Log.d(TAG, "Manually acknowledging purchase with token: " + purchaseToken);
-        this.initBillingClient(null);
+        try {
+            this.initBillingClient(call);
+        } catch (RuntimeException e) {
+            Log.e(TAG, "Failed to initialize billing client: " + e.getMessage());
+            closeBillingClient();
+            // Call already rejected in initBillingClient
+            return;
+        }
 
         try {
             AcknowledgePurchaseParams acknowledgePurchaseParams = AcknowledgePurchaseParams.newBuilder()
