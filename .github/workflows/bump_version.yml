@@ -8,18 +8,17 @@ on:
     paths-ignore:
       - 'example-app/**'
       - '.github/**'
-  workflow_dispatch:
 
 jobs:
   # Run all tests first before creating any tags
   test:
-    if: ${{ github.event_name == 'workflow_dispatch' || !startsWith(github.event.head_commit.message, 'chore(release):') }}
+    if: ${{ !startsWith(github.event.head_commit.message, 'chore(release):') }}
     uses: ./.github/workflows/test.yml
 
   # Only bump version and create tag if all tests pass
   bump-version:
     needs: [test]
-    if: ${{ github.event_name == 'workflow_dispatch' || !startsWith(github.event.head_commit.message, 'chore(release):') }}
+    if: ${{ !startsWith(github.event.head_commit.message, 'chore(release):') }}
     runs-on: ubuntu-latest
     name: "Bump version and create tag"
     steps:
