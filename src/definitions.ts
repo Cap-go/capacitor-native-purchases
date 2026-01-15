@@ -164,6 +164,9 @@ export interface Transaction {
    * - Or sandbox: https://sandbox.itunes.apple.com/verifyReceipt
    * - This contains all transaction data needed for validation
    *
+   * **Note:** Apple recommends migrating to App Store Server API v2 with `jwsRepresentation` for new implementations.
+   * The legacy receipt verification API continues to work but may be deprecated in the future.
+   *
    * @since 1.0.0
    * @platform ios Always present
    * @platform android Not available (use purchaseToken instead)
