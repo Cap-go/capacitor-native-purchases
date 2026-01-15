@@ -447,10 +447,22 @@ const buyInAppProduct = async () => {
 
     alert('Purchase successful! Transaction ID: ' + result.transactionId);
     
-    // iOS will also return receipt data for validation
+    // Access the full receipt data for backend validation
     if (result.receipt) {
-      // Send to your backend for validation
+      // iOS: Base64-encoded StoreKit receipt - send this to your backend
+      console.log('iOS Receipt (base64):', result.receipt);
       await validateReceipt(result.receipt);
+    }
+    
+    if (result.jwsRepresentation) {
+      // iOS: StoreKit 2 JWS representation - alternative to receipt
+      console.log('iOS JWS:', result.jwsRepresentation);
+    }
+    
+    if (result.purchaseToken) {
+      // Android: Purchase token - send this to your backend
+      console.log('Android Purchase Token:', result.purchaseToken);
+      await validatePurchaseToken(result.purchaseToken, result.productIdentifier);
     }
     
   } catch (error) {
@@ -493,10 +505,22 @@ const buySubscription = async () => {
 
     alert('Subscription successful! Transaction ID: ' + result.transactionId);
     
-    // iOS will also return receipt data for validation
+    // Access the full receipt data for backend validation
     if (result.receipt) {
-      // Send to your backend for validation
+      // iOS: Base64-encoded StoreKit receipt - send this to your backend
+      console.log('iOS Receipt (base64):', result.receipt);
       await validateReceipt(result.receipt);
+    }
+    
+    if (result.jwsRepresentation) {
+      // iOS: StoreKit 2 JWS representation - alternative to receipt
+      console.log('iOS JWS:', result.jwsRepresentation);
+    }
+    
+    if (result.purchaseToken) {
+      // Android: Purchase token - send this to your backend
+      console.log('Android Purchase Token:', result.purchaseToken);
+      await validatePurchaseToken(result.purchaseToken, result.productIdentifier);
     }
     
   } catch (error) {
@@ -1216,12 +1240,63 @@ await NativePurchases.getPluginVersion();
 
 ## Backend Validation
 
-It's crucial to validate receipts on your server to ensure the integrity of purchases. Here's an example of how to implement backend validation using a Cloudflare Worker:
+### ✅ Full Receipt Data Access
 
-Cloudflare Worker Setup
+**This plugin provides complete access to verified receipt data for server-side validation.** You get all the information needed to validate purchases with Apple and Google servers.
+
+**For iOS:**
+- ✅ `transaction.receipt` - Complete base64-encoded StoreKit receipt (for Apple's receipt verification API)
+- ✅ `transaction.jwsRepresentation` - StoreKit 2 JSON Web Signature (for App Store Server API v2)
+
+**For Android:**
+- ✅ `transaction.purchaseToken` - Google Play purchase token (for Google Play Developer API)
+- ✅ `transaction.orderId` - Google Play order identifier
+
+These fields contain the **full verified receipt payload** that you can send directly to your backend for validation with Apple's and Google's servers.
+
+#### Migrating from cordova-plugin-purchase?
+
+If you're coming from cordova-plugin-purchase, here's the mapping:
+
+| cordova-plugin-purchase | @capgo/native-purchases | Platform |
+|-------------------------|-------------------------|----------|
+| `transaction.transactionReceipt` | `transaction.receipt` (base64) | iOS |
+| `transaction.transactionReceipt` | `transaction.jwsRepresentation` (JWS) | iOS |
+| `transaction.purchaseToken` | `transaction.purchaseToken` | Android |
+
+**This plugin already exposes everything you need for backend verification!** The `receipt` and `purchaseToken` fields contain the complete verified receipt data.
+
+### Why Backend Validation?
+
+It's crucial to validate receipts on your server to ensure the integrity of purchases. Client-side data can be manipulated, but server-side validation with Apple/Google servers ensures purchases are legitimate.
+
+### Receipt Data Available for Backend Verification
+
+The `Transaction` object returned by `purchaseProduct()`, `getPurchases()`, and `restorePurchases()` includes all data needed for server-side validation:
+
+**iOS Receipt Data:**
+- **`receipt`** - Base64-encoded StoreKit receipt (legacy format, works with Apple's receipt verification API)
+- **`jwsRepresentation`** - JSON Web Signature for StoreKit 2 (recommended for new implementations, works with App Store Server API)
+- **`transactionId`** - Unique transaction identifier
+
+**Android Receipt Data:**
+- **`purchaseToken`** - Google Play purchase token (required for server-side validation)
+- **`orderId`** - Google Play order identifier
+- **`transactionId`** - Alias for purchaseToken
+
+**All platforms include:**
+- `productIdentifier` - The product that was purchased
+- `purchaseDate` - When the purchase occurred
+- Additional metadata like `appAccountToken`, `quantity`, etc.
+
+### Complete Backend Validation Example
+
+#### Cloudflare Worker Setup
 Create a new Cloudflare Worker and follow the instructions in folder (`validator`)[/validator/README.md]
 
-Then in your app, modify the purchase function to validate the receipt on the server:
+#### Client-Side Implementation
+
+Here's how to access the receipt data and send it to your backend for validation:
 
 ```typescript
 import { Capacitor } from '@capacitor/core';
@@ -1284,18 +1359,40 @@ class Store {
 
   private async validatePurchaseOnServer(transaction: Transaction) {
     const serverUrl = 'https://your-server-url.com/validate-purchase';
+    const platform = Capacitor.getPlatform();
+    
     try {
+      // Prepare receipt data based on platform
+      const receiptData = platform === 'ios' 
+        ? {
+            // iOS: Send the full receipt (base64 encoded) or JWS representation
+            receipt: transaction.receipt,                    // StoreKit receipt (base64)
+            jwsRepresentation: transaction.jwsRepresentation, // StoreKit 2 JWS (optional, recommended for new apps)
+            transactionId: transaction.transactionId,
+            platform: 'ios'
+          }
+        : {
+            // Android: Send the purchase token and order ID
+            purchaseToken: transaction.purchaseToken,        // Required for Google Play validation
+            orderId: transaction.orderId,                    // Google Play order ID
+            transactionId: transaction.transactionId,
+            platform: 'android'
+          };
+
       const response = await axios.post(serverUrl, {
-        transactionId: transaction.transactionId,
-        platform: Capacitor.getPlatform(),
-        // Include any other relevant information
+        ...receiptData,
+        productId: transaction.productIdentifier,
+        purchaseDate: transaction.purchaseDate,
+        // Include user ID or other app-specific data
+        userId: 'your-user-id'
       });
 
       console.log('Server validation response:', response.data);
-      // The server will handle the actual validation with the Cloudflare Worker
+      return response.data;
     } catch (error) {
       console.error('Error in server-side validation:', error);
       // Implement retry logic or notify the user if necessary
+      throw error;
     }
   }
 }
@@ -1317,7 +1414,7 @@ try {
 }
 ```
 
-Now, let's look at how the server-side (Node.js) code might handle the validation:
+Now, let's look at how the server-side (Node.js) code handles the validation:
 
 ```typescript
 import express from 'express';
@@ -1329,47 +1426,155 @@ app.use(express.json());
 const CLOUDFLARE_WORKER_URL = 'https://your-cloudflare-worker-url.workers.dev';
 
 app.post('/validate-purchase', async (req, res) => {
-  const { transactionId, platform } = req.body;
+  const { platform, receipt, jwsRepresentation, purchaseToken, productId, userId } = req.body;
 
   try {
-    const endpoint = platform === 'ios' ? '/apple' : '/google';
-    const validationResponse = await axios.post(`${CLOUDFLARE_WORKER_URL}${endpoint}`, {
-      receipt: transactionId
-    });
+    let validationResponse;
+
+    if (platform === 'ios') {
+      // iOS: Validate using receipt or JWS representation
+      // Option 1: Use legacy receipt validation (recommended for compatibility)
+      if (receipt) {
+        validationResponse = await axios.post(`${CLOUDFLARE_WORKER_URL}/apple`, {
+          receipt: receipt,  // Base64-encoded receipt from transaction.receipt
+          password: 'your-app-shared-secret' // Optional: for auto-renewable subscriptions
+        });
+      }
+      // Option 2: Use StoreKit 2 App Store Server API (recommended for new implementations)
+      else if (jwsRepresentation) {
+        // Validate JWS token with App Store Server API
+        // This requires decoding the JWS and verifying the signature
+        validationResponse = await axios.post(`${CLOUDFLARE_WORKER_URL}/apple-jws`, {
+          jws: jwsRepresentation
+        });
+      }
+    } else if (platform === 'android') {
+      // Android: Validate using purchase token with Google Play Developer API
+      validationResponse = await axios.post(`${CLOUDFLARE_WORKER_URL}/google`, {
+        purchaseToken: purchaseToken,  // From transaction.purchaseToken
+        productId: productId,
+        packageName: 'com.yourapp.package'
+      });
+    }
 
     const validationResult = validationResponse.data;
 
     // Process the validation result
     if (validationResult.isValid) {
       // Update user status in the database
-      // await updateUserStatus(userId, 'paid');
+      await updateUserPurchase(userId, {
+        productId,
+        platform,
+        transactionId: req.body.transactionId,
+        validated: true,
+        validatedAt: new Date(),
+        receiptData: validationResult
+      });
       
-      // Log the successful validation
-      console.log(`Purchase validated for transaction ${transactionId}`);
+      console.log(`Purchase validated for user ${userId}, product ${productId}`);
       
-      // You might want to store the validation result for future reference
-      // await storeValidationResult(userId, transactionId, validationResult);
+      res.json({ 
+        success: true, 
+        validated: true,
+        message: 'Purchase successfully validated'
+      });
     } else {
       // Handle invalid purchase
-      console.warn(`Invalid purchase detected for transaction ${transactionId}`);
-      // You might want to flag this for further investigation
-      // await flagSuspiciousPurchase(userId, transactionId);
+      console.warn(`Invalid purchase detected for user ${userId}`);
+      
+      // Flag for investigation but don't block the user immediately
+      await flagSuspiciousPurchase(userId, req.body);
+      
+      res.json({ 
+        success: true,  // Don't block the user
+        validated: false,
+        message: 'Purchase validation pending review'
+      });
     }
 
-    // Always respond with a success to the app
-    // This ensures the app doesn't block the user's access
-    res.json({ success: true });
   } catch (error) {
     console.error('Error validating purchase:', error);
+    
+    // Log the error for investigation
+    await logValidationError(userId, req.body, error);
+    
     // Still respond with success to the app
-    res.json({ success: true });
-    // You might want to log this error or retry the validation later
-    // await logValidationError(userId, transactionId, error);
+    // This ensures the app doesn't block the user's access
+    res.json({ 
+      success: true,
+      validated: 'pending',
+      message: 'Validation will be retried'
+    });
   }
 });
 
+// Helper function to update user purchase status
+async function updateUserPurchase(userId: string, purchaseData: any) {
+  // Implement your database logic here
+  console.log('Updating purchase for user:', userId);
+}
+
+// Helper function to flag suspicious purchases
+async function flagSuspiciousPurchase(userId: string, purchaseData: any) {
+  // Implement your logic to flag and review suspicious purchases
+  console.log('Flagging suspicious purchase:', userId);
+}
+
+// Helper function to log validation errors
+async function logValidationError(userId: string, purchaseData: any, error: any) {
+  // Implement your error logging logic
+  console.log('Logging validation error:', userId, error);
+}
+
 // Start the server
 app.listen(3000, () => console.log('Server running on port 3000'));
+```
+
+### Alternative: Direct Store API Validation
+
+Instead of using a Cloudflare Worker, you can validate directly with Apple and Google:
+
+**iOS - Apple Receipt Verification API:**
+```typescript
+// Production: https://buy.itunes.apple.com/verifyReceipt
+// Sandbox: https://sandbox.itunes.apple.com/verifyReceipt
+
+async function validateAppleReceipt(receiptData: string) {
+  const response = await axios.post('https://buy.itunes.apple.com/verifyReceipt', {
+    'receipt-data': receiptData,
+    'password': 'your-shared-secret', // For subscriptions
+    'exclude-old-transactions': true
+  });
+  
+  return response.data;
+}
+```
+
+**Android - Google Play Developer API:**
+```typescript
+// Requires Google Play Developer API credentials
+// See: https://developers.google.com/android-publisher/getting_started
+
+async function validateGooglePurchase(packageName: string, productId: string, purchaseToken: string) {
+  const { google } = require('googleapis');
+  const androidPublisher = google.androidpublisher('v3');
+  
+  const auth = new google.auth.GoogleAuth({
+    keyFile: 'path/to/service-account-key.json',
+    scopes: ['https://www.googleapis.com/auth/androidpublisher'],
+  });
+  
+  const authClient = await auth.getClient();
+  
+  const response = await androidPublisher.purchases.products.get({
+    auth: authClient,
+    packageName: packageName,
+    productId: productId,
+    token: purchaseToken
+  });
+  
+  return response.data;
+}
 ```
 
 Key points about this approach:
