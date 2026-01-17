@@ -411,9 +411,9 @@ export interface Transaction {
    *   // Send to your backend for validation
    *   await fetch('/api/validate-purchase', {
    *     method: 'POST',
-   *     body: JSON.stringify({ 
+   *     body: JSON.stringify({
    *       purchaseToken: transaction.purchaseToken,
-   *       productId: transaction.productIdentifier 
+   *       productId: transaction.productIdentifier
    *     })
    *   });
    * }

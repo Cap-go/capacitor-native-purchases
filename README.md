@@ -1260,13 +1260,13 @@ If you're coming from cordova-plugin-purchase, here's the mapping:
 
 | cordova-plugin-purchase | @capgo/native-purchases | Platform | Notes |
 |-------------------------|-------------------------|----------|-------|
-| `transaction.transactionReceipt` | `transaction.receipt` (base64) | iOS | Legacy StoreKit receipt format |
-| `transaction.transactionReceipt` | `transaction.jwsRepresentation` (JWS) | iOS | StoreKit 2 format (iOS 15+, recommended for new apps) |
+| `transaction.transactionReceipt` | `transaction.receipt` (base64) | iOS | Legacy StoreKit receipt format (same value as Cordova) |
+| — | `transaction.jwsRepresentation` (JWS) | iOS | StoreKit 2 JWS format (iOS 15+, additional field with no Cordova equivalent; Apple's recommended modern format for new implementations) |
 | `transaction.purchaseToken` | `transaction.purchaseToken` | Android | Same field name |
 
-**This plugin already exposes everything you need for backend verification!** The `receipt` and `purchaseToken` fields contain the complete verified receipt data.
+**This plugin already exposes everything you need for backend verification!** The `receipt` and `purchaseToken` fields contain the complete verified receipt data, and `jwsRepresentation` provides an additional StoreKit 2 representation when available.
 
-**Note:** On iOS, `jwsRepresentation` is only available for StoreKit 2 transactions (iOS 15+) and is Apple's recommended modern format. For maximum compatibility, use `receipt` which works on all iOS versions.
+**Note:** On iOS, `jwsRepresentation` is only available for StoreKit 2 transactions (iOS 15+) and is Apple's recommended modern format. For maximum compatibility, use `receipt` which works on all iOS versions; when available, you can also send `jwsRepresentation` to backends that support App Store Server API v2.
 
 ### Why Backend Validation?
 
@@ -1435,28 +1435,48 @@ app.post('/validate-purchase', async (req, res) => {
 
     if (platform === 'ios') {
       // iOS: Validate using receipt or JWS representation
+      if (!receipt && !jwsRepresentation) {
+        return res.status(400).json({ 
+          success: false, 
+          error: 'Missing receipt data: either receipt or jwsRepresentation is required for iOS' 
+        });
+      }
+      
       // Option 1: Use legacy receipt validation (recommended for compatibility)
       if (receipt) {
         validationResponse = await axios.post(`${CLOUDFLARE_WORKER_URL}/apple`, {
           receipt: receipt,  // Base64-encoded receipt from transaction.receipt
-          password: 'your-app-shared-secret' // Optional: for auto-renewable subscriptions
+          password: 'your-app-shared-secret' // App-Specific Shared Secret from App Store Connect (required for auto-renewable subscriptions)
         });
       }
       // Option 2: Use StoreKit 2 App Store Server API (recommended for new implementations)
       else if (jwsRepresentation) {
         // Validate JWS token with App Store Server API
-        // Note: You need to decode and verify the JWS signature
-        // See: https://developer.apple.com/documentation/appstoreserverapi/jwstransaction
+        // Note: JWS verification requires decoding and validating the signature
+        // Implementation depends on your backend setup - see Apple's documentation:
+        // https://developer.apple.com/documentation/appstoreserverapi/jwstransaction
         validationResponse = await axios.post(`${CLOUDFLARE_WORKER_URL}/apple-jws`, {
           jws: jwsRepresentation
         });
       }
     } else if (platform === 'android') {
       // Android: Validate using purchase token with Google Play Developer API
+      if (!purchaseToken) {
+        return res.status(400).json({ 
+          success: false, 
+          error: 'Missing purchaseToken for Android validation' 
+        });
+      }
+      
       validationResponse = await axios.post(`${CLOUDFLARE_WORKER_URL}/google`, {
         purchaseToken: purchaseToken,  // From transaction.purchaseToken
         productId: productId,
         packageName: 'com.yourapp.package'
+      });
+    } else {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'Invalid platform' 
       });
     }
 
@@ -1545,7 +1565,7 @@ Instead of using a Cloudflare Worker, you can validate directly with Apple and G
 async function validateAppleReceipt(receiptData: string) {
   const response = await axios.post('https://buy.itunes.apple.com/verifyReceipt', {
     'receipt-data': receiptData,
-    'password': 'your-shared-secret', // For subscriptions
+    'password': 'your-shared-secret', // App-Specific Shared Secret from App Store Connect (required for auto-renewable subscriptions)
     'exclude-old-transactions': true
   });
   
