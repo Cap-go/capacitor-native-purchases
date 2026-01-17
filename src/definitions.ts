@@ -155,23 +155,60 @@ export interface Transaction {
   /**
    * Receipt data for validation (base64 encoded StoreKit receipt).
    *
+   * **This is the full verified receipt payload from Apple StoreKit.**
    * Send this to your backend for server-side validation with Apple's receipt verification API.
    * The receipt remains available even after refund - server validation is required to detect refunded transactions.
+   *
+   * **For backend validation:**
+   * - Use Apple's receipt verification API: https://buy.itunes.apple.com/verifyReceipt (production)
+   * - Or sandbox: https://sandbox.itunes.apple.com/verifyReceipt
+   * - This contains all transaction data needed for validation
+   *
+   * **Note:** Apple recommends migrating to App Store Server API v2 with `jwsRepresentation` for new implementations.
+   * The legacy receipt verification API continues to work but may be deprecated in the future.
    *
    * @since 1.0.0
    * @platform ios Always present
    * @platform android Not available (use purchaseToken instead)
+   * @example
+   * ```typescript
+   * const transaction = await NativePurchases.purchaseProduct({ ... });
+   * if (transaction.receipt) {
+   *   // Send to your backend for validation
+   *   await fetch('/api/validate-receipt', {
+   *     method: 'POST',
+   *     body: JSON.stringify({ receipt: transaction.receipt })
+   *   });
+   * }
+   * ```
    */
   readonly receipt?: string;
   /**
    * StoreKit 2 JSON Web Signature (JWS) payload describing the verified transaction.
    *
+   * **This is the full verified receipt in JWS format (StoreKit 2).**
    * Send this to your backend when using Apple's App Store Server API v2 instead of raw receipts.
    * Only available when the transaction originated from StoreKit 2 APIs (e.g. Transaction.updates).
+   *
+   * **For backend validation:**
+   * - Use Apple's App Store Server API v2 to decode and verify the JWS
+   * - This is the modern alternative to the legacy receipt format
+   * - Contains signed transaction information from Apple
    *
    * @since 7.13.2
    * @platform ios Present for StoreKit 2 transactions (iOS 15+)
    * @platform android Not available
+   * @example
+   * ```typescript
+   * const transaction = await NativePurchases.purchaseProduct({ ... });
+   * if (transaction.jwsRepresentation) {
+   *   // Send to your backend for validation with App Store Server API v2
+   *   await fetch('/api/validate-jws', {
+   *     method: 'POST',
+   *     body: JSON.stringify({ jws: transaction.jwsRepresentation })
+   *   });
+   * }
+   * ```
    */
   readonly jwsRepresentation?: string;
   /**
@@ -354,12 +391,33 @@ export interface Transaction {
   /**
    * Purchase token associated with the transaction.
    *
+   * **This is the full verified purchase token from Google Play.**
    * Send this to your backend for server-side validation with Google Play Developer API.
    * This is the Android equivalent of iOS's receipt field.
+   *
+   * **For backend validation:**
+   * - Use Google Play Developer API v3 to verify the purchase
+   * - API endpoint: androidpublisher.purchases.products.get() or purchases.subscriptions.get()
+   * - This token contains all data needed for validation with Google servers
+   * - Can also be used for subscription status checks and cancellation detection
    *
    * @since 1.0.0
    * @platform ios Not available (use receipt instead)
    * @platform android Always present
+   * @example
+   * ```typescript
+   * const transaction = await NativePurchases.purchaseProduct({ ... });
+   * if (transaction.purchaseToken) {
+   *   // Send to your backend for validation
+   *   await fetch('/api/validate-purchase', {
+   *     method: 'POST',
+   *     body: JSON.stringify({
+   *       purchaseToken: transaction.purchaseToken,
+   *       productId: transaction.productIdentifier
+   *     })
+   *   });
+   * }
+   * ```
    */
   readonly purchaseToken?: string;
   /**

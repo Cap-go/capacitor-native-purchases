@@ -447,10 +447,22 @@ const buyInAppProduct = async () => {
 
     alert('Purchase successful! Transaction ID: ' + result.transactionId);
     
-    // iOS will also return receipt data for validation
+    // Access the full receipt data for backend validation
     if (result.receipt) {
-      // Send to your backend for validation
+      // iOS: Base64-encoded StoreKit receipt - send this to your backend
+      console.log('iOS Receipt (base64):', result.receipt);
       await validateReceipt(result.receipt);
+    }
+    
+    if (result.jwsRepresentation) {
+      // iOS: StoreKit 2 JWS representation - alternative to receipt
+      console.log('iOS JWS:', result.jwsRepresentation);
+    }
+    
+    if (result.purchaseToken) {
+      // Android: Purchase token - send this to your backend
+      console.log('Android Purchase Token:', result.purchaseToken);
+      await validatePurchaseToken(result.purchaseToken, result.productIdentifier);
     }
     
   } catch (error) {
@@ -493,10 +505,22 @@ const buySubscription = async () => {
 
     alert('Subscription successful! Transaction ID: ' + result.transactionId);
     
-    // iOS will also return receipt data for validation
+    // Access the full receipt data for backend validation
     if (result.receipt) {
-      // Send to your backend for validation
+      // iOS: Base64-encoded StoreKit receipt - send this to your backend
+      console.log('iOS Receipt (base64):', result.receipt);
       await validateReceipt(result.receipt);
+    }
+    
+    if (result.jwsRepresentation) {
+      // iOS: StoreKit 2 JWS representation - alternative to receipt
+      console.log('iOS JWS:', result.jwsRepresentation);
+    }
+    
+    if (result.purchaseToken) {
+      // Android: Purchase token - send this to your backend
+      console.log('Android Purchase Token:', result.purchaseToken);
+      await validatePurchaseToken(result.purchaseToken, result.productIdentifier);
     }
     
   } catch (error) {
@@ -1216,12 +1240,65 @@ await NativePurchases.getPluginVersion();
 
 ## Backend Validation
 
-It's crucial to validate receipts on your server to ensure the integrity of purchases. Here's an example of how to implement backend validation using a Cloudflare Worker:
+### ✅ Full Receipt Data Access
 
-Cloudflare Worker Setup
+**This plugin provides complete access to verified receipt data for server-side validation.** You get all the information needed to validate purchases with Apple and Google servers.
+
+**For iOS:**
+- ✅ `transaction.receipt` - Complete base64-encoded StoreKit receipt (for Apple's receipt verification API)
+- ✅ `transaction.jwsRepresentation` - StoreKit 2 JSON Web Signature (for App Store Server API v2)
+
+**For Android:**
+- ✅ `transaction.purchaseToken` - Google Play purchase token (for Google Play Developer API)
+- ✅ `transaction.orderId` - Google Play order identifier
+
+These fields contain the **full verified receipt payload** that you can send directly to your backend for validation with Apple's and Google's servers.
+
+#### Migrating from cordova-plugin-purchase?
+
+If you're coming from cordova-plugin-purchase, here's the mapping:
+
+| cordova-plugin-purchase | @capgo/native-purchases | Platform | Notes |
+|-------------------------|-------------------------|----------|-------|
+| `transaction.transactionReceipt` | `transaction.receipt` (base64) | iOS | Legacy StoreKit receipt format (same value as Cordova) |
+| — | `transaction.jwsRepresentation` (JWS) | iOS | StoreKit 2 JWS format (iOS 15+, additional field with no Cordova equivalent; Apple's recommended modern format for new implementations) |
+| `transaction.purchaseToken` | `transaction.purchaseToken` | Android | Same field name |
+
+**This plugin already exposes everything you need for backend verification!** The `receipt` and `purchaseToken` fields contain the complete verified receipt data, and `jwsRepresentation` provides an additional StoreKit 2 representation when available.
+
+**Note:** On iOS, `jwsRepresentation` is only available for StoreKit 2 transactions (iOS 15+) and is Apple's recommended modern format. For maximum compatibility, use `receipt` which works on all iOS versions; when available, you can also send `jwsRepresentation` to backends that support App Store Server API v2.
+
+### Why Backend Validation?
+
+It's crucial to validate receipts on your server to ensure the integrity of purchases. Client-side data can be manipulated, but server-side validation with Apple/Google servers ensures purchases are legitimate.
+
+### Receipt Data Available for Backend Verification
+
+The `Transaction` object returned by `purchaseProduct()`, `getPurchases()`, and `restorePurchases()` includes all data needed for server-side validation:
+
+**iOS Receipt Data:**
+- **`receipt`** - Base64-encoded StoreKit receipt (legacy format, works with Apple's receipt verification API)
+- **`jwsRepresentation`** - JSON Web Signature for StoreKit 2 (recommended for new implementations, works with App Store Server API)
+- **`transactionId`** - Unique transaction identifier
+
+**Android Receipt Data:**
+- **`purchaseToken`** - Google Play purchase token (required for server-side validation)
+- **`orderId`** - Google Play order identifier
+- **`transactionId`** - Alias for purchaseToken
+
+**All platforms include:**
+- `productIdentifier` - The product that was purchased
+- `purchaseDate` - When the purchase occurred
+- Additional metadata like `appAccountToken`, `quantity`, etc.
+
+### Complete Backend Validation Example
+
+#### Cloudflare Worker Setup
 Create a new Cloudflare Worker and follow the instructions in folder (`validator`)[/validator/README.md]
 
-Then in your app, modify the purchase function to validate the receipt on the server:
+#### Client-Side Implementation
+
+Here's how to access the receipt data and send it to your backend for validation:
 
 ```typescript
 import { Capacitor } from '@capacitor/core';
@@ -1284,18 +1361,40 @@ class Store {
 
   private async validatePurchaseOnServer(transaction: Transaction) {
     const serverUrl = 'https://your-server-url.com/validate-purchase';
+    const platform = Capacitor.getPlatform();
+    
     try {
+      // Prepare receipt data based on platform
+      const receiptData = platform === 'ios' 
+        ? {
+            // iOS: Send the full receipt (base64 encoded) or JWS representation
+            receipt: transaction.receipt,                    // StoreKit receipt (base64)
+            jwsRepresentation: transaction.jwsRepresentation, // StoreKit 2 JWS (optional, recommended for new apps)
+            transactionId: transaction.transactionId,
+            platform: 'ios'
+          }
+        : {
+            // Android: Send the purchase token and order ID
+            purchaseToken: transaction.purchaseToken,        // Required for Google Play validation
+            orderId: transaction.orderId,                    // Google Play order ID
+            transactionId: transaction.transactionId,
+            platform: 'android'
+          };
+
       const response = await axios.post(serverUrl, {
-        transactionId: transaction.transactionId,
-        platform: Capacitor.getPlatform(),
-        // Include any other relevant information
+        ...receiptData,
+        productId: transaction.productIdentifier,
+        purchaseDate: transaction.purchaseDate,
+        // Include user ID or other app-specific data
+        userId: 'your-user-id'
       });
 
       console.log('Server validation response:', response.data);
-      // The server will handle the actual validation with the Cloudflare Worker
+      return response.data;
     } catch (error) {
       console.error('Error in server-side validation:', error);
       // Implement retry logic or notify the user if necessary
+      throw error;
     }
   }
 }
@@ -1317,7 +1416,7 @@ try {
 }
 ```
 
-Now, let's look at how the server-side (Node.js) code might handle the validation:
+Now, let's look at how the server-side (Node.js) code handles the validation:
 
 ```typescript
 import express from 'express';
@@ -1329,47 +1428,177 @@ app.use(express.json());
 const CLOUDFLARE_WORKER_URL = 'https://your-cloudflare-worker-url.workers.dev';
 
 app.post('/validate-purchase', async (req, res) => {
-  const { transactionId, platform } = req.body;
+  const { platform, receipt, jwsRepresentation, purchaseToken, productId, userId } = req.body;
 
   try {
-    const endpoint = platform === 'ios' ? '/apple' : '/google';
-    const validationResponse = await axios.post(`${CLOUDFLARE_WORKER_URL}${endpoint}`, {
-      receipt: transactionId
-    });
+    let validationResponse;
+
+    if (platform === 'ios') {
+      // iOS: Validate using receipt or JWS representation
+      if (!receipt && !jwsRepresentation) {
+        return res.status(400).json({ 
+          success: false, 
+          error: 'Missing receipt data: either receipt or jwsRepresentation is required for iOS' 
+        });
+      }
+      
+      // Option 1: Use legacy receipt validation (recommended for compatibility)
+      if (receipt) {
+        validationResponse = await axios.post(`${CLOUDFLARE_WORKER_URL}/apple`, {
+          receipt: receipt,  // Base64-encoded receipt from transaction.receipt
+          password: 'your-app-shared-secret' // App-Specific Shared Secret from App Store Connect (required for auto-renewable subscriptions)
+        });
+      }
+      // Option 2: Use StoreKit 2 App Store Server API (recommended for new implementations)
+      else if (jwsRepresentation) {
+        // Validate JWS token with App Store Server API
+        // Note: JWS verification requires decoding and validating the signature
+        // Implementation depends on your backend setup - see Apple's documentation:
+        // https://developer.apple.com/documentation/appstoreserverapi/jwstransaction
+        validationResponse = await axios.post(`${CLOUDFLARE_WORKER_URL}/apple-jws`, {
+          jws: jwsRepresentation
+        });
+      }
+    } else if (platform === 'android') {
+      // Android: Validate using purchase token with Google Play Developer API
+      if (!purchaseToken) {
+        return res.status(400).json({ 
+          success: false, 
+          error: 'Missing purchaseToken for Android validation' 
+        });
+      }
+      
+      validationResponse = await axios.post(`${CLOUDFLARE_WORKER_URL}/google`, {
+        purchaseToken: purchaseToken,  // From transaction.purchaseToken
+        productId: productId,
+        packageName: 'com.yourapp.package'
+      });
+    } else {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'Invalid platform' 
+      });
+    }
 
     const validationResult = validationResponse.data;
 
     // Process the validation result
     if (validationResult.isValid) {
       // Update user status in the database
-      // await updateUserStatus(userId, 'paid');
+      await updateUserPurchase(userId, {
+        productId,
+        platform,
+        transactionId: req.body.transactionId,
+        validated: true,
+        validatedAt: new Date(),
+        receiptData: validationResult
+      });
       
-      // Log the successful validation
-      console.log(`Purchase validated for transaction ${transactionId}`);
+      console.log(`Purchase validated for user ${userId}, product ${productId}`);
       
-      // You might want to store the validation result for future reference
-      // await storeValidationResult(userId, transactionId, validationResult);
+      res.json({ 
+        success: true, 
+        validated: true,
+        message: 'Purchase successfully validated'
+      });
     } else {
       // Handle invalid purchase
-      console.warn(`Invalid purchase detected for transaction ${transactionId}`);
-      // You might want to flag this for further investigation
-      // await flagSuspiciousPurchase(userId, transactionId);
+      console.warn(`Invalid purchase detected for user ${userId}`);
+      
+      // Flag for investigation but don't block the user immediately
+      await flagSuspiciousPurchase(userId, req.body);
+      
+      res.json({ 
+        success: true,  // Don't block the user
+        validated: false,
+        message: 'Purchase validation pending review'
+      });
     }
 
-    // Always respond with a success to the app
-    // This ensures the app doesn't block the user's access
-    res.json({ success: true });
   } catch (error) {
     console.error('Error validating purchase:', error);
+    
+    // Log the error for investigation
+    await logValidationError(userId, req.body, error);
+    
     // Still respond with success to the app
-    res.json({ success: true });
-    // You might want to log this error or retry the validation later
-    // await logValidationError(userId, transactionId, error);
+    // This ensures the app doesn't block the user's access
+    res.json({ 
+      success: true,
+      validated: 'pending',
+      message: 'Validation will be retried'
+    });
   }
 });
 
+// Helper function to update user purchase status
+async function updateUserPurchase(userId: string, purchaseData: any) {
+  // Implement your database logic here
+  console.log('Updating purchase for user:', userId);
+}
+
+// Helper function to flag suspicious purchases
+async function flagSuspiciousPurchase(userId: string, purchaseData: any) {
+  // Implement your logic to flag and review suspicious purchases
+  console.log('Flagging suspicious purchase:', userId);
+}
+
+// Helper function to log validation errors
+async function logValidationError(userId: string, purchaseData: any, error: any) {
+  // Implement your error logging logic
+  console.log('Logging validation error:', userId, error);
+}
+
 // Start the server
 app.listen(3000, () => console.log('Server running on port 3000'));
+```
+
+### Alternative: Direct Store API Validation
+
+Instead of using a Cloudflare Worker, you can validate directly with Apple and Google:
+
+**iOS - Apple Receipt Verification API:**
+```typescript
+// Production: https://buy.itunes.apple.com/verifyReceipt
+// Sandbox: https://sandbox.itunes.apple.com/verifyReceipt
+
+async function validateAppleReceipt(receiptData: string) {
+  const response = await axios.post('https://buy.itunes.apple.com/verifyReceipt', {
+    'receipt-data': receiptData,
+    'password': 'your-shared-secret', // App-Specific Shared Secret from App Store Connect (required for auto-renewable subscriptions)
+    'exclude-old-transactions': true
+  });
+  
+  return response.data;
+}
+```
+
+**Android - Google Play Developer API:**
+```typescript
+// Requires Google Play Developer API credentials
+// See: https://developers.google.com/android-publisher/getting_started
+
+import { google } from 'googleapis';
+
+async function validateGooglePurchase(packageName: string, productId: string, purchaseToken: string) {
+  const androidPublisher = google.androidpublisher('v3');
+  
+  const auth = new google.auth.GoogleAuth({
+    keyFile: 'path/to/service-account-key.json',
+    scopes: ['https://www.googleapis.com/auth/androidpublisher'],
+  });
+  
+  const authClient = await auth.getClient();
+  
+  const response = await androidPublisher.purchases.products.get({
+    auth: authClient,
+    packageName: packageName,
+    productId: productId,
+    token: purchaseToken
+  });
+  
+  return response.data;
+}
 ```
 
 Key points about this approach:
@@ -1746,8 +1975,8 @@ which is useful for determining if users are entitled to features from earlier b
 | Prop                       | Type                                                                                                          | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | Default           | Since  |
 | -------------------------- | ------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------- | ------ |
 | **`transactionId`**        | <code>string</code>                                                                                           | Unique identifier for the transaction.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |                   | 1.0.0  |
-| **`receipt`**              | <code>string</code>                                                                                           | Receipt data for validation (base64 encoded StoreKit receipt). Send this to your backend for server-side validation with Apple's receipt verification API. The receipt remains available even after refund - server validation is required to detect refunded transactions.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |                   | 1.0.0  |
-| **`jwsRepresentation`**    | <code>string</code>                                                                                           | StoreKit 2 JSON Web Signature (JWS) payload describing the verified transaction. Send this to your backend when using Apple's App Store Server API v2 instead of raw receipts. Only available when the transaction originated from StoreKit 2 APIs (e.g. <a href="#transaction">Transaction</a>.updates).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |                   | 7.13.2 |
+| **`receipt`**              | <code>string</code>                                                                                           | Receipt data for validation (base64 encoded StoreKit receipt). **This is the full verified receipt payload from Apple StoreKit.** Send this to your backend for server-side validation with Apple's receipt verification API. The receipt remains available even after refund - server validation is required to detect refunded transactions. **For backend validation:** - Use Apple's receipt verification API: https://buy.itunes.apple.com/verifyReceipt (production) - Or sandbox: https://sandbox.itunes.apple.com/verifyReceipt - This contains all transaction data needed for validation **Note:** Apple recommends migrating to App Store Server API v2 with `jwsRepresentation` for new implementations. The legacy receipt verification API continues to work but may be deprecated in the future.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |                   | 1.0.0  |
+| **`jwsRepresentation`**    | <code>string</code>                                                                                           | StoreKit 2 JSON Web Signature (JWS) payload describing the verified transaction. **This is the full verified receipt in JWS format (StoreKit 2).** Send this to your backend when using Apple's App Store Server API v2 instead of raw receipts. Only available when the transaction originated from StoreKit 2 APIs (e.g. <a href="#transaction">Transaction</a>.updates). **For backend validation:** - Use Apple's App Store Server API v2 to decode and verify the JWS - This is the modern alternative to the legacy receipt format - Contains signed transaction information from Apple                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |                   | 7.13.2 |
 | **`appAccountToken`**      | <code>string \| null</code>                                                                                   | An optional obfuscated identifier that uniquely associates the transaction with a user account in your app. PURPOSE: - Fraud detection: Helps platforms detect irregular activity (e.g., many devices purchasing on the same account) - User linking: Links purchases to in-game characters, avatars, or in-app profiles PLATFORM DIFFERENCES: - iOS: Must be a valid UUID format (e.g., "550e8400-e29b-41d4-a716-446655440000") Apple's StoreKit 2 requires UUID format for the appAccountToken parameter - Android: Can be any obfuscated string (max 64 chars), maps to Google Play's ObfuscatedAccountId Google recommends using encryption or one-way hash SECURITY REQUIREMENTS (especially for Android): - DO NOT store Personally Identifiable Information (PII) like emails in cleartext - Use encryption or a one-way hash to generate an obfuscated identifier - Maximum length: 64 characters (both platforms) - Storing PII in cleartext will result in purchases being blocked by Google Play IMPLEMENTATION EXAMPLE: ```typescript // For iOS: Generate a deterministic UUID from user ID import { v5 as uuidv5 } from 'uuid'; const NAMESPACE = '6ba7b810-9dad-11d1-80b4-00c04fd430c8'; // Your app's namespace UUID const appAccountToken = uuidv5(userId, NAMESPACE); // For Android: Can also use UUID or any hashed value // The same UUID approach works for both platforms ``` |                   |        |
 | **`productIdentifier`**    | <code>string</code>                                                                                           | <a href="#product">Product</a> identifier associated with the transaction.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |                   | 1.0.0  |
 | **`purchaseDate`**         | <code>string</code>                                                                                           | Purchase date of the transaction in ISO 8601 format.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |                   | 1.0.0  |
@@ -1761,7 +1990,7 @@ which is useful for determining if users are entitled to features from earlier b
 | **`subscriptionState`**    | <code>'unknown' \| 'subscribed' \| 'expired' \| 'revoked' \| 'inGracePeriod' \| 'inBillingRetryPeriod'</code> | Current subscription state reported by StoreKit. Possible values: - `"subscribed"`: Auto-renewing and in good standing - `"expired"`: Lapsed with no access - `"revoked"`: Access removed due to refund or issue - `"inGracePeriod"`: Payment issue but still in grace access window - `"inBillingRetryPeriod"`: StoreKit retrying failed billing - `"unknown"`: StoreKit did not report a state                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |                   | 7.13.2 |
 | **`purchaseState`**        | <code>string</code>                                                                                           | Purchase state of the transaction (numeric string value). **Android Values:** - `"1"`: Purchase completed and valid (PURCHASED state) - `"0"`: Payment pending (PENDING state, e.g., cash payment processing) - Other numeric values: Various other states Always check `purchaseState === "1"` on Android to verify a valid purchase. Refunded purchases typically disappear from getPurchases() rather than showing a different state.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |                   | 1.0.0  |
 | **`orderId`**              | <code>string</code>                                                                                           | Order ID associated with the transaction. Use this for server-side verification on Android. This is the Google Play order ID.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |                   | 1.0.0  |
-| **`purchaseToken`**        | <code>string</code>                                                                                           | Purchase token associated with the transaction. Send this to your backend for server-side validation with Google Play Developer API. This is the Android equivalent of iOS's receipt field.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |                   | 1.0.0  |
+| **`purchaseToken`**        | <code>string</code>                                                                                           | Purchase token associated with the transaction. **This is the full verified purchase token from Google Play.** Send this to your backend for server-side validation with Google Play Developer API. This is the Android equivalent of iOS's receipt field. **For backend validation:** - Use Google Play Developer API v3 to verify the purchase - API endpoint: androidpublisher.purchases.products.get() or purchases.subscriptions.get() - This token contains all data needed for validation with Google servers - Can also be used for subscription status checks and cancellation detection                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |                   | 1.0.0  |
 | **`isAcknowledged`**       | <code>boolean</code>                                                                                          | Whether the purchase has been acknowledged. Purchases must be acknowledged within 3 days or they will be refunded. By default, this plugin automatically acknowledges purchases unless you set `autoAcknowledgePurchases: false` in purchaseProduct().                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |                   | 1.0.0  |
 | **`quantity`**             | <code>number</code>                                                                                           | Quantity purchased.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | <code>1</code>    | 1.0.0  |
 | **`productType`**          | <code>string</code>                                                                                           | <a href="#product">Product</a> type. - `"inapp"`: One-time in-app purchase - `"subs"`: Subscription                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |                   | 1.0.0  |
