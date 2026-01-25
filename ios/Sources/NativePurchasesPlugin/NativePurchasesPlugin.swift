@@ -158,7 +158,7 @@ public class NativePurchasesPlugin: CAPPlugin, CAPBridgedPlugin {
 
     @objc func getProducts(_ call: CAPPluginCall) {
         let productIdentifiers = call.getArray("productIdentifiers", String.self) ?? []
-        let productType = call.getString("productType") ?? "inapp"
+        let productType = call.getString("productType", "inapp")
         print("productIdentifiers \(productIdentifiers)")
         print("productType \(productType)")
         Task {
@@ -176,7 +176,7 @@ public class NativePurchasesPlugin: CAPPlugin, CAPBridgedPlugin {
 
     @objc func getProduct(_ call: CAPPluginCall) {
         let productIdentifier = call.getString("productIdentifier") ?? ""
-        let productType = call.getString("productType") ?? "inapp"
+        let productType = call.getString("productType", "inapp")
         print("productIdentifier \(productIdentifier)")
         print("productType \(productType)")
         if productIdentifier.isEmpty {
