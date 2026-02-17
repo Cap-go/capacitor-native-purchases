@@ -707,33 +707,30 @@ public class NativePurchasesPlugin extends Plugin {
                             }
 
                             ProductDetails.SubscriptionOfferDetails selectedOfferDetails = offerDetailsList.get(0);
+                            if (
+                                selectedOfferDetails.getPricingPhases() == null ||
+                                selectedOfferDetails.getPricingPhases().getPricingPhaseList().isEmpty()
+                            ) {
+                                Log.w(TAG, "No pricing phases found for offer: " + selectedOfferDetails.getBasePlanId());
+                                closeBillingClient();
+                                call.reject("No pricing phases found for product: " + productDetails.getProductId());
+                                return;
+                            }
+
+                            ProductDetails.PricingPhase firstPricingPhase = selectedOfferDetails.getPricingPhases().getPricingPhaseList().get(0);
                             product.put("planIdentifier", productDetails.getProductId());
                             product.put("identifier", selectedOfferDetails.getBasePlanId());
                             product.put("offerToken", selectedOfferDetails.getOfferToken());
-                            double price =
-                                selectedOfferDetails.getPricingPhases().getPricingPhaseList().get(0).getPriceAmountMicros() / 1000000.0;
+                            double price = firstPricingPhase.getPriceAmountMicros() / 1000000.0;
                             product.put("price", price);
-                            product.put(
-                                "priceString",
-                                selectedOfferDetails.getPricingPhases().getPricingPhaseList().get(0).getFormattedPrice()
-                            );
-                            product.put(
-                                "currencyCode",
-                                selectedOfferDetails.getPricingPhases().getPricingPhaseList().get(0).getPriceCurrencyCode()
-                            );
+                            product.put("priceString", firstPricingPhase.getFormattedPrice());
+                            product.put("currencyCode", firstPricingPhase.getPriceCurrencyCode());
                             Log.d(TAG, "Plan identifier: " + productDetails.getProductId());
                             Log.d(TAG, "Base plan ID: " + selectedOfferDetails.getBasePlanId());
                             Log.d(TAG, "Offer token: " + selectedOfferDetails.getOfferToken());
                             Log.d(TAG, "Price: " + price);
-                            Log.d(
-                                TAG,
-                                "Formatted price: " +
-                                    selectedOfferDetails.getPricingPhases().getPricingPhaseList().get(0).getFormattedPrice()
-                            );
-                            Log.d(
-                                TAG,
-                                "Currency: " + selectedOfferDetails.getPricingPhases().getPricingPhaseList().get(0).getPriceCurrencyCode()
-                            );
+                            Log.d(TAG, "Formatted price: " + firstPricingPhase.getFormattedPrice());
+                            Log.d(TAG, "Currency: " + firstPricingPhase.getPriceCurrencyCode());
                         }
                         product.put("isFamilyShareable", false);
 
@@ -836,6 +833,7 @@ public class NativePurchasesPlugin extends Plugin {
                                     continue;
                                 }
 
+                                int addedOffers = 0;
                                 for (ProductDetails.SubscriptionOfferDetails offerDetails : offerDetailsList) {
                                     if (
                                         offerDetails.getPricingPhases() == null ||
@@ -866,6 +864,14 @@ public class NativePurchasesPlugin extends Plugin {
                                     Log.d(TAG, "Currency: " + firstPricingPhase.getPriceCurrencyCode());
 
                                     products.put(product);
+                                    addedOffers++;
+                                }
+
+                                if (addedOffers == 0) {
+                                    Log.w(
+                                        TAG,
+                                        "All subscription offers missing pricing phases for product: " + productDetails.getProductId()
+                                    );
                                 }
                             }
                         }
