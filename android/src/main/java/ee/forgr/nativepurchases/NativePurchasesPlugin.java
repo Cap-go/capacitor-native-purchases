@@ -724,6 +724,7 @@ public class NativePurchasesPlugin extends Plugin {
                             product.put("planIdentifier", productDetails.getProductId());
                             product.put("identifier", selectedOfferDetails.getBasePlanId());
                             product.put("offerToken", selectedOfferDetails.getOfferToken());
+                            product.put("offerId", selectedOfferDetails.getOfferId());
                             double price = firstPricingPhase.getPriceAmountMicros() / 1000000.0;
                             product.put("price", price);
                             product.put("priceString", firstPricingPhase.getFormattedPrice());
@@ -853,6 +854,7 @@ public class NativePurchasesPlugin extends Plugin {
                                     product.put("planIdentifier", productDetails.getProductId());
                                     product.put("identifier", offerDetails.getBasePlanId());
                                     product.put("offerToken", offerDetails.getOfferToken());
+                                    product.put("offerId", offerDetails.getOfferId());
 
                                     ProductDetails.PricingPhase firstPricingPhase = offerDetails
                                         .getPricingPhases()

@@ -719,6 +719,18 @@ export interface Product {
    */
   readonly subscriptionGroupIdentifier: string;
   /**
+   * Android subscriptions only: Google Play product identifier tied to the offer/base plan set.
+   */
+  readonly planIdentifier?: string;
+  /**
+   * Android subscriptions only: offer token required when purchasing specific offers.
+   */
+  readonly offerToken?: string;
+  /**
+   * Android subscriptions only: offer identifier (null/undefined for base offers).
+   */
+  readonly offerId?: string | null;
+  /**
    * The Product subscription group identifier.
    */
   readonly subscriptionPeriod: SubscriptionPeriod;

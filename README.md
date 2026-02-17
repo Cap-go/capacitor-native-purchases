@@ -180,6 +180,8 @@ class PurchaseManager {
         productIdentifiers: [this.monthlySubId, this.yearlySubId],
         productType: PURCHASE_TYPE.SUBS
       });
+      // Android note: subscriptions can include multiple entries per product (one per offer/base plan).
+      // Use `identifier` (base plan), `offerToken`, and optional `offerId` to pick a specific offer.
       
       console.log('Products loaded:', {
         premium: premiumProduct,
@@ -2015,20 +2017,23 @@ which is useful for determining if users are entitled to features from earlier b
 
 #### Product
 
-| Prop                              | Type                                                                    | Description                                                              |
-| --------------------------------- | ----------------------------------------------------------------------- | ------------------------------------------------------------------------ |
-| **`identifier`**                  | <code>string</code>                                                     | <a href="#product">Product</a> Id.                                       |
-| **`description`**                 | <code>string</code>                                                     | Description of the product.                                              |
-| **`title`**                       | <code>string</code>                                                     | Title of the product.                                                    |
-| **`price`**                       | <code>number</code>                                                     | Price of the product in the local currency.                              |
-| **`priceString`**                 | <code>string</code>                                                     | Formatted price of the item, including its currency sign, such as €3.99. |
-| **`currencyCode`**                | <code>string</code>                                                     | Currency code for price and original price.                              |
-| **`currencySymbol`**              | <code>string</code>                                                     | Currency symbol for price and original price.                            |
-| **`isFamilyShareable`**           | <code>boolean</code>                                                    | Boolean indicating if the product is sharable with family                |
-| **`subscriptionGroupIdentifier`** | <code>string</code>                                                     | Group identifier for the product.                                        |
-| **`subscriptionPeriod`**          | <code><a href="#subscriptionperiod">SubscriptionPeriod</a></code>       | The <a href="#product">Product</a> subscription group identifier.        |
-| **`introductoryPrice`**           | <code><a href="#skproductdiscount">SKProductDiscount</a> \| null</code> | The <a href="#product">Product</a> introductory Price.                   |
-| **`discounts`**                   | <code>SKProductDiscount[]</code>                                        | The <a href="#product">Product</a> discounts list.                       |
+| Prop                              | Type                                                                    | Description                                                                                 |
+| --------------------------------- | ----------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| **`identifier`**                  | <code>string</code>                                                     | <a href="#product">Product</a> Id.                                                          |
+| **`description`**                 | <code>string</code>                                                     | Description of the product.                                                                 |
+| **`title`**                       | <code>string</code>                                                     | Title of the product.                                                                       |
+| **`price`**                       | <code>number</code>                                                     | Price of the product in the local currency.                                                 |
+| **`priceString`**                 | <code>string</code>                                                     | Formatted price of the item, including its currency sign, such as €3.99.                    |
+| **`currencyCode`**                | <code>string</code>                                                     | Currency code for price and original price.                                                 |
+| **`currencySymbol`**              | <code>string</code>                                                     | Currency symbol for price and original price.                                               |
+| **`isFamilyShareable`**           | <code>boolean</code>                                                    | Boolean indicating if the product is sharable with family                                   |
+| **`subscriptionGroupIdentifier`** | <code>string</code>                                                     | Group identifier for the product.                                                           |
+| **`planIdentifier`**              | <code>string</code>                                                     | Android subscriptions only: Google Play product identifier tied to the offer/base plan set. |
+| **`offerToken`**                  | <code>string</code>                                                     | Android subscriptions only: offer token required when purchasing specific offers.           |
+| **`offerId`**                     | <code>string \| null</code>                                             | Android subscriptions only: offer identifier (null/undefined for base offers).              |
+| **`subscriptionPeriod`**          | <code><a href="#subscriptionperiod">SubscriptionPeriod</a></code>       | The <a href="#product">Product</a> subscription group identifier.                           |
+| **`introductoryPrice`**           | <code><a href="#skproductdiscount">SKProductDiscount</a> \| null</code> | The <a href="#product">Product</a> introductory Price.                                      |
+| **`discounts`**                   | <code>SKProductDiscount[]</code>                                        | The <a href="#product">Product</a> discounts list.                                          |
 
 
 #### SubscriptionPeriod
