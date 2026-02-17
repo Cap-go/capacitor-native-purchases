@@ -698,11 +698,18 @@ public class NativePurchasesPlugin extends Plugin {
                             Log.d(TAG, "Currency: " + productDetails.getOneTimePurchaseOfferDetails().getPriceCurrencyCode());
                         } else {
                             Log.d(TAG, "Processing as subscription product");
-                            ProductDetails.SubscriptionOfferDetails selectedOfferDetails = productDetails
-                                .getSubscriptionOfferDetails()
-                                .get(0);
+                            List<ProductDetails.SubscriptionOfferDetails> offerDetailsList = productDetails.getSubscriptionOfferDetails();
+                            if (offerDetailsList == null || offerDetailsList.isEmpty()) {
+                                Log.w(TAG, "No subscription offer details found for product: " + productDetails.getProductId());
+                                closeBillingClient();
+                                call.reject("No subscription offers found for product: " + productDetails.getProductId());
+                                return;
+                            }
+
+                            ProductDetails.SubscriptionOfferDetails selectedOfferDetails = offerDetailsList.get(0);
                             product.put("planIdentifier", productDetails.getProductId());
                             product.put("identifier", selectedOfferDetails.getBasePlanId());
+                            product.put("offerToken", selectedOfferDetails.getOfferToken());
                             double price =
                                 selectedOfferDetails.getPricingPhases().getPricingPhaseList().get(0).getPriceAmountMicros() / 1000000.0;
                             product.put("price", price);
@@ -716,6 +723,7 @@ public class NativePurchasesPlugin extends Plugin {
                             );
                             Log.d(TAG, "Plan identifier: " + productDetails.getProductId());
                             Log.d(TAG, "Base plan ID: " + selectedOfferDetails.getBasePlanId());
+                            Log.d(TAG, "Offer token: " + selectedOfferDetails.getOfferToken());
                             Log.d(TAG, "Price: " + price);
                             Log.d(
                                 TAG,
