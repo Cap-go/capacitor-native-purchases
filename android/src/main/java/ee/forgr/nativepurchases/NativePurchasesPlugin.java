@@ -30,7 +30,6 @@ import com.google.common.collect.ImmutableList;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
-import java.util.Objects;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Phaser;
 import java.util.concurrent.TimeUnit;
@@ -688,14 +687,21 @@ public class NativePurchasesPlugin extends Plugin {
                         if (productType.equals("inapp")) {
                             Log.d(TAG, "Processing as in-app product");
                             product.put("identifier", productDetails.getProductId());
-                            double price =
-                                Objects.requireNonNull(productDetails.getOneTimePurchaseOfferDetails()).getPriceAmountMicros() / 1000000.0;
+                            ProductDetails.OneTimePurchaseOfferDetails oneTimeOfferDetails =
+                                productDetails.getOneTimePurchaseOfferDetails();
+                            if (oneTimeOfferDetails == null) {
+                                Log.w(TAG, "No one-time purchase offer details found for product: " + productDetails.getProductId());
+                                closeBillingClient();
+                                call.reject("No one-time purchase offer details found for product: " + productDetails.getProductId());
+                                return;
+                            }
+                            double price = oneTimeOfferDetails.getPriceAmountMicros() / 1000000.0;
                             product.put("price", price);
-                            product.put("priceString", productDetails.getOneTimePurchaseOfferDetails().getFormattedPrice());
-                            product.put("currencyCode", productDetails.getOneTimePurchaseOfferDetails().getPriceCurrencyCode());
+                            product.put("priceString", oneTimeOfferDetails.getFormattedPrice());
+                            product.put("currencyCode", oneTimeOfferDetails.getPriceCurrencyCode());
                             Log.d(TAG, "Price: " + price);
-                            Log.d(TAG, "Formatted price: " + productDetails.getOneTimePurchaseOfferDetails().getFormattedPrice());
-                            Log.d(TAG, "Currency: " + productDetails.getOneTimePurchaseOfferDetails().getPriceCurrencyCode());
+                            Log.d(TAG, "Formatted price: " + oneTimeOfferDetails.getFormattedPrice());
+                            Log.d(TAG, "Currency: " + oneTimeOfferDetails.getPriceCurrencyCode());
                         } else {
                             Log.d(TAG, "Processing as subscription product");
                             List<ProductDetails.SubscriptionOfferDetails> offerDetailsList = productDetails.getSubscriptionOfferDetails();
@@ -818,16 +824,22 @@ public class NativePurchasesPlugin extends Plugin {
                                 product.put("title", productDetails.getName());
                                 product.put("description", productDetails.getDescription());
                                 product.put("identifier", productDetails.getProductId());
-                                double price =
-                                    Objects.requireNonNull(productDetails.getOneTimePurchaseOfferDetails()).getPriceAmountMicros() /
-                                    1000000.0;
+
+                                ProductDetails.OneTimePurchaseOfferDetails oneTimeOfferDetails =
+                                    productDetails.getOneTimePurchaseOfferDetails();
+                                if (oneTimeOfferDetails == null) {
+                                    Log.w(TAG, "No one-time purchase offer details found for product: " + productDetails.getProductId());
+                                    continue;
+                                }
+
+                                double price = oneTimeOfferDetails.getPriceAmountMicros() / 1000000.0;
                                 product.put("price", price);
-                                product.put("priceString", productDetails.getOneTimePurchaseOfferDetails().getFormattedPrice());
-                                product.put("currencyCode", productDetails.getOneTimePurchaseOfferDetails().getPriceCurrencyCode());
+                                product.put("priceString", oneTimeOfferDetails.getFormattedPrice());
+                                product.put("currencyCode", oneTimeOfferDetails.getPriceCurrencyCode());
                                 product.put("isFamilyShareable", false);
                                 Log.d(TAG, "Price: " + price);
-                                Log.d(TAG, "Formatted price: " + productDetails.getOneTimePurchaseOfferDetails().getFormattedPrice());
-                                Log.d(TAG, "Currency: " + productDetails.getOneTimePurchaseOfferDetails().getPriceCurrencyCode());
+                                Log.d(TAG, "Formatted price: " + oneTimeOfferDetails.getFormattedPrice());
+                                Log.d(TAG, "Currency: " + oneTimeOfferDetails.getPriceCurrencyCode());
                                 products.put(product);
                             } else {
                                 Log.d(TAG, "Processing as subscription product");

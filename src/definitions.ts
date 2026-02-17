@@ -684,6 +684,12 @@ export interface SKProductDiscount {
 export interface Product {
   /**
    * Product Id.
+   *
+   * Android subscriptions note:
+   * - `identifier` is the base plan ID (`offerDetails.getBasePlanId()`).
+   * - `planIdentifier` is the subscription product ID (`productDetails.getProductId()`).
+   *
+   * If you group/filter Android subscription results by `identifier`, you are grouping by base plan.
    */
   readonly identifier: string;
   /**
