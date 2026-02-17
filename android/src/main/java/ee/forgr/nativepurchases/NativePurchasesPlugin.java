@@ -712,12 +712,19 @@ public class NativePurchasesPlugin extends Plugin {
                                 return;
                             }
 
-                            ProductDetails.SubscriptionOfferDetails selectedOfferDetails = offerDetailsList.get(0);
-                            if (
-                                selectedOfferDetails.getPricingPhases() == null ||
-                                selectedOfferDetails.getPricingPhases().getPricingPhaseList().isEmpty()
-                            ) {
-                                Log.w(TAG, "No pricing phases found for offer: " + selectedOfferDetails.getBasePlanId());
+                            ProductDetails.SubscriptionOfferDetails selectedOfferDetails = null;
+                            for (ProductDetails.SubscriptionOfferDetails offerDetails : offerDetailsList) {
+                                if (
+                                    offerDetails.getPricingPhases() != null &&
+                                    !offerDetails.getPricingPhases().getPricingPhaseList().isEmpty()
+                                ) {
+                                    selectedOfferDetails = offerDetails;
+                                    break;
+                                }
+                            }
+
+                            if (selectedOfferDetails == null) {
+                                Log.w(TAG, "No offers with pricing phases found for product: " + productDetails.getProductId());
                                 closeBillingClient();
                                 call.reject("No pricing phases found for product: " + productDetails.getProductId());
                                 return;
