@@ -800,14 +800,14 @@ public class NativePurchasesPlugin extends Plugin {
                         JSONArray products = new JSONArray();
                         for (ProductDetails productDetails : productDetailsList) {
                             Log.d(TAG, "Processing product details: " + productDetails.getProductId());
-                            JSObject product = new JSObject();
-                            product.put("title", productDetails.getName());
-                            product.put("description", productDetails.getDescription());
                             Log.d(TAG, "Product title: " + productDetails.getName());
                             Log.d(TAG, "Product description: " + productDetails.getDescription());
 
                             if (productType.equals("inapp")) {
                                 Log.d(TAG, "Processing as in-app product");
+                                JSObject product = new JSObject();
+                                product.put("title", productDetails.getName());
+                                product.put("description", productDetails.getDescription());
                                 product.put("identifier", productDetails.getProductId());
                                 double price =
                                     Objects.requireNonNull(productDetails.getOneTimePurchaseOfferDetails()).getPriceAmountMicros() /
@@ -815,43 +815,51 @@ public class NativePurchasesPlugin extends Plugin {
                                 product.put("price", price);
                                 product.put("priceString", productDetails.getOneTimePurchaseOfferDetails().getFormattedPrice());
                                 product.put("currencyCode", productDetails.getOneTimePurchaseOfferDetails().getPriceCurrencyCode());
+                                product.put("isFamilyShareable", false);
                                 Log.d(TAG, "Price: " + price);
                                 Log.d(TAG, "Formatted price: " + productDetails.getOneTimePurchaseOfferDetails().getFormattedPrice());
                                 Log.d(TAG, "Currency: " + productDetails.getOneTimePurchaseOfferDetails().getPriceCurrencyCode());
+                                products.put(product);
                             } else {
                                 Log.d(TAG, "Processing as subscription product");
-                                ProductDetails.SubscriptionOfferDetails selectedOfferDetails = productDetails
-                                    .getSubscriptionOfferDetails()
-                                    .get(0);
-                                product.put("planIdentifier", productDetails.getProductId());
-                                product.put("identifier", selectedOfferDetails.getBasePlanId());
-                                double price =
-                                    selectedOfferDetails.getPricingPhases().getPricingPhaseList().get(0).getPriceAmountMicros() / 1000000.0;
-                                product.put("price", price);
-                                product.put(
-                                    "priceString",
-                                    selectedOfferDetails.getPricingPhases().getPricingPhaseList().get(0).getFormattedPrice()
-                                );
-                                product.put(
-                                    "currencyCode",
-                                    selectedOfferDetails.getPricingPhases().getPricingPhaseList().get(0).getPriceCurrencyCode()
-                                );
-                                Log.d(TAG, "Plan identifier: " + productDetails.getProductId());
-                                Log.d(TAG, "Base plan ID: " + selectedOfferDetails.getBasePlanId());
-                                Log.d(TAG, "Price: " + price);
-                                Log.d(
-                                    TAG,
-                                    "Formatted price: " +
-                                        selectedOfferDetails.getPricingPhases().getPricingPhaseList().get(0).getFormattedPrice()
-                                );
-                                Log.d(
-                                    TAG,
-                                    "Currency: " +
-                                        selectedOfferDetails.getPricingPhases().getPricingPhaseList().get(0).getPriceCurrencyCode()
-                                );
+                                List<ProductDetails.SubscriptionOfferDetails> offerDetailsList = productDetails.getSubscriptionOfferDetails();
+                                if (offerDetailsList == null || offerDetailsList.isEmpty()) {
+                                    Log.w(TAG, "No subscription offer details found for product: " + productDetails.getProductId());
+                                    continue;
+                                }
+
+                                for (ProductDetails.SubscriptionOfferDetails offerDetails : offerDetailsList) {
+                                    if (
+                                        offerDetails.getPricingPhases() == null ||
+                                        offerDetails.getPricingPhases().getPricingPhaseList().isEmpty()
+                                    ) {
+                                        Log.w(TAG, "No pricing phases found for offer: " + offerDetails.getBasePlanId());
+                                        continue;
+                                    }
+
+                                    JSObject product = new JSObject();
+                                    product.put("title", productDetails.getName());
+                                    product.put("description", productDetails.getDescription());
+                                    product.put("planIdentifier", productDetails.getProductId());
+                                    product.put("identifier", offerDetails.getBasePlanId());
+                                    product.put("offerToken", offerDetails.getOfferToken());
+
+                                    ProductDetails.PricingPhase firstPricingPhase = offerDetails.getPricingPhases().getPricingPhaseList().get(0);
+                                    double price = firstPricingPhase.getPriceAmountMicros() / 1000000.0;
+                                    product.put("price", price);
+                                    product.put("priceString", firstPricingPhase.getFormattedPrice());
+                                    product.put("currencyCode", firstPricingPhase.getPriceCurrencyCode());
+                                    product.put("isFamilyShareable", false);
+
+                                    Log.d(TAG, "Plan identifier: " + productDetails.getProductId());
+                                    Log.d(TAG, "Base plan ID: " + offerDetails.getBasePlanId());
+                                    Log.d(TAG, "Price: " + price);
+                                    Log.d(TAG, "Formatted price: " + firstPricingPhase.getFormattedPrice());
+                                    Log.d(TAG, "Currency: " + firstPricingPhase.getPriceCurrencyCode());
+
+                                    products.put(product);
+                                }
                             }
-                            product.put("isFamilyShareable", false);
-                            products.put(product);
                         }
                         JSObject ret = new JSObject();
                         ret.put("products", products);
