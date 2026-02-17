@@ -717,7 +717,10 @@ public class NativePurchasesPlugin extends Plugin {
                                 return;
                             }
 
-                            ProductDetails.PricingPhase firstPricingPhase = selectedOfferDetails.getPricingPhases().getPricingPhaseList().get(0);
+                            ProductDetails.PricingPhase firstPricingPhase = selectedOfferDetails
+                                .getPricingPhases()
+                                .getPricingPhaseList()
+                                .get(0);
                             product.put("planIdentifier", productDetails.getProductId());
                             product.put("identifier", selectedOfferDetails.getBasePlanId());
                             product.put("offerToken", selectedOfferDetails.getOfferToken());
@@ -827,7 +830,8 @@ public class NativePurchasesPlugin extends Plugin {
                                 products.put(product);
                             } else {
                                 Log.d(TAG, "Processing as subscription product");
-                                List<ProductDetails.SubscriptionOfferDetails> offerDetailsList = productDetails.getSubscriptionOfferDetails();
+                                List<ProductDetails.SubscriptionOfferDetails> offerDetailsList =
+                                    productDetails.getSubscriptionOfferDetails();
                                 if (offerDetailsList == null || offerDetailsList.isEmpty()) {
                                     Log.w(TAG, "No subscription offer details found for product: " + productDetails.getProductId());
                                     continue;
@@ -850,7 +854,10 @@ public class NativePurchasesPlugin extends Plugin {
                                     product.put("identifier", offerDetails.getBasePlanId());
                                     product.put("offerToken", offerDetails.getOfferToken());
 
-                                    ProductDetails.PricingPhase firstPricingPhase = offerDetails.getPricingPhases().getPricingPhaseList().get(0);
+                                    ProductDetails.PricingPhase firstPricingPhase = offerDetails
+                                        .getPricingPhases()
+                                        .getPricingPhaseList()
+                                        .get(0);
                                     double price = firstPricingPhase.getPriceAmountMicros() / 1000000.0;
                                     product.put("price", price);
                                     product.put("priceString", firstPricingPhase.getFormattedPrice());
