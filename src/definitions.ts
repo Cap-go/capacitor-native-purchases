@@ -684,6 +684,12 @@ export interface SKProductDiscount {
 export interface Product {
   /**
    * Product Id.
+   *
+   * Android subscriptions note:
+   * - `identifier` is the base plan ID (`offerDetails.getBasePlanId()`).
+   * - `planIdentifier` is the subscription product ID (`productDetails.getProductId()`).
+   *
+   * If you group/filter Android subscription results by `identifier`, you are grouping by base plan.
    */
   readonly identifier: string;
   /**
@@ -718,6 +724,18 @@ export interface Product {
    * Group identifier for the product.
    */
   readonly subscriptionGroupIdentifier: string;
+  /**
+   * Android subscriptions only: Google Play product identifier tied to the offer/base plan set.
+   */
+  readonly planIdentifier?: string;
+  /**
+   * Android subscriptions only: offer token required when purchasing specific offers.
+   */
+  readonly offerToken?: string;
+  /**
+   * Android subscriptions only: offer identifier (null/undefined for base offers).
+   */
+  readonly offerId?: string | null;
   /**
    * The Product subscription group identifier.
    */
