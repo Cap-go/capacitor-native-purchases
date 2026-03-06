@@ -1196,6 +1196,50 @@ public class NativePurchasesPlugin extends Plugin {
     }
 
     @PluginMethod
+    public void consumePurchase(PluginCall call) {
+        Log.d(TAG, "consumePurchase() called");
+        String purchaseToken = call.getString("purchaseToken");
+
+        if (purchaseToken == null || purchaseToken.isEmpty()) {
+            Log.d(TAG, "Error: purchaseToken is empty");
+            call.reject("purchaseToken is required");
+            return;
+        }
+
+        Log.d(TAG, "Consuming purchase with token: " + purchaseToken);
+        try {
+            this.initBillingClient(call);
+        } catch (RuntimeException e) {
+            Log.e(TAG, "Failed to initialize billing client: " + e.getMessage());
+            closeBillingClient();
+            return;
+        }
+
+        try {
+            ConsumeParams consumeParams = ConsumeParams.newBuilder().setPurchaseToken(purchaseToken).build();
+
+            billingClient.consumeAsync(consumeParams, (billingResult, consumedToken) -> {
+                Log.d(TAG, "onConsumeResponse() called");
+                Log.d(TAG, "Consume result: " + billingResult.getResponseCode() + " - " + billingResult.getDebugMessage());
+
+                if (billingResult.getResponseCode() == BillingClient.BillingResponseCode.OK) {
+                    Log.d(TAG, "Purchase consumed successfully");
+                    closeBillingClient();
+                    call.resolve();
+                } else {
+                    Log.d(TAG, "Purchase consumption failed");
+                    closeBillingClient();
+                    call.reject("Failed to consume purchase: " + billingResult.getDebugMessage());
+                }
+            });
+        } catch (Exception e) {
+            Log.d(TAG, "Exception during consumePurchase: " + e.getMessage());
+            closeBillingClient();
+            call.reject(e.getMessage());
+        }
+    }
+
+    @PluginMethod
     public void getAppTransaction(PluginCall call) {
         Log.d(TAG, "getAppTransaction() called");
         try {
