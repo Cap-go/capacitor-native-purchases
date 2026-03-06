@@ -506,8 +506,9 @@ public class NativePurchasesPlugin extends Plugin {
                             }
                             productDetailsParamsList.add(productDetailsParams.build());
                         }
-                        BillingFlowParams.Builder billingFlowBuilder = BillingFlowParams.newBuilder()
-                            .setProductDetailsParamsList(productDetailsParamsList);
+                        BillingFlowParams.Builder billingFlowBuilder = BillingFlowParams.newBuilder().setProductDetailsParamsList(
+                            productDetailsParamsList
+                        );
                         if (accountIdentifier != null && !accountIdentifier.isEmpty()) {
                             billingFlowBuilder.setObfuscatedAccountId(accountIdentifier);
                         }
@@ -697,7 +698,7 @@ public class NativePurchasesPlugin extends Plugin {
                             Log.d(
                                 TAG,
                                 "Formatted price: " +
-                                selectedOfferDetails.getPricingPhases().getPricingPhaseList().get(0).getFormattedPrice()
+                                    selectedOfferDetails.getPricingPhases().getPricingPhaseList().get(0).getFormattedPrice()
                             );
                             Log.d(
                                 TAG,
@@ -819,12 +820,12 @@ public class NativePurchasesPlugin extends Plugin {
                                 Log.d(
                                     TAG,
                                     "Formatted price: " +
-                                    selectedOfferDetails.getPricingPhases().getPricingPhaseList().get(0).getFormattedPrice()
+                                        selectedOfferDetails.getPricingPhases().getPricingPhaseList().get(0).getFormattedPrice()
                                 );
                                 Log.d(
                                     TAG,
                                     "Currency: " +
-                                    selectedOfferDetails.getPricingPhases().getPricingPhaseList().get(0).getPriceCurrencyCode()
+                                        selectedOfferDetails.getPricingPhases().getPricingPhaseList().get(0).getPriceCurrencyCode()
                                 );
                             }
                             product.put("isFamilyShareable", false);
@@ -1117,6 +1118,50 @@ public class NativePurchasesPlugin extends Plugin {
             );
         } catch (Exception e) {
             Log.d(TAG, "Exception during acknowledgePurchase: " + e.getMessage());
+            closeBillingClient();
+            call.reject(e.getMessage());
+        }
+    }
+
+    @PluginMethod
+    public void consumePurchase(PluginCall call) {
+        Log.d(TAG, "consumePurchase() called");
+        String purchaseToken = call.getString("purchaseToken");
+
+        if (purchaseToken == null || purchaseToken.isEmpty()) {
+            Log.d(TAG, "Error: purchaseToken is empty");
+            call.reject("purchaseToken is required");
+            return;
+        }
+
+        Log.d(TAG, "Consuming purchase with token: " + purchaseToken);
+        try {
+            this.initBillingClient(call);
+        } catch (RuntimeException e) {
+            Log.e(TAG, "Failed to initialize billing client: " + e.getMessage());
+            closeBillingClient();
+            return;
+        }
+
+        try {
+            ConsumeParams consumeParams = ConsumeParams.newBuilder().setPurchaseToken(purchaseToken).build();
+
+            billingClient.consumeAsync(consumeParams, (billingResult, consumedToken) -> {
+                Log.d(TAG, "onConsumeResponse() called");
+                Log.d(TAG, "Consume result: " + billingResult.getResponseCode() + " - " + billingResult.getDebugMessage());
+
+                if (billingResult.getResponseCode() == BillingClient.BillingResponseCode.OK) {
+                    Log.d(TAG, "Purchase consumed successfully");
+                    closeBillingClient();
+                    call.resolve();
+                } else {
+                    Log.d(TAG, "Purchase consumption failed");
+                    closeBillingClient();
+                    call.reject("Failed to consume purchase: " + billingResult.getDebugMessage());
+                }
+            });
+        } catch (Exception e) {
+            Log.d(TAG, "Exception during consumePurchase: " + e.getMessage());
             closeBillingClient();
             call.reject(e.getMessage());
         }
