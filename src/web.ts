@@ -46,6 +46,10 @@ export class NativePurchasesWeb extends WebPlugin implements NativePurchasesPlug
     console.error('acknowledgePurchase only mocked in web');
   }
 
+  async consumePurchase(_options: { purchaseToken: string }): Promise<void> {
+    throw new Error('consumePurchase is only available on Android');
+  }
+
   async getAppTransaction(): Promise<{ appTransaction: AppTransaction }> {
     console.error('getAppTransaction only mocked in web');
     return {
