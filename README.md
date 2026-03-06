@@ -1431,6 +1431,7 @@ This approach balances immediate user gratification with proper server-side vali
 * [`getPurchases(...)`](#getpurchases)
 * [`manageSubscriptions()`](#managesubscriptions)
 * [`acknowledgePurchase(...)`](#acknowledgepurchase)
+* [`consumePurchase(...)`](#consumepurchase)
 * [`addListener('transactionUpdated', ...)`](#addlistenertransactionupdated-)
 * [`addListener('transactionVerificationFailed', ...)`](#addlistenertransactionverificationfailed-)
 * [`removeAllListeners()`](#removealllisteners)
@@ -1667,6 +1668,35 @@ await NativePurchases.acknowledgePurchase({
 | **`options`** | <code>{ purchaseToken: string; }</code> | - The purchase to acknowledge |
 
 **Since:** 7.14.0
+
+--------------------
+
+
+### consumePurchase(...)
+
+```typescript
+consumePurchase(options: { purchaseToken: string; }) => Promise<void>
+```
+
+Consume an in-app purchase on Android.
+
+Consuming a purchase does two things:
+1. Acknowledges the purchase (so you don't need to call acknowledgePurchase separately)
+2. Removes ownership, allowing the user to buy the same product again
+
+Use this for consumable products like virtual currency, extra lives, or credits.
+
+**Important:** In Google Play Billing Library 8.x, consumed purchases can no longer
+be queried via getPurchases(). Once consumed, the purchase is gone.
+
+Android only — iOS does not have a separate consume concept.
+On iOS and web, this method rejects with an error.
+
+| Param         | Type                                    | Description               |
+| ------------- | --------------------------------------- | ------------------------- |
+| **`options`** | <code>{ purchaseToken: string; }</code> | - The purchase to consume |
+
+**Since:** 8.2.0
 
 --------------------
 

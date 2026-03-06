@@ -919,6 +919,49 @@ export interface NativePurchasesPlugin {
   acknowledgePurchase(options: { purchaseToken: string }): Promise<void>;
 
   /**
+   * Consume an in-app purchase on Android.
+   *
+   * Consuming a purchase does two things:
+   * 1. Acknowledges the purchase (so you don't need to call acknowledgePurchase separately)
+   * 2. Removes ownership, allowing the user to buy the same product again
+   *
+   * Use this for consumable products like virtual currency, extra lives, or credits.
+   *
+   * **Important:** In Google Play Billing Library 8.x, consumed purchases can no longer
+   * be queried via getPurchases(). Once consumed, the purchase is gone.
+   *
+   * Android only — iOS does not have a separate consume concept.
+   * On iOS and web, this method rejects with an error.
+   *
+   * @param options - The purchase to consume
+   * @param options.purchaseToken - The purchase token from the Transaction object
+   * @returns {Promise<void>} Promise that resolves when the purchase is consumed
+   * @throws Error if consumption fails, token is invalid, or called on iOS/web
+   * @platform android
+   * @since 8.2.0
+   *
+   * @example
+   * ```typescript
+   * const transaction = await NativePurchases.purchaseProduct({
+   *   productIdentifier: 'coins_100',
+   *   isConsumable: false,
+   *   autoAcknowledgePurchases: false
+   * });
+   *
+   * // Validate with your backend first
+   * const isValid = await validateWithServer(transaction.purchaseToken);
+   *
+   * if (isValid) {
+   *   // Grant the coins, then consume to allow re-purchase
+   *   await NativePurchases.consumePurchase({
+   *     purchaseToken: transaction.purchaseToken!
+   *   });
+   * }
+   * ```
+   */
+  consumePurchase(options: { purchaseToken: string }): Promise<void>;
+
+  /**
    * Listen for StoreKit transaction updates delivered by Apple's Transaction.updates.
    * Fires on app launch if there are unfinished transactions, and for any updates afterward.
    * iOS only.
