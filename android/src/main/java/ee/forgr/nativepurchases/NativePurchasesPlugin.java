@@ -1216,27 +1216,22 @@ public class NativePurchasesPlugin extends Plugin {
         }
 
         try {
-            ConsumeParams consumeParams = ConsumeParams.newBuilder()
-                .setPurchaseToken(purchaseToken)
-                .build();
+            ConsumeParams consumeParams = ConsumeParams.newBuilder().setPurchaseToken(purchaseToken).build();
 
-            billingClient.consumeAsync(
-                consumeParams,
-                (billingResult, consumedToken) -> {
-                    Log.d(TAG, "onConsumeResponse() called");
-                    Log.d(TAG, "Consume result: " + billingResult.getResponseCode() + " - " + billingResult.getDebugMessage());
+            billingClient.consumeAsync(consumeParams, (billingResult, consumedToken) -> {
+                Log.d(TAG, "onConsumeResponse() called");
+                Log.d(TAG, "Consume result: " + billingResult.getResponseCode() + " - " + billingResult.getDebugMessage());
 
-                    if (billingResult.getResponseCode() == BillingClient.BillingResponseCode.OK) {
-                        Log.d(TAG, "Purchase consumed successfully");
-                        closeBillingClient();
-                        call.resolve();
-                    } else {
-                        Log.d(TAG, "Purchase consumption failed");
-                        closeBillingClient();
-                        call.reject("Failed to consume purchase: " + billingResult.getDebugMessage());
-                    }
+                if (billingResult.getResponseCode() == BillingClient.BillingResponseCode.OK) {
+                    Log.d(TAG, "Purchase consumed successfully");
+                    closeBillingClient();
+                    call.resolve();
+                } else {
+                    Log.d(TAG, "Purchase consumption failed");
+                    closeBillingClient();
+                    call.reject("Failed to consume purchase: " + billingResult.getDebugMessage());
                 }
-            );
+            });
         } catch (Exception e) {
             Log.d(TAG, "Exception during consumePurchase: " + e.getMessage());
             closeBillingClient();
