@@ -21,7 +21,7 @@ public class NativePurchasesPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "isEntitledToOldBusinessModel", returnType: CAPPluginReturnPromise)
     ]
 
-    private let pluginVersion: String = "8.1.2"
+    private let pluginVersion: String = "8.2.0"
     private var transactionUpdatesTask: Task<Void, Never>?
 
     @objc func getPluginVersion(_ call: CAPPluginCall) {
