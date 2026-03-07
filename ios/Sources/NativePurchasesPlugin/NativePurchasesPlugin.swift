@@ -16,6 +16,7 @@ public class NativePurchasesPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "getPurchases", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "manageSubscriptions", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "acknowledgePurchase", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "consumePurchase", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "getAppTransaction", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "isEntitledToOldBusinessModel", returnType: CAPPluginReturnPromise)
     ]
@@ -264,6 +265,10 @@ public class NativePurchasesPlugin: CAPPlugin, CAPBridgedPlugin {
                 call.resolve()
             }
         }
+    }
+
+    @objc func consumePurchase(_ call: CAPPluginCall) {
+        call.reject("consumePurchase is only available on Android")
     }
 
 }
