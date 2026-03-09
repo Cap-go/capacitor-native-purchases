@@ -876,6 +876,22 @@ export interface NativePurchasesPlugin {
   /**
    * Gets the product info for a single product identifier.
    *
+   * **⚠️ Warning:** Do not call `getProduct` concurrently using `Promise.all`.
+   * The underlying native billing client is not designed for concurrent product
+   * queries, and doing so will cause a race condition that may result in errors
+   * or incomplete data. To fetch multiple products at once, use `getProducts`
+   * instead — it accepts an array of identifiers and is safe to call once.
+   *
+   * @example
+   * // ❌ Avoid: causes race condition
+   * const [a, b] = await Promise.all([
+   *   NativePurchases.getProduct({ productIdentifier: 'id1' }),
+   *   NativePurchases.getProduct({ productIdentifier: 'id2' }),
+   * ]);
+   *
+   * // ✅ Correct: use getProducts for multiple identifiers
+   * const { products } = await NativePurchases.getProducts({ productIdentifiers: ['id1', 'id2'] });
+   *
    * @param options - The product identifier you wish to retrieve information for
    * @param options.productIdentifier - The product identifier
    * @param options.productType - Only Android, the type of product, can be inapp or subs. Will use inapp by default.
