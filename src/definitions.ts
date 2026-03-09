@@ -877,10 +877,10 @@ export interface NativePurchasesPlugin {
    * Gets the product info for a single product identifier.
    *
    * **⚠️ Warning:** Do not call `getProduct` concurrently using `Promise.all`.
-   * The underlying native billing client is not designed for concurrent product
-   * queries, and doing so will cause a race condition that may result in errors
-   * or incomplete data. To fetch multiple products at once, use `getProducts`
-   * instead — it accepts an array of identifiers and is safe to call once.
+   * The underlying native billing client does not support concurrent product
+   * queries, and doing so causes a race condition that may result in errors
+   * or missing data. To fetch multiple products at once, use `getProducts`
+   * instead — it accepts an array of identifiers and is race-condition-free.
    *
    * @example
    * // ❌ Avoid: causes race condition

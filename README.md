@@ -1797,22 +1797,11 @@ getProduct(options: { productIdentifier: string; productType?: PURCHASE_TYPE; })
 
 Gets the product info for a single product identifier.
 
-> **⚠️ Warning:** Do **not** call `getProduct` concurrently using `Promise.all`. The underlying
-> native billing client does not support concurrent product queries; doing so causes a race
-> condition that can result in errors or missing data. To fetch multiple products in a single
-> call, use [`getProducts`](#getproducts) instead — it accepts an array of identifiers and is
-> race-condition-free.
->
-> ```typescript
-> // ❌ Avoid — race condition
-> const [a, b] = await Promise.all([
->   NativePurchases.getProduct({ productIdentifier: 'id1' }),
->   NativePurchases.getProduct({ productIdentifier: 'id2' }),
-> ]);
->
-> // ✅ Correct — use getProducts for multiple identifiers
-> const { products } = await NativePurchases.getProducts({ productIdentifiers: ['id1', 'id2'] });
-> ```
+**⚠️ Warning:** Do not call `getProduct` concurrently using `Promise.all`.
+The underlying native billing client does not support concurrent product
+queries, and doing so causes a race condition that may result in errors
+or missing data. To fetch multiple products at once, use `getProducts`
+instead — it accepts an array of identifiers and is race-condition-free.
 
 | Param         | Type                                                                                                  | Description                                                   |
 | ------------- | ----------------------------------------------------------------------------------------------------- | ------------------------------------------------------------- |
