@@ -1797,6 +1797,12 @@ getProduct(options: { productIdentifier: string; productType?: PURCHASE_TYPE; })
 
 Gets the product info for a single product identifier.
 
+**⚠️ Warning:** Do not call `getProduct` concurrently using `Promise.all`.
+The underlying native billing client does not support concurrent product
+queries, and doing so causes a race condition that may result in errors
+or missing data. To fetch multiple products at once, use `getProducts`
+instead — it accepts an array of identifiers and is race-condition-free.
+
 | Param         | Type                                                                                                  | Description                                                   |
 | ------------- | ----------------------------------------------------------------------------------------------------- | ------------------------------------------------------------- |
 | **`options`** | <code>{ productIdentifier: string; productType?: <a href="#purchase_type">PURCHASE_TYPE</a>; }</code> | - The product identifier you wish to retrieve information for |
