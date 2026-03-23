@@ -43,7 +43,7 @@ This guide covers testing Android in-app purchases using Google Play Console and
 
 ### Step 1: Configure License Testers
 
-1. **Go to Setup → License testing** in Play Console
+1. **Go to Settings → License testing** in Play Console
 2. **Add Gmail accounts** under "License testers" section
    - Enter email addresses (one per line)
    - Must be valid Gmail accounts
