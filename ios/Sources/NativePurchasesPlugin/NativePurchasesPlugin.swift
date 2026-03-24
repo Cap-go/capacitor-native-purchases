@@ -204,11 +204,11 @@ public class NativePurchasesPlugin: CAPPlugin, CAPBridgedPlugin {
     @objc func getPurchases(_ call: CAPPluginCall) {
         print("getPurchases")
         let appAccountTokenFilter = call.getString("appAccountToken")
-        let includeAllTransactions = call.getBool("includeAllTransactions") ?? false
+        let onlyCurrentEntitlements = call.getBool("onlyCurrentEntitlements") ?? false
         Task {
             let allPurchases = await TransactionHelpers.collectAllPurchases(
                 appAccountTokenFilter: appAccountTokenFilter,
-                includeAllTransactions: includeAllTransactions
+                onlyCurrentEntitlements: onlyCurrentEntitlements
             )
             await MainActor.run { call.resolve(["purchases": allPurchases]) }
         }

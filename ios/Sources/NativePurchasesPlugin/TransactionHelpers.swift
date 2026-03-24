@@ -96,12 +96,12 @@ internal class TransactionHelpers {
         }
     }
 
-    static func collectAllPurchases(appAccountTokenFilter: String?, includeAllTransactions: Bool = false) async -> [[String: Any]] {
+    static func collectAllPurchases(appAccountTokenFilter: String?, onlyCurrentEntitlements: Bool = false) async -> [[String: Any]] {
         var allPurchases: [[String: Any]] = []
-        if includeAllTransactions {
-            await collectPurchases(from: Transaction.all, filter: appAccountTokenFilter, into: &allPurchases)
-        } else {
+        if onlyCurrentEntitlements {
             await collectPurchases(from: Transaction.currentEntitlements, filter: appAccountTokenFilter, into: &allPurchases)
+        } else {
+            await collectPurchases(from: Transaction.all, filter: appAccountTokenFilter, into: &allPurchases)
         }
         return allPurchases
     }

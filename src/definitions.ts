@@ -922,11 +922,11 @@ export interface NativePurchasesPlugin {
    * @param options.appAccountToken - Optional filter to restrict results to purchases that used the provided account token.
    *                                   Must be the same identifier used during purchase (UUID format for iOS, any obfuscated string for Android).
    *                                   iOS: UUID format required. Android: Maps to ObfuscatedAccountId.
-   * @param options.includeAllTransactions - iOS only. When `true`, uses `Transaction.all` which returns every transaction
-   *                                          ever recorded on the device across all Apple IDs. When `false` (default), uses
-   *                                          `Transaction.currentEntitlements` which is scoped to the signed-in Apple ID
-   *                                          and only includes currently active entitlements. Set to `true` only if you
-   *                                          specifically need cross-account or historical transaction data.
+   * @param options.onlyCurrentEntitlements - iOS only. When `false` (default), uses `Transaction.all` which returns every
+   *                                           transaction ever recorded on the device. When `true`, uses
+   *                                           `Transaction.currentEntitlements` which is scoped to the signed-in Apple ID
+   *                                           and only includes currently active entitlements. Set to `true` to prevent
+   *                                           cross-account purchase leakage on shared or refurbished devices.
    * @returns {Promise<{ purchases: Transaction[] }>} Promise that resolves with array of user's purchases
    * @throws An error if the purchase query fails
    * @since 7.2.0
@@ -934,7 +934,7 @@ export interface NativePurchasesPlugin {
   getPurchases(options?: {
     productType?: PURCHASE_TYPE;
     appAccountToken?: string;
-    includeAllTransactions?: boolean;
+    onlyCurrentEntitlements?: boolean;
   }): Promise<{ purchases: Transaction[] }>;
 
   /**
