@@ -98,29 +98,11 @@ internal class TransactionHelpers {
 
     static func collectAllPurchases(appAccountTokenFilter: String?) async -> [[String: Any]] {
         var allPurchases: [[String: Any]] = []
-        var seenIds = Set<String>()
 
         for await result in Transaction.currentEntitlements {
             guard case .verified(let transaction) = result else { continue }
             if let filter = appAccountTokenFilter,
                transaction.appAccountToken?.uuidString != filter { continue }
-
-            let idStr = String(transaction.id)
-            seenIds.insert(idStr)
-            let data = await buildTransactionResponse(
-                from: transaction,
-                jwsRepresentation: result.jwsRepresentation
-            )
-            allPurchases.append(data)
-        }
-
-        for await result in Transaction.all {
-            guard case .verified(let transaction) = result else { continue }
-            if let filter = appAccountTokenFilter,
-               transaction.appAccountToken?.uuidString != filter { continue }
-
-            let idStr = String(transaction.id)
-            if seenIds.contains(idStr) { continue }
 
             let data = await buildTransactionResponse(
                 from: transaction,
