@@ -1841,15 +1841,15 @@ Get the native Capacitor plugin version
 ### getPurchases(...)
 
 ```typescript
-getPurchases(options?: { productType?: PURCHASE_TYPE | undefined; appAccountToken?: string | undefined; } | undefined) => Promise<{ purchases: Transaction[]; }>
+getPurchases(options?: { productType?: PURCHASE_TYPE | undefined; appAccountToken?: string | undefined; includeAllTransactions?: boolean | undefined; } | undefined) => Promise<{ purchases: Transaction[]; }>
 ```
 
 Gets all the user's purchases (both in-app purchases and subscriptions).
 This method queries the platform's purchase history for the current user.
 
-| Param         | Type                                                                                                 | Description                                   |
-| ------------- | ---------------------------------------------------------------------------------------------------- | --------------------------------------------- |
-| **`options`** | <code>{ productType?: <a href="#purchase_type">PURCHASE_TYPE</a>; appAccountToken?: string; }</code> | - Optional parameters for filtering purchases |
+| Param         | Type                                                                                                                                   | Description                                   |
+| ------------- | -------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------- |
+| **`options`** | <code>{ productType?: <a href="#purchase_type">PURCHASE_TYPE</a>; appAccountToken?: string; includeAllTransactions?: boolean; }</code> | - Optional parameters for filtering purchases |
 
 **Returns:** <code>Promise&lt;{ purchases: Transaction[]; }&gt;</code>
 
