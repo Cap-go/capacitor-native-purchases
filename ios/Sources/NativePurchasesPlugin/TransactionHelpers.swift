@@ -96,40 +96,31 @@ internal class TransactionHelpers {
         }
     }
 
-    static func collectAllPurchases(appAccountTokenFilter: String?) async -> [[String: Any]] {
+    static func collectAllPurchases(appAccountTokenFilter: String?, onlyCurrentEntitlements: Bool = false) async throws -> [[String: Any]] {
         var allPurchases: [[String: Any]] = []
-        var seenIds = Set<String>()
-
-        for await result in Transaction.currentEntitlements {
-            guard case .verified(let transaction) = result else { continue }
-            if let filter = appAccountTokenFilter,
-               transaction.appAccountToken?.uuidString != filter { continue }
-
-            let idStr = String(transaction.id)
-            seenIds.insert(idStr)
-            let data = await buildTransactionResponse(
-                from: transaction,
-                jwsRepresentation: result.jwsRepresentation
-            )
-            allPurchases.append(data)
+        if onlyCurrentEntitlements {
+            try await collectPurchases(from: Transaction.currentEntitlements, filter: appAccountTokenFilter, into: &allPurchases)
+        } else {
+            try await collectPurchases(from: Transaction.all, filter: appAccountTokenFilter, into: &allPurchases)
         }
-
-        for await result in Transaction.all {
-            guard case .verified(let transaction) = result else { continue }
-            if let filter = appAccountTokenFilter,
-               transaction.appAccountToken?.uuidString != filter { continue }
-
-            let idStr = String(transaction.id)
-            if seenIds.contains(idStr) { continue }
-
-            let data = await buildTransactionResponse(
-                from: transaction,
-                jwsRepresentation: result.jwsRepresentation
-            )
-            allPurchases.append(data)
-        }
-
         return allPurchases
+    }
+
+    private static func collectPurchases<S: AsyncSequence>(
+        from source: S,
+        filter appAccountTokenFilter: String?,
+        into allPurchases: inout [[String: Any]]
+    ) async throws where S.Element == VerificationResult<Transaction> {
+        for try await result in source {
+            guard case .verified(let transaction) = result else { continue }
+            if let filter = appAccountTokenFilter,
+               transaction.appAccountToken?.uuidString != filter { continue }
+            let data = await buildTransactionResponse(
+                from: transaction,
+                jwsRepresentation: result.jwsRepresentation
+            )
+            allPurchases.append(data)
+        }
     }
 }
 
