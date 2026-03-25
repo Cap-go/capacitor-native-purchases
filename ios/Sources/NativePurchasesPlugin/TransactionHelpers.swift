@@ -96,12 +96,12 @@ internal class TransactionHelpers {
         }
     }
 
-    static func collectAllPurchases(appAccountTokenFilter: String?, onlyCurrentEntitlements: Bool = false) async -> [[String: Any]] {
+    static func collectAllPurchases(appAccountTokenFilter: String?, onlyCurrentEntitlements: Bool = false) async throws -> [[String: Any]] {
         var allPurchases: [[String: Any]] = []
         if onlyCurrentEntitlements {
-            await collectPurchases(from: Transaction.currentEntitlements, filter: appAccountTokenFilter, into: &allPurchases)
+            try await collectPurchases(from: Transaction.currentEntitlements, filter: appAccountTokenFilter, into: &allPurchases)
         } else {
-            await collectPurchases(from: Transaction.all, filter: appAccountTokenFilter, into: &allPurchases)
+            try await collectPurchases(from: Transaction.all, filter: appAccountTokenFilter, into: &allPurchases)
         }
         return allPurchases
     }
@@ -110,8 +110,8 @@ internal class TransactionHelpers {
         from source: S,
         filter appAccountTokenFilter: String?,
         into allPurchases: inout [[String: Any]]
-    ) async where S.Element == VerificationResult<Transaction> {
-        for await result in source {
+    ) async throws where S.Element == VerificationResult<Transaction> {
+        for try await result in source {
             guard case .verified(let transaction) = result else { continue }
             if let filter = appAccountTokenFilter,
                transaction.appAccountToken?.uuidString != filter { continue }

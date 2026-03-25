@@ -206,11 +206,15 @@ public class NativePurchasesPlugin: CAPPlugin, CAPBridgedPlugin {
         let appAccountTokenFilter = call.getString("appAccountToken")
         let onlyCurrentEntitlements = call.getBool("onlyCurrentEntitlements") ?? false
         Task {
-            let allPurchases = await TransactionHelpers.collectAllPurchases(
-                appAccountTokenFilter: appAccountTokenFilter,
-                onlyCurrentEntitlements: onlyCurrentEntitlements
-            )
-            await MainActor.run { call.resolve(["purchases": allPurchases]) }
+            do {
+                let allPurchases = try await TransactionHelpers.collectAllPurchases(
+                    appAccountTokenFilter: appAccountTokenFilter,
+                    onlyCurrentEntitlements: onlyCurrentEntitlements
+                )
+                await MainActor.run { call.resolve(["purchases": allPurchases]) }
+            } catch {
+                await MainActor.run { call.reject(error.localizedDescription) }
+            }
         }
     }
 
