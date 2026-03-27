@@ -1,0 +1,3 @@
+appId: app.capgo.native.purchases
+env:
+  PRODUCT_IDENTIFIER: premium_upgrade

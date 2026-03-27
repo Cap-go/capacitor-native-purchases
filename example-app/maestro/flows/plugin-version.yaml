@@ -1,0 +1,8 @@
+appId: app.capgo.native.purchases
+name: Plugin version is returned
+---
+- launchApp
+- waitForText: "@capgo/native-purchases Example"
+- tapOn:
+    id: run-action
+- waitForText: "version"

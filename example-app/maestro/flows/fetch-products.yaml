@@ -1,0 +1,15 @@
+appId: app.capgo.native.purchases
+name: Fetch products returns data
+---
+- launchApp
+- waitForText: "Available actions"
+- tapOn:
+    id: action-select
+- tapOn: "Fetch products"
+- tapOn:
+    id: field-productIdentifiers
+- eraseText
+- inputText: "{{PRODUCT_IDENTIFIER}}"
+- tapOn:
+    id: run-action
+- waitForText: "{{PRODUCT_IDENTIFIER}}"

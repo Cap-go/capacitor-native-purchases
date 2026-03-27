@@ -1,0 +1,11 @@
+appId: app.capgo.native.purchases
+name: Billing support is reported
+---
+- launchApp
+- waitForText: "Available actions"
+- tapOn:
+    id: action-select
+- tapOn: "Check billing support"
+- tapOn:
+    id: run-action
+- waitForText: "isBillingSupported"
