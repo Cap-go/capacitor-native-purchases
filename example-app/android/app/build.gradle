@@ -1,10 +1,10 @@
 apply plugin: 'com.android.application'
 
 android {
-    namespace = "app.capgo.native.purchases"
+    namespace = "app.capgo.nativepurchases"
     compileSdk = rootProject.ext.compileSdkVersion
     defaultConfig {
-        applicationId = "app.capgo.native.purchases"
+        applicationId = "app.capgo.nativepurchases"
         minSdkVersion = rootProject.ext.minSdkVersion
         targetSdkVersion = rootProject.ext.targetSdkVersion
         versionCode = 1

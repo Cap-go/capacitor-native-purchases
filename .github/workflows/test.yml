@@ -37,7 +37,47 @@ jobs:
           java-version: '21'
       - name: Build
         id: build_code
-        run: npm run verify:android
+        run: bun run verify:android
+  example_app_android_maestro:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out
+        uses: actions/checkout@v6
+      - uses: oven-sh/setup-bun@v2
+      - name: Setup java
+        uses: actions/setup-java@v5
+        with:
+          distribution: 'zulu'
+          java-version: '21'
+      - name: Install plugin dependencies
+        run: bun i
+      - name: Build plugin
+        run: bun run build
+      - name: Install example app dependencies
+        working-directory: example-app
+        run: bun i
+      - name: Build example app
+        working-directory: example-app
+        run: bun run build
+      - name: Sync Android shell
+        working-directory: example-app
+        run: bunx cap sync android
+      - name: Build debug APK
+        working-directory: example-app/android
+        run: ./gradlew assembleDebug
+      - name: Install Maestro CLI
+        run: |
+          curl -Ls https://get.maestro.mobile.dev | bash
+          echo "$HOME/.maestro/bin" >> "$GITHUB_PATH"
+      - name: Run Maestro smoke tests on Android emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          arch: x86_64
+          script: |
+            adb install -r example-app/android/app/build/outputs/apk/debug/app-debug.apk
+            maestro test example-app/maestro/ci-smoke-test-plan.yaml
   build_ios:
     runs-on: macOS-latest
     steps:

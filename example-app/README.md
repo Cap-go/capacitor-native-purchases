@@ -19,11 +19,12 @@ Add native shells with `bunx cap add ios` or `bunx cap add android` from this fo
 
 ## Native testing with Maestro
 
-The `maestro/` folder contains three example flows that exercise the plugin on device:
+The `maestro/` folder contains three example flows plus a CI smoke plan for exercising the plugin on device:
 
 - `plugin-version.yaml` – runs the default action to pull the plugin version.
 - `billing-support.yaml` – switches the action dropdown and asserts billing support is returned.
 - `fetch-products.yaml` – enters a product id and asserts the response includes it.
+- `ci-smoke-test-plan.yaml` – runs the emulator-safe smoke suite used in GitHub Actions.
 
 ### Prerequisites
 
@@ -48,4 +49,12 @@ maestro test maestro/test-plan.yaml
 bun run maestro:test
 ```
 
-You can also run individual flows with `maestro test maestro/flows/<flow>.yaml`. The `config.yaml` and `test-plan.yaml` files set the app id to `app.capgo.native.purchases` and provide a default product identifier for quick smoke tests.
+For the same smoke suite that runs automatically in CI:
+
+```bash
+bun run maestro:test:ci
+```
+
+The CI suite intentionally skips `fetch-products.yaml` because product lookup depends on store-side test accounts and catalog configuration that are not available on a stock emulator. Use `test-plan.yaml` on a properly configured device or simulator when you want to exercise the full store-backed flow.
+
+You can also run individual flows with `maestro test maestro/flows/<flow>.yaml`. The `config.yaml`, `test-plan.yaml`, and `ci-smoke-test-plan.yaml` files all target `app.capgo.nativepurchases`.

@@ -1,4 +1,4 @@
-appId: app.capgo.native.purchases
+appId: app.capgo.nativepurchases
 name: Billing support is reported
 ---
 - launchApp
