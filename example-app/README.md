@@ -24,7 +24,7 @@ The `maestro/` folder contains three example flows plus a CI smoke plan for exer
 - `plugin-version.yaml` – runs the default action to pull the plugin version.
 - `billing-support.yaml` – switches the action dropdown and asserts billing support is returned.
 - `fetch-products.yaml` – enters a product id and asserts the response includes it.
-- `ci-smoke-test-plan.yaml` – runs the emulator-safe smoke suite used in GitHub Actions.
+- `ci-smoke-test-plan.yaml` – runs the simulator/emulator-safe smoke suite used in GitHub Actions on both Android and iOS.
 
 ### Prerequisites
 
@@ -35,7 +35,7 @@ The `maestro/` folder contains three example flows plus a CI smoke plan for exer
    export PATH="$HOME/.maestro/bin:$PATH"
    ```
 
-2. Build the native shells and install the app on a simulator/device (Android/iOS) using Capacitor.
+2. Build the native shells and install the app on a simulator/device (Android/iOS) using Capacitor (`bunx cap sync android` / `bunx cap sync ios` after `bun run build`).
 3. Ensure the device is signed in with the right test account (Google Play / App Store) and that `PRODUCT_IDENTIFIER` matches a product configured for that account.
 
 ### Running the flows
@@ -49,7 +49,7 @@ maestro test maestro/test-plan.yaml
 bun run maestro:test
 ```
 
-For the same smoke suite that runs automatically in CI:
+For the same smoke suite that runs automatically in CI on both Android and iOS:
 
 ```bash
 bun run maestro:test:ci
