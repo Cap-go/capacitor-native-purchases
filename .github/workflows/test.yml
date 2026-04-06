@@ -8,6 +8,9 @@ on:
     branches: [ main ]
   workflow_call:  # Allow this workflow to be called by other workflows
 
+permissions:
+  contents: read
+
 jobs:
   guard_swiftpm_version:
     runs-on: ubuntu-latest
@@ -93,11 +96,6 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '24'
-      - name: Setup java
-        uses: actions/setup-java@v5
-        with:
-          distribution: 'zulu'
-          java-version: '21'
       - name: Install plugin dependencies
         run: bun i
       - name: Build plugin
@@ -114,13 +112,18 @@ jobs:
       - name: Build and install app on iOS simulator
         working-directory: example-app/ios/App
         run: |
-          xcrun simctl boot "iPhone 16" || true
-          xcrun simctl bootstatus "iPhone 16" -b
+          SIMULATOR_NAME="$(xcrun simctl list devices available | awk -F '[()]' '/iPhone/ && !/unavailable/ { gsub(/^[[:space:]]+|[[:space:]]+$/, "", $1); print $1; exit }')"
+          if [ -z "$SIMULATOR_NAME" ]; then
+            echo "No available iPhone simulator found"
+            exit 1
+          fi
+          xcrun simctl boot "$SIMULATOR_NAME"
+          xcrun simctl bootstatus "$SIMULATOR_NAME" -b
           xcodebuild \
             -scheme App \
             -configuration Debug \
             -derivedDataPath build \
-            -destination 'platform=iOS Simulator,name=iPhone 16' \
+            -destination "platform=iOS Simulator,name=$SIMULATOR_NAME" \
             CODE_SIGNING_ALLOWED=NO
           xcrun simctl install booted build/Build/Products/Debug-iphonesimulator/App.app
       - name: Install Maestro CLI
