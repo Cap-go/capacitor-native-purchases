@@ -1,4 +1,4 @@
 appId: app.capgo.nativepurchases
 ---
-- flow: flows/plugin-version.yaml
-- flow: flows/billing-support.yaml
+- runFlow: flows/plugin-version.yaml
+- runFlow: flows/billing-support.yaml

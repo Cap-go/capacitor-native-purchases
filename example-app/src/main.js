@@ -151,7 +151,7 @@ function buildForm(action) {
     field.id = `field-${input.name}`;
     field.name = input.name;
     field.dataset.type = input.type || 'text';
-    field.dataset.testid = input.name;
+    field.dataset.testid = field.id;
 
     if (input.placeholder && input.type !== 'checkbox') {
       field.placeholder = input.placeholder;
