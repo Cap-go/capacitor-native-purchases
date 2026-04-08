@@ -151,7 +151,8 @@ jobs:
           chmod +x "$HOME/.maestro/maestro/bin/maestro"
           echo "$HOME/.maestro/maestro/bin" >> "$GITHUB_PATH"
       - name: Run Maestro smoke tests on iOS simulator
-        run: "$HOME/.maestro/maestro/bin/maestro" test example-app/maestro/ci-smoke-test-plan.yaml
+        run: |
+          "$HOME/.maestro/maestro/bin/maestro" test example-app/maestro/ci-smoke-test-plan.yaml
   build_ios:
     runs-on: macOS-latest
     steps:
