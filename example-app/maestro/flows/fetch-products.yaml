@@ -3,7 +3,6 @@ name: Fetch products returns data
 ---
 - launchApp
 - assertVisible: "Available actions"
-- tapOn: "Get plugin version"
 - tapOn: "Fetch products"
 - tapOn: "premium_upgrade"
 - eraseText

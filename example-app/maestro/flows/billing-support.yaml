@@ -3,7 +3,6 @@ name: Billing support is reported
 ---
 - launchApp
 - assertVisible: "Available actions"
-- tapOn: "Get plugin version"
 - tapOn: "Check billing support"
 - tapOn: "Run action"
 - assertNotVisible: "Ready to run the selected action."

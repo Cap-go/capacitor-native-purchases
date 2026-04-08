@@ -10,8 +10,9 @@
     <main class="container">
       <h1>@capgo/native-purchases Example</h1>
       <p class="lead">Run native plugin APIs with the source linked locally.</p>
-      <label for="action-select">Available actions</label>
-      <select id="action-select" data-testid="action-select"></select>
+      <p class="action-picker-label">Available actions</p>
+      <div id="action-buttons" class="action-buttons" data-testid="action-buttons"></div>
+      <select id="action-select" data-testid="action-select" hidden></select>
       <div id="action-description" class="action-description"></div>
       <div id="action-form" class="form-grid"></div>
       <button id="run-action" data-testid="run-action">Run action</button>

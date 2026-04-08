@@ -3,6 +3,7 @@ name: Plugin version is returned
 ---
 - launchApp
 - assertVisible: "@capgo/native-purchases Example"
+- tapOn: "Get plugin version"
 - tapOn: "Run action"
 - assertNotVisible: "Ready to run the selected action."
 - assertNotVisible: "Action completed."
