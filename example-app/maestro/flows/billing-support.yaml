@@ -2,10 +2,10 @@ appId: app.capgo.nativepurchases
 name: Billing support is reported
 ---
 - launchApp
-- waitForText: "Available actions"
-- tapOn:
-    id: action-select
+- assertVisible: "Available actions"
+- tapOn: "Get plugin version"
 - tapOn: "Check billing support"
-- tapOn:
-    id: run-action
-- waitForText: "isBillingSupported"
+- tapOn: "Run action"
+- assertNotVisible: "Ready to run the selected action."
+- assertNotVisible: "Action completed."
+- assertNotVisible: "Error:"

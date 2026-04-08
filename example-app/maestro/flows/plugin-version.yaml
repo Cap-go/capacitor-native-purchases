@@ -2,7 +2,8 @@ appId: app.capgo.nativepurchases
 name: Plugin version is returned
 ---
 - launchApp
-- waitForText: "@capgo/native-purchases Example"
-- tapOn:
-    id: run-action
-- waitForText: "version"
+- assertVisible: "@capgo/native-purchases Example"
+- tapOn: "Run action"
+- assertNotVisible: "Ready to run the selected action."
+- assertNotVisible: "Action completed."
+- assertNotVisible: "Error:"

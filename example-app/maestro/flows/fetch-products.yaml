@@ -2,14 +2,13 @@ appId: app.capgo.nativepurchases
 name: Fetch products returns data
 ---
 - launchApp
-- waitForText: "Available actions"
-- tapOn:
-    id: action-select
+- assertVisible: "Available actions"
+- tapOn: "Get plugin version"
 - tapOn: "Fetch products"
-- tapOn:
-    id: field-productIdentifiers
+- tapOn: "premium_upgrade"
 - eraseText
 - inputText: "{{PRODUCT_IDENTIFIER}}"
-- tapOn:
-    id: run-action
-- waitForText: "{{PRODUCT_IDENTIFIER}}"
+- tapOn: "Run action"
+- assertNotVisible: "Ready to run the selected action."
+- assertNotVisible: "Error:"
+- assertVisible: "{{PRODUCT_IDENTIFIER}}"
