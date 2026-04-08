@@ -99,7 +99,7 @@ jobs:
           arch: x86_64
           script: |
             adb install -r example-app/android/app/build/outputs/apk/debug/app-debug.apk
-            maestro test example-app/maestro/ci-smoke-test-plan.yaml
+            "$HOME/.maestro/maestro/bin/maestro" test example-app/maestro/ci-smoke-test-plan.yaml
   example_app_ios_maestro:
     runs-on: macOS-latest
     timeout-minutes: 45
@@ -151,7 +151,7 @@ jobs:
           chmod +x "$HOME/.maestro/maestro/bin/maestro"
           echo "$HOME/.maestro/maestro/bin" >> "$GITHUB_PATH"
       - name: Run Maestro smoke tests on iOS simulator
-        run: maestro test example-app/maestro/ci-smoke-test-plan.yaml
+        run: "$HOME/.maestro/maestro/bin/maestro" test example-app/maestro/ci-smoke-test-plan.yaml
   build_ios:
     runs-on: macOS-latest
     steps:
