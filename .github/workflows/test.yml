@@ -96,6 +96,7 @@ jobs:
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 34
+          target: google_apis_playstore
           arch: x86_64
           script: |
             adb install -r example-app/android/app/build/outputs/apk/debug/app-debug.apk
