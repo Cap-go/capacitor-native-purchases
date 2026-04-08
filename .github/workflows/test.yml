@@ -90,8 +90,8 @@ jobs:
           rm -rf "$HOME/.maestro"
           mkdir -p "$HOME/.maestro"
           unzip -q /tmp/maestro.zip -d "$HOME/.maestro"
-          chmod +x "$HOME/.maestro/bin/maestro"
-          echo "$HOME/.maestro/bin" >> "$GITHUB_PATH"
+          chmod +x "$HOME/.maestro/maestro/bin/maestro"
+          echo "$HOME/.maestro/maestro/bin" >> "$GITHUB_PATH"
       - name: Run Maestro smoke tests on Android emulator
         uses: reactivecircus/android-emulator-runner@v2
         with:
@@ -148,8 +148,8 @@ jobs:
           rm -rf "$HOME/.maestro"
           mkdir -p "$HOME/.maestro"
           unzip -q /tmp/maestro.zip -d "$HOME/.maestro"
-          chmod +x "$HOME/.maestro/bin/maestro"
-          echo "$HOME/.maestro/bin" >> "$GITHUB_PATH"
+          chmod +x "$HOME/.maestro/maestro/bin/maestro"
+          echo "$HOME/.maestro/maestro/bin" >> "$GITHUB_PATH"
       - name: Run Maestro smoke tests on iOS simulator
         run: maestro test example-app/maestro/ci-smoke-test-plan.yaml
   build_ios:
