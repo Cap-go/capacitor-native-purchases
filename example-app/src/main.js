@@ -67,6 +67,7 @@ const actions = [
   },
 ];
 
+const actionButtons = document.getElementById('action-buttons');
 const actionSelect = document.getElementById('action-select');
 const formContainer = document.getElementById('action-form');
 const descriptionBox = document.getElementById('action-description');
@@ -151,6 +152,7 @@ function buildForm(action) {
     field.id = `field-${input.name}`;
     field.name = input.name;
     field.dataset.type = input.type || 'text';
+    field.dataset.testid = field.id;
 
     if (input.placeholder && input.type !== 'checkbox') {
       field.placeholder = input.placeholder;
@@ -191,18 +193,33 @@ function getFormValues(action) {
 }
 
 function setAction(action) {
+  actionSelect.value = action.id;
   descriptionBox.textContent = action.description || '';
   buildForm(action);
+  Array.from(actionButtons.querySelectorAll('button')).forEach((button) => {
+    button.classList.toggle('is-active', button.dataset.actionId === action.id);
+  });
   output.textContent = 'Ready to run the selected action.';
 }
 
 function populateActions() {
   actionSelect.innerHTML = '';
+  actionButtons.innerHTML = '';
   actions.forEach((action) => {
     const option = document.createElement('option');
     option.value = action.id;
     option.textContent = action.label;
     actionSelect.appendChild(option);
+
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'action-button';
+    button.dataset.actionId = action.id;
+    button.textContent = action.label;
+    button.addEventListener('click', () => {
+      setAction(action);
+    });
+    actionButtons.appendChild(button);
   });
   setAction(actions[0]);
 }

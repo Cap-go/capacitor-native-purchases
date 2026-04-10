@@ -1,0 +1,7 @@
+appId: app.capgo.nativepurchases
+env:
+  PRODUCT_IDENTIFIER: premium_upgrade
+---
+- runFlow: flows/plugin-version.yaml
+- runFlow: flows/billing-support.yaml
+- runFlow: flows/fetch-products.yaml

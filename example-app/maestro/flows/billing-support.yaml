@@ -1,0 +1,15 @@
+appId: app.capgo.nativepurchases
+name: Billing support is reported
+---
+- launchApp
+- waitForAnimationToEnd:
+    timeout: 5000
+- extendedWaitUntil:
+    visible: "Available actions"
+    timeout: 60000
+- assertVisible: "Available actions"
+- tapOn: "Check billing support"
+- tapOn: "Run action"
+- assertNotVisible: "Ready to run the selected action."
+- assertNotVisible: "Action completed."
+- assertNotVisible: "Error:"

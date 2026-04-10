@@ -1,0 +1,15 @@
+appId: app.capgo.nativepurchases
+name: Plugin version is returned
+---
+- launchApp
+- waitForAnimationToEnd:
+    timeout: 5000
+- extendedWaitUntil:
+    visible: "@capgo/native-purchases Example"
+    timeout: 60000
+- assertVisible: "@capgo/native-purchases Example"
+- tapOn: "Get plugin version"
+- tapOn: "Run action"
+- assertNotVisible: "Ready to run the selected action."
+- assertNotVisible: "Action completed."
+- assertNotVisible: "Error:"

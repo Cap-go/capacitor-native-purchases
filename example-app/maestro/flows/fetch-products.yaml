@@ -1,0 +1,18 @@
+appId: app.capgo.nativepurchases
+name: Fetch products returns data
+---
+- launchApp
+- waitForAnimationToEnd:
+    timeout: 5000
+- extendedWaitUntil:
+    visible: "Available actions"
+    timeout: 60000
+- assertVisible: "Available actions"
+- tapOn: "Fetch products"
+- tapOn: "premium_upgrade"
+- eraseText
+- inputText: "{{PRODUCT_IDENTIFIER}}"
+- tapOn: "Run action"
+- assertNotVisible: "Ready to run the selected action."
+- assertNotVisible: "Error:"
+- assertVisible: "{{PRODUCT_IDENTIFIER}}"

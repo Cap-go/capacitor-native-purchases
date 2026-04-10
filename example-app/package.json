@@ -10,7 +10,9 @@
   "scripts": {
     "start": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "maestro:test": "maestro test maestro/test-plan.yaml",
+    "maestro:test:ci": "maestro test maestro/ci-smoke-test-plan.yaml"
   },
   "dependencies": {
     "@capacitor/core": "^8.0.0",
