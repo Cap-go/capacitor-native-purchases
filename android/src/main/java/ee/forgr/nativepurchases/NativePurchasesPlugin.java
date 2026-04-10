@@ -364,7 +364,18 @@ public class NativePurchasesPlugin extends Plugin {
         );
         try {
             Log.d(TAG, "Waiting for billing client setup to finish");
-            semaphoreReady.await();
+            boolean setupCompleted = semaphoreReady.await(10, TimeUnit.SECONDS);
+
+            if (!setupCompleted) {
+                Log.e(TAG, "Billing client setup timed out after 10 seconds");
+                if (pendingCall != null) {
+                    pendingCall.reject("BILLING_SETUP_TIMEOUT", "Billing client initialization timed out");
+                    pendingCall = null;
+                }
+                closeBillingClient();
+                throw new RuntimeException("Billing setup timed out");
+            }
+
             Log.d(TAG, "Billing client setup wait completed");
 
             // Check if billing setup failed
