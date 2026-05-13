@@ -1,0 +1,19 @@
+{
+  "name": "@capgo/native-purchases",
+  "version": "8.3.10",
+  "exports": "./src/index.ts",
+  "publish": {
+    "include": [
+      "src/**/*.ts",
+      "android/src/main/**",
+      "android/build.gradle",
+      "ios/Sources/**",
+      "ios/Tests/**",
+      "Package.swift",
+      "CapgoNativePurchases.podspec",
+      "README.md",
+      "LICENSE",
+      "package.json"
+    ]
+  }
+}

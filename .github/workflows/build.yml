@@ -13,7 +13,7 @@ jobs:
   # Tests already passed before tag was created, so just build and deploy
   deploy:
     runs-on: ubuntu-latest
-    name: "Build and publish to npm"
+    name: "Build and publish to npm and JSR"
     permissions:
       contents: write
       id-token: write
@@ -52,6 +52,17 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: npm publish --tag next --provenance --access public
+      - name: Sync JSR version
+        run: |
+          bun --eval "
+          const fs = require('node:fs');
+          const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+          const jsr = JSON.parse(fs.readFileSync('jsr.json', 'utf8'));
+          jsr.version = pkg.version;
+          fs.writeFileSync('jsr.json', JSON.stringify(jsr, null, 2) + '\n');
+          "
+      - name: Publish to JSR
+        run: bunx jsr publish --provenance --allow-dirty
       - name: Create GitHub release
         id: create_release
         uses: softprops/action-gh-release@v3
