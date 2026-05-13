@@ -849,6 +849,8 @@ export interface SKProductDiscount {
   readonly identifier: string;
   /**
    * The Product discount type.
+   *
+   * iOS values: 0 = introductory, 1 = promotional, 2 = win-back.
    */
   readonly type: number;
   /**

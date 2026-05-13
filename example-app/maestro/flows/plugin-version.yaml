@@ -1,7 +1,8 @@
 appId: app.capgo.nativepurchases
 name: Plugin version is returned
 ---
-- launchApp
+- launchApp:
+    clearState: true
 - waitForAnimationToEnd:
     timeout: 5000
 - extendedWaitUntil:

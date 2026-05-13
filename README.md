@@ -2187,17 +2187,17 @@ which is useful for determining if users are entitled to features from earlier b
 
 #### SKProductDiscount
 
-| Prop                     | Type                                                              | Description                                                              |
-| ------------------------ | ----------------------------------------------------------------- | ------------------------------------------------------------------------ |
-| **`identifier`**         | <code>string</code>                                               | The <a href="#product">Product</a> discount identifier.                  |
-| **`type`**               | <code>number</code>                                               | The <a href="#product">Product</a> discount type.                        |
-| **`price`**              | <code>number</code>                                               | The <a href="#product">Product</a> discount price.                       |
-| **`priceString`**        | <code>string</code>                                               | Formatted price of the item, including its currency sign, such as €3.99. |
-| **`currencySymbol`**     | <code>string</code>                                               | The <a href="#product">Product</a> discount currency symbol.             |
-| **`currencyCode`**       | <code>string</code>                                               | The <a href="#product">Product</a> discount currency code.               |
-| **`paymentMode`**        | <code>number</code>                                               | The <a href="#product">Product</a> discount paymentMode.                 |
-| **`numberOfPeriods`**    | <code>number</code>                                               | The <a href="#product">Product</a> discount number Of Periods.           |
-| **`subscriptionPeriod`** | <code><a href="#subscriptionperiod">SubscriptionPeriod</a></code> | The <a href="#product">Product</a> discount subscription period.         |
+| Prop                     | Type                                                              | Description                                                                                                    |
+| ------------------------ | ----------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| **`identifier`**         | <code>string</code>                                               | The <a href="#product">Product</a> discount identifier.                                                        |
+| **`type`**               | <code>number</code>                                               | The <a href="#product">Product</a> discount type. iOS values: 0 = introductory, 1 = promotional, 2 = win-back. |
+| **`price`**              | <code>number</code>                                               | The <a href="#product">Product</a> discount price.                                                             |
+| **`priceString`**        | <code>string</code>                                               | Formatted price of the item, including its currency sign, such as €3.99.                                       |
+| **`currencySymbol`**     | <code>string</code>                                               | The <a href="#product">Product</a> discount currency symbol.                                                   |
+| **`currencyCode`**       | <code>string</code>                                               | The <a href="#product">Product</a> discount currency code.                                                     |
+| **`paymentMode`**        | <code>number</code>                                               | The <a href="#product">Product</a> discount paymentMode.                                                       |
+| **`numberOfPeriods`**    | <code>number</code>                                               | The <a href="#product">Product</a> discount number Of Periods.                                                 |
+| **`subscriptionPeriod`** | <code><a href="#subscriptionperiod">SubscriptionPeriod</a></code> | The <a href="#product">Product</a> discount subscription period.                                               |
 
 
 #### PluginListenerHandle

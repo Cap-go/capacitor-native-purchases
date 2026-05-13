@@ -1,7 +1,8 @@
 appId: app.capgo.nativepurchases
 name: Fetch products returns data
 ---
-- launchApp
+- launchApp:
+    clearState: true
 - waitForAnimationToEnd:
     timeout: 5000
 - extendedWaitUntil:

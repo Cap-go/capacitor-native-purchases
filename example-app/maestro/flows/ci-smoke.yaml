@@ -1,14 +1,18 @@
 appId: app.capgo.nativepurchases
-name: Billing support is reported
+name: CI smoke actions are available
 ---
 - launchApp:
     clearState: true
-- waitForAnimationToEnd:
-    timeout: 5000
 - extendedWaitUntil:
     visible: "Available actions"
     timeout: 60000
-- assertVisible: "Available actions"
+- assertVisible: "Get plugin version"
+- tapOn: "Get plugin version"
+- tapOn: "Run action"
+- assertNotVisible: "Ready to run the selected action."
+- assertNotVisible: "Action completed."
+- assertNotVisible: "Error:"
+- assertVisible: "Check billing support"
 - tapOn: "Check billing support"
 - tapOn: "Run action"
 - assertNotVisible: "Ready to run the selected action."

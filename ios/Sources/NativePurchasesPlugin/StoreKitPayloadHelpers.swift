@@ -114,6 +114,14 @@ internal enum StoreKitPayloadHelpers {
         ]
     }
 
+    static func currencySymbol(forCurrencyCode currencyCode: String, locale: Locale) -> String {
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .currency
+        formatter.locale = locale
+        formatter.currencyCode = currencyCode
+        return formatter.currencySymbol ?? currencyCode
+    }
+
     static func subscriptionOfferDictionary(from offer: Product.SubscriptionOffer) -> [String: Any] {
         var dictionary: [String: Any] = [
             "type": offer.type.rawValue,
