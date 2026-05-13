@@ -2,7 +2,7 @@ import { registerPlugin } from '@capacitor/core';
 
 import type { NativePurchasesPlugin } from './definitions';
 
-const NativePurchases = registerPlugin<NativePurchasesPlugin>('NativePurchases', {
+const NativePurchases: NativePurchasesPlugin = registerPlugin<NativePurchasesPlugin>('NativePurchases', {
   web: () => import('./web').then((m) => new m.NativePurchasesWeb()),
 });
 
