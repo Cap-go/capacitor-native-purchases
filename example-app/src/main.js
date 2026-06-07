@@ -52,7 +52,8 @@ const actions = [
   {
     id: 'get-purchases',
     label: 'Get purchases',
-    description: 'Retrieves all known transactions/entitlements (optionally filtered by appAccountToken).',
+    description:
+      'Retrieves all known transactions/entitlements (optionally filtered by appAccountToken).',
     inputs: [
       {
         name: 'appAccountToken',
@@ -87,7 +88,9 @@ function appendEventLog(eventName, payload) {
     entry += `\n${JSON.stringify(payload, null, 2)}`;
   }
   const previous =
-    !eventLog.textContent || eventLog.textContent === 'Listeners not registered yet.' ? '' : eventLog.textContent;
+    !eventLog.textContent || eventLog.textContent === 'Listeners not registered yet.'
+      ? ''
+      : eventLog.textContent;
   eventLog.textContent = previous ? `${entry}\n\n${previous}` : entry;
 }
 
