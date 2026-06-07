@@ -12,17 +12,20 @@
     "build": "vite build",
     "preview": "vite preview",
     "maestro:test": "maestro test maestro/test-plan.yaml",
-    "maestro:test:ci": "maestro test maestro/ci-smoke-test-plan.yaml"
+    "maestro:test:ci": "maestro test maestro/ci-smoke-test-plan.yaml",
+    "capgo:deploy": "cd .. && bun run example:capgo:deploy"
   },
   "dependencies": {
     "@capacitor/core": "^8.0.0",
     "@capacitor/android": "^8.0.0",
     "@capacitor/ios": "^8.0.0",
-    "@capgo/native-purchases": "file:.."
+    "@capgo/native-purchases": "file:..",
+    "@capgo/capacitor-updater": "^8.45.11"
   },
   "devDependencies": {
     "@capacitor/cli": "^8.0.0",
-    "vite": "^7.3.1"
+    "vite": "^7.3.1",
+    "typescript": "^5.9.3"
   },
   "author": "",
   "license": "ISC"
