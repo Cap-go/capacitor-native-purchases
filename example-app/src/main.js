@@ -1,3 +1,5 @@
+import { CapacitorUpdater } from '@capgo/capacitor-updater';
+import { Capacitor } from '@capacitor/core';
 import './style.css';
 import { NativePurchases } from '@capgo/native-purchases';
 
@@ -50,7 +52,8 @@ const actions = [
   {
     id: 'get-purchases',
     label: 'Get purchases',
-    description: 'Retrieves all known transactions/entitlements (optionally filtered by appAccountToken).',
+    description:
+      'Retrieves all known transactions/entitlements (optionally filtered by appAccountToken).',
     inputs: [
       {
         name: 'appAccountToken',
@@ -85,7 +88,9 @@ function appendEventLog(eventName, payload) {
     entry += `\n${JSON.stringify(payload, null, 2)}`;
   }
   const previous =
-    !eventLog.textContent || eventLog.textContent === 'Listeners not registered yet.' ? '' : eventLog.textContent;
+    !eventLog.textContent || eventLog.textContent === 'Listeners not registered yet.'
+      ? ''
+      : eventLog.textContent;
   eventLog.textContent = previous ? `${entry}\n\n${previous}` : entry;
 }
 
@@ -272,3 +277,9 @@ async function setupTransactionListeners() {
 
 setupTransactionListeners();
 populateActions();
+
+if (Capacitor.isNativePlatform()) {
+  CapacitorUpdater.notifyAppReady().catch((error) => {
+    console.error('Capgo notifyAppReady failed', error);
+  });
+}
