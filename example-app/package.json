@@ -12,8 +12,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "maestro:test": "maestro test maestro/test-plan.yaml",
-    "maestro:test:ci": "maestro test maestro/ci-smoke-test-plan.yaml",
-    "capgo:deploy": "cd .. && bun run example:capgo:deploy"
+    "maestro:test:ci": "maestro test maestro/ci-smoke-test-plan.yaml"
   },
   "dependencies": {
     "@capacitor/core": "^8.0.0",
