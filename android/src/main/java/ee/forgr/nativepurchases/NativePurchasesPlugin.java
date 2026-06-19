@@ -39,7 +39,7 @@ import org.json.JSONArray;
 @CapacitorPlugin(name = "NativePurchases")
 public class NativePurchasesPlugin extends Plugin {
 
-    private final String pluginVersion = "8.4.5";
+    private final String pluginVersion = "8.4.6";
     public static final String TAG = "NativePurchases";
     private static final int BILLING_CONNECTION_MAX_ATTEMPTS = 3;
     private static final long BILLING_SETUP_TIMEOUT_SECONDS = 10;
