@@ -261,12 +261,12 @@ public class NativePurchasesPlugin extends Plugin {
                 Log.d(
                     TAG,
                     "Retrying billing client connection (attempt " +
-                    attempt +
-                    "/" +
-                    BILLING_CONNECTION_MAX_ATTEMPTS +
-                    ") after " +
-                    backoffMs +
-                    "ms"
+                        attempt +
+                        "/" +
+                        BILLING_CONNECTION_MAX_ATTEMPTS +
+                        ") after " +
+                        backoffMs +
+                        "ms"
                 );
                 try {
                     Thread.sleep(backoffMs);
