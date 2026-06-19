@@ -31,9 +31,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.Phaser;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.json.JSONArray;
@@ -43,10 +41,11 @@ public class NativePurchasesPlugin extends Plugin {
 
     private final String pluginVersion = "8.4.4";
     public static final String TAG = "NativePurchases";
-    private static final Phaser semaphoreReady = new Phaser(1);
+    private static final int BILLING_CONNECTION_MAX_ATTEMPTS = 3;
+    private static final long BILLING_SETUP_TIMEOUT_SECONDS = 10;
+    private static final long[] BILLING_CONNECTION_BACKOFF_MS = { 0, 1000, 2000 };
+    private final Object billingClientLock = new Object();
     private BillingClient billingClient;
-    private PluginCall pendingCall = null;
-    private BillingResult lastBillingError = null;
 
     @PluginMethod
     public void isBillingSupported(PluginCall call) {
@@ -84,62 +83,46 @@ public class NativePurchasesPlugin extends Plugin {
         super.load();
         Log.d(TAG, "Plugin load() called");
         Log.i(NativePurchasesPlugin.TAG, "load");
-        semaphoreDown();
         Log.d(TAG, "Plugin load() completed");
     }
 
-    private void semaphoreWait() {
-        Log.d(TAG, "semaphoreWait() called with waitTime: " + (Number) 10);
-        Log.i(NativePurchasesPlugin.TAG, "semaphoreWait " + (Number) 10);
-        try {
-            //        Log.i(CapacitorUpdater.TAG, "semaphoreReady count " + CapacitorUpdaterPlugin.this.semaphoreReady.getCount());
-            semaphoreReady.awaitAdvanceInterruptibly(semaphoreReady.getPhase(), ((Number) 10).longValue(), TimeUnit.SECONDS);
-            //        Log.i(CapacitorUpdater.TAG, "semaphoreReady await " + res);
-            Log.i(NativePurchasesPlugin.TAG, "semaphoreReady count " + semaphoreReady.getPhase());
-            Log.d(TAG, "semaphoreWait() completed successfully");
-        } catch (InterruptedException e) {
-            Log.d(TAG, "semaphoreWait() InterruptedException: " + e.getMessage());
-            Log.i(NativePurchasesPlugin.TAG, "semaphoreWait InterruptedException");
-            e.printStackTrace();
-        } catch (TimeoutException e) {
-            Log.d(TAG, "semaphoreWait() TimeoutException: " + e.getMessage());
-            throw new RuntimeException(e);
+    private void closeBillingClient() {
+        synchronized (billingClientLock) {
+            closeBillingClientLocked();
         }
     }
 
-    private void semaphoreUp() {
-        Log.d(TAG, "semaphoreUp() called");
-        Log.i(NativePurchasesPlugin.TAG, "semaphoreUp");
-        semaphoreReady.register();
-        Log.d(TAG, "semaphoreUp() completed");
-    }
-
-    private void semaphoreDown() {
-        Log.d(TAG, "semaphoreDown() called");
-        Log.i(NativePurchasesPlugin.TAG, "semaphoreDown");
-        Log.i(NativePurchasesPlugin.TAG, "semaphoreDown count " + semaphoreReady.getPhase());
-        semaphoreReady.arriveAndDeregister();
-        Log.d(TAG, "semaphoreDown() completed");
-    }
-
-    private void closeBillingClient() {
+    private void closeBillingClientLocked() {
         Log.d(TAG, "closeBillingClient() called");
         if (billingClient != null) {
             Log.d(TAG, "Ending billing client connection");
             billingClient.endConnection();
             billingClient = null;
-            semaphoreDown();
             Log.d(TAG, "Billing client closed and set to null");
         } else {
             Log.d(TAG, "Billing client was already null");
         }
+    }
 
-        // Clear pending call and error state
-        if (pendingCall != null) {
-            Log.w(TAG, "Warning: Clearing pending call that was never resolved/rejected");
-            pendingCall = null;
+    private void rejectBillingSetupCall(PluginCall purchaseCall, AtomicBoolean callRejected, String code, String message) {
+        if (purchaseCall != null && callRejected.compareAndSet(false, true)) {
+            purchaseCall.reject(code, message);
         }
-        lastBillingError = null;
+    }
+
+    private String getBillingSetupErrorMessage(BillingResult billingResult) {
+        switch (billingResult.getResponseCode()) {
+            case BillingClient.BillingResponseCode.SERVICE_UNAVAILABLE:
+                return "Billing service unavailable. Please check your internet connection and Google Play Services.";
+            case BillingClient.BillingResponseCode.BILLING_UNAVAILABLE:
+                return "Billing is not available on this device.";
+            case BillingClient.BillingResponseCode.FEATURE_NOT_SUPPORTED:
+                return "This billing feature is not supported.";
+            case BillingClient.BillingResponseCode.SERVICE_DISCONNECTED:
+                return "Billing service disconnected. Please try again.";
+            default:
+                return "Billing setup failed: " + billingResult.getDebugMessage();
+        }
     }
 
     private void handlePurchase(Purchase purchase, PluginCall purchaseCall) {
@@ -265,137 +248,181 @@ public class NativePurchasesPlugin extends Plugin {
         Log.d(TAG, "initBillingClient() called");
         Log.d(TAG, "purchaseCall is null: " + (purchaseCall == null));
 
-        // Store the pending call so we can reject it if billing setup fails
-        this.pendingCall = purchaseCall;
-        this.lastBillingError = null;
+        synchronized (billingClientLock) {
+            closeBillingClientLocked();
+        }
 
-        semaphoreWait();
-        closeBillingClient();
-        semaphoreUp();
-        CountDownLatch semaphoreReady = new CountDownLatch(1);
-        Log.d(TAG, "Creating new BillingClient");
-        billingClient = BillingClient.newBuilder(getContext())
-            .setListener(
-                new PurchasesUpdatedListener() {
-                    @Override
-                    public void onPurchasesUpdated(@NonNull BillingResult billingResult, List<Purchase> purchases) {
-                        Log.d(TAG, "onPurchasesUpdated() called");
-                        Log.d(TAG, "Billing result: " + billingResult.getResponseCode() + " - " + billingResult.getDebugMessage());
-                        Log.d(TAG, "Purchases count: " + (purchases != null ? purchases.size() : 0));
-                        Log.i(NativePurchasesPlugin.TAG, "onPurchasesUpdated" + billingResult);
-                        if (billingResult.getResponseCode() == BillingClient.BillingResponseCode.OK && purchases != null) {
-                            Log.d(TAG, "Purchase update successful, processing first purchase");
-                            //                          for (Purchase purchase : purchases) {
-                            //                              handlePurchase(purchase, purchaseCall);
-                            //                          }
-                            handlePurchase(purchases.get(0), purchaseCall);
-                        } else {
-                            // Handle any other error codes.
-                            Log.d(TAG, "Purchase update failed or purchases is null");
-                            Log.i(NativePurchasesPlugin.TAG, "onPurchasesUpdated" + billingResult);
-                            if (purchaseCall != null) {
-                                purchaseCall.reject("Purchase is not purchased");
-                            }
-                        }
-                        closeBillingClient();
-                        return;
-                    }
+        final AtomicBoolean setupCallRejected = new AtomicBoolean(false);
+        RuntimeException lastFailure = null;
+
+        for (int attempt = 1; attempt <= BILLING_CONNECTION_MAX_ATTEMPTS; attempt++) {
+            if (attempt > 1) {
+                long backoffMs = BILLING_CONNECTION_BACKOFF_MS[Math.min(attempt - 1, BILLING_CONNECTION_BACKOFF_MS.length - 1)];
+                Log.d(
+                    TAG,
+                    "Retrying billing client connection (attempt " +
+                        attempt +
+                        "/" +
+                        BILLING_CONNECTION_MAX_ATTEMPTS +
+                        ") after " +
+                        backoffMs +
+                        "ms"
+                );
+                try {
+                    Thread.sleep(backoffMs);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    rejectBillingSetupCall(purchaseCall, setupCallRejected, "BILLING_INTERRUPTED", "Billing setup was interrupted");
+                    throw new RuntimeException("Billing setup was interrupted", e);
                 }
-            )
-            .enablePendingPurchases(PendingPurchasesParams.newBuilder().enableOneTimeProducts().build())
-            .build();
+                synchronized (billingClientLock) {
+                    closeBillingClientLocked();
+                }
+            }
+
+            try {
+                connectBillingClient(purchaseCall, setupCallRejected, attempt);
+                return;
+            } catch (RuntimeException e) {
+                lastFailure = e;
+                boolean willRetry = attempt < BILLING_CONNECTION_MAX_ATTEMPTS && isRetriableBillingSetupFailure(e);
+                Log.w(
+                    TAG,
+                    "Billing client connection attempt " + attempt + " failed: " + e.getMessage() + (willRetry ? " (will retry)" : "")
+                );
+                if (!willRetry) {
+                    break;
+                }
+            }
+        }
+
+        String failureMessage = lastFailure != null && lastFailure.getMessage() != null ? lastFailure.getMessage() : "Billing setup failed";
+        String failureCode = failureMessage.contains("timed out") ? "BILLING_SETUP_TIMEOUT" : "BILLING_SETUP_FAILED";
+        rejectBillingSetupCall(purchaseCall, setupCallRejected, failureCode, failureMessage);
+        throw lastFailure != null ? lastFailure : new RuntimeException("Billing setup failed");
+    }
+
+    private boolean isRetriableBillingSetupFailure(RuntimeException failure) {
+        String message = failure.getMessage();
+        if (message == null) {
+            return true;
+        }
+        if (message.contains("timed out") || message.contains("disconnected") || message.contains("SERVICE_UNAVAILABLE")) {
+            return true;
+        }
+        return !message.contains("BILLING_UNAVAILABLE") && !message.contains("FEATURE_NOT_SUPPORTED");
+    }
+
+    private void connectBillingClient(PluginCall purchaseCall, AtomicBoolean setupCallRejected, int attempt) {
+        final CountDownLatch setupLatch = new CountDownLatch(1);
+        final BillingResult[] setupError = new BillingResult[1];
+        final AtomicBoolean setupSettled = new AtomicBoolean(false);
+
+        Log.d(TAG, "Creating new BillingClient (attempt " + attempt + "/" + BILLING_CONNECTION_MAX_ATTEMPTS + ")");
+        final BillingClient client;
+        synchronized (billingClientLock) {
+            client = BillingClient.newBuilder(getContext())
+                .setListener(
+                    new PurchasesUpdatedListener() {
+                        @Override
+                        public void onPurchasesUpdated(@NonNull BillingResult billingResult, List<Purchase> purchases) {
+                            Log.d(TAG, "onPurchasesUpdated() called");
+                            Log.d(TAG, "Billing result: " + billingResult.getResponseCode() + " - " + billingResult.getDebugMessage());
+                            Log.d(TAG, "Purchases count: " + (purchases != null ? purchases.size() : 0));
+                            Log.i(NativePurchasesPlugin.TAG, "onPurchasesUpdated" + billingResult);
+                            if (billingResult.getResponseCode() == BillingClient.BillingResponseCode.OK && purchases != null) {
+                                Log.d(TAG, "Purchase update successful, processing first purchase");
+                                handlePurchase(purchases.get(0), purchaseCall);
+                            } else {
+                                Log.d(TAG, "Purchase update failed or purchases is null");
+                                Log.i(NativePurchasesPlugin.TAG, "onPurchasesUpdated" + billingResult);
+                                if (purchaseCall != null) {
+                                    purchaseCall.reject("Purchase is not purchased");
+                                }
+                            }
+                            closeBillingClient();
+                        }
+                    }
+                )
+                .enablePendingPurchases(PendingPurchasesParams.newBuilder().enableOneTimeProducts().build())
+                .build();
+            billingClient = client;
+        }
+
         Log.d(TAG, "Starting billing client connection");
-        billingClient.startConnection(
+        client.startConnection(
             new BillingClientStateListener() {
                 @Override
                 public void onBillingSetupFinished(@NonNull BillingResult billingResult) {
+                    if (!setupSettled.compareAndSet(false, true)) {
+                        Log.d(TAG, "Ignoring stale onBillingSetupFinished callback");
+                        return;
+                    }
                     Log.d(TAG, "onBillingSetupFinished() called");
                     Log.d(TAG, "Setup result: " + billingResult.getResponseCode() + " - " + billingResult.getDebugMessage());
                     if (billingResult.getResponseCode() == BillingClient.BillingResponseCode.OK) {
                         Log.d(TAG, "Billing setup successful, client is ready");
-                        // The BillingClient is ready. You can query purchases here.
-                        lastBillingError = null;
-                        semaphoreReady.countDown();
                     } else {
                         Log.e(TAG, "Billing setup failed with code: " + billingResult.getResponseCode());
                         Log.e(TAG, "Error message: " + billingResult.getDebugMessage());
-
-                        // Store the error for later use
-                        lastBillingError = billingResult;
-
-                        // Release the latch so the waiting thread can continue
-                        semaphoreReady.countDown();
-
-                        // Reject the pending call if there is one
-                        if (pendingCall != null) {
-                            Log.d(TAG, "Rejecting pending call due to billing setup failure");
-                            String errorMessage = "Billing service unavailable";
-                            switch (billingResult.getResponseCode()) {
-                                case BillingClient.BillingResponseCode.SERVICE_UNAVAILABLE:
-                                    errorMessage =
-                                        "Billing service unavailable. Please check your internet connection and Google Play Services.";
-                                    break;
-                                case BillingClient.BillingResponseCode.BILLING_UNAVAILABLE:
-                                    errorMessage = "Billing is not available on this device.";
-                                    break;
-                                case BillingClient.BillingResponseCode.FEATURE_NOT_SUPPORTED:
-                                    errorMessage = "This billing feature is not supported.";
-                                    break;
-                                case BillingClient.BillingResponseCode.SERVICE_DISCONNECTED:
-                                    errorMessage = "Billing service disconnected. Please try again.";
-                                    break;
-                                default:
-                                    errorMessage = "Billing setup failed: " + billingResult.getDebugMessage();
-                                    break;
-                            }
-                            pendingCall.reject("BILLING_SETUP_FAILED", errorMessage);
-                            pendingCall = null;
-                        }
+                        setupError[0] = billingResult;
                     }
+                    setupLatch.countDown();
                 }
 
                 @Override
                 public void onBillingServiceDisconnected() {
                     Log.d(TAG, "onBillingServiceDisconnected() called");
-                    // Try to restart the connection on the next request to
-                    // Google Play by calling the startConnection() method.
+                    synchronized (billingClientLock) {
+                        if (billingClient == client) {
+                            billingClient = null;
+                        }
+                    }
+                    if (!setupSettled.compareAndSet(false, true)) {
+                        return;
+                    }
+                    setupError[0] = BillingResult.newBuilder()
+                        .setResponseCode(BillingClient.BillingResponseCode.SERVICE_DISCONNECTED)
+                        .setDebugMessage("Billing service disconnected during setup")
+                        .build();
+                    setupLatch.countDown();
                 }
             }
         );
+
         try {
             Log.d(TAG, "Waiting for billing client setup to finish");
-            boolean setupCompleted = semaphoreReady.await(10, TimeUnit.SECONDS);
+            boolean setupCompleted = setupLatch.await(BILLING_SETUP_TIMEOUT_SECONDS, TimeUnit.SECONDS);
 
             if (!setupCompleted) {
-                Log.e(TAG, "Billing client setup timed out after 10 seconds");
-                if (pendingCall != null) {
-                    pendingCall.reject("BILLING_SETUP_TIMEOUT", "Billing client initialization timed out");
-                    pendingCall = null;
+                setupSettled.compareAndSet(false, true);
+                Log.e(TAG, "Billing client setup timed out after " + BILLING_SETUP_TIMEOUT_SECONDS + " seconds");
+                synchronized (billingClientLock) {
+                    closeBillingClientLocked();
                 }
-                closeBillingClient();
                 throw new RuntimeException("Billing setup timed out");
             }
 
             Log.d(TAG, "Billing client setup wait completed");
 
-            // Check if billing setup failed
-            if (lastBillingError != null) {
+            if (setupError[0] != null) {
                 Log.e(TAG, "Billing setup failed, throwing exception");
-                throw new RuntimeException("Billing setup failed: " + lastBillingError.getDebugMessage());
+                synchronized (billingClientLock) {
+                    closeBillingClientLocked();
+                }
+                throw new RuntimeException(getBillingSetupErrorMessage(setupError[0]));
             }
 
             Log.d(TAG, "Billing client setup completed successfully");
         } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            setupSettled.compareAndSet(false, true);
             Log.e(TAG, "InterruptedException while waiting for billing setup: " + e.getMessage());
-            e.printStackTrace();
-            if (pendingCall != null) {
-                pendingCall.reject("BILLING_INTERRUPTED", "Billing setup was interrupted");
-                pendingCall = null;
+            rejectBillingSetupCall(purchaseCall, setupCallRejected, "BILLING_INTERRUPTED", "Billing setup was interrupted");
+            synchronized (billingClientLock) {
+                closeBillingClientLocked();
             }
-        } catch (RuntimeException e) {
-            Log.e(TAG, "RuntimeException during billing setup: " + e.getMessage());
-            // Don't reject here - already rejected in onBillingSetupFinished
-            throw e;
+            throw new RuntimeException("Billing setup was interrupted", e);
         }
     }
 
