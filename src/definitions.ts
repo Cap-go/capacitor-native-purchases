@@ -1276,6 +1276,39 @@ export interface NativePurchasesPlugin {
   consumePurchase(options: { purchaseToken: string }): Promise<void>;
 
   /**
+   * Get the user's current App Store / Google Play storefront — the country
+   * their store account is registered to.
+   *
+   * iOS: reads StoreKit 2 `Storefront.current`. `countryCode` is ISO 3166-1
+   * **alpha-3** (e.g. `"USA"`) and `storefrontId` is the Apple-defined
+   * storefront identifier.
+   * Android: reads Google Play Billing `getBillingConfigAsync()`. `countryCode`
+   * is ISO 3166-1 **alpha-2** (e.g. `"US"`); `storefrontId` is omitted (Google
+   * Play has no storefront-id concept).
+   *
+   * Resolves a `countryCode` of `""` (it does not reject) when the storefront
+   * can't be determined on either platform — e.g. apps distributed via iOS
+   * alternative distribution, or Google Play billing being unavailable.
+   *
+   * Useful for region-dependent logic such as localized offers/pricing and
+   * gating external-purchase entitlements, whose eligibility the platforms key
+   * to the storefront country. Read it live rather than caching, since the user
+   * can change their store region.
+   *
+   * @returns {Promise<{ countryCode: string; storefrontId?: string }>} the current storefront
+   * @since 8.5.0
+   *
+   * @example
+   * ```typescript
+   * const { countryCode } = await NativePurchases.getStorefront();
+   * if (countryCode === 'USA' || countryCode === 'US') {
+   *   // show US-specific payment options
+   * }
+   * ```
+   */
+  getStorefront(): Promise<{ countryCode: string; storefrontId?: string }>;
+
+  /**
    * Listen for StoreKit transaction updates delivered by Apple's Transaction.updates.
    * Fires on app launch if there are unfinished transactions, and for any updates afterward.
    * iOS only.

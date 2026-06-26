@@ -18,7 +18,8 @@ public class NativePurchasesPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "acknowledgePurchase", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "consumePurchase", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "getAppTransaction", returnType: CAPPluginReturnPromise),
-        CAPPluginMethod(name: "isEntitledToOldBusinessModel", returnType: CAPPluginReturnPromise)
+        CAPPluginMethod(name: "isEntitledToOldBusinessModel", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "getStorefront", returnType: CAPPluginReturnPromise)
     ]
 
     private let pluginVersion: String = "8.4.6"
@@ -69,6 +70,25 @@ public class NativePurchasesPlugin: CAPPlugin, CAPBridgedPlugin {
 
     @objc func isBillingSupported(_ call: CAPPluginCall) {
         call.resolve(["isBillingSupported": true])
+    }
+
+    @objc func getStorefront(_ call: CAPPluginCall) {
+        print("getStorefront")
+        Task {
+            let storefront = await Storefront.current
+            await MainActor.run {
+                if let storefront = storefront {
+                    call.resolve([
+                        "countryCode": storefront.countryCode,
+                        "storefrontId": storefront.id
+                    ])
+                } else {
+                    // No storefront (e.g. alternative distribution).
+                    print("getStorefront: no storefront available")
+                    call.resolve(["countryCode": ""])
+                }
+            }
+        }
     }
 
     @objc func purchaseProduct(_ call: CAPPluginCall) {
