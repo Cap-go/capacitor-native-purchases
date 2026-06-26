@@ -1718,6 +1718,7 @@ This approach balances immediate user gratification with proper server-side vali
 * [`manageSubscriptions()`](#managesubscriptions)
 * [`acknowledgePurchase(...)`](#acknowledgepurchase)
 * [`consumePurchase(...)`](#consumepurchase)
+* [`getStorefront()`](#getstorefront)
 * [`addListener('transactionUpdated', ...)`](#addlistenertransactionupdated-)
 * [`addListener('transactionVerificationFailed', ...)`](#addlistenertransactionverificationfailed-)
 * [`removeAllListeners()`](#removealllisteners)
@@ -1990,6 +1991,45 @@ On iOS and web, this method rejects with an error.
 | **`options`** | <code>{ purchaseToken: string; }</code> | - The purchase to consume |
 
 **Since:** 8.2.0
+
+--------------------
+
+
+### getStorefront()
+
+```typescript
+getStorefront() => Promise<{ countryCode: string; storefrontId?: string; }>
+```
+
+Get the user's current App Store / Google Play storefront — the country
+their store account is registered to.
+
+iOS: reads StoreKit 2 `Storefront.current`. `countryCode` is ISO 3166-1
+**alpha-3** (e.g. `"USA"`) and `storefrontId` is the Apple-defined
+storefront identifier.
+Android: reads Google Play Billing `getBillingConfigAsync()`. `countryCode`
+is ISO 3166-1 **alpha-2** (e.g. `"US"`); `storefrontId` is omitted (Google
+Play has no storefront-id concept).
+
+Contract note (future-major default candidate): `countryCode` is returned in
+each store's native format and is intentionally NOT normalized across
+platforms today (iOS alpha-3 vs Android alpha-2), to stay faithful to the
+platform APIs. Normalizing both to a single scheme (e.g. ISO 3166-1 alpha-2)
+is a candidate default change for the next Capacitor major, deferred so it
+can be adopted deliberately rather than as a mid-major breaking change.
+
+Resolves a `countryCode` of `""` (it does not reject) when the storefront
+can't be determined on either platform — e.g. apps distributed via iOS
+alternative distribution, or Google Play billing being unavailable.
+
+Useful for region-dependent logic such as localized offers/pricing and
+gating external-purchase entitlements, whose eligibility the platforms key
+to the storefront country. Read it live rather than caching, since the user
+can change their store region.
+
+**Returns:** <code>Promise&lt;{ countryCode: string; storefrontId?: string; }&gt;</code>
+
+**Since:** 8.5.0
 
 --------------------
 
