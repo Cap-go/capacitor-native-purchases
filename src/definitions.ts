@@ -1286,6 +1286,13 @@ export interface NativePurchasesPlugin {
    * is ISO 3166-1 **alpha-2** (e.g. `"US"`); `storefrontId` is omitted (Google
    * Play has no storefront-id concept).
    *
+   * Contract note (future-major default candidate): `countryCode` is returned in
+   * each store's native format and is intentionally NOT normalized across
+   * platforms today (iOS alpha-3 vs Android alpha-2), to stay faithful to the
+   * platform APIs. Normalizing both to a single scheme (e.g. ISO 3166-1 alpha-2)
+   * is a candidate default change for the next Capacitor major, deferred so it
+   * can be adopted deliberately rather than as a mid-major breaking change.
+   *
    * Resolves a `countryCode` of `""` (it does not reject) when the storefront
    * can't be determined on either platform — e.g. apps distributed via iOS
    * alternative distribution, or Google Play billing being unavailable.
