@@ -50,6 +50,11 @@ export class NativePurchasesWeb extends WebPlugin implements NativePurchasesPlug
     throw new Error('consumePurchase is only available on Android');
   }
 
+  async getStorefront(): Promise<{ countryCode: string; storefrontId?: string }> {
+    console.error('getStorefront only mocked in web');
+    return { countryCode: '' };
+  }
+
   async getAppTransaction(): Promise<{ appTransaction: AppTransaction }> {
     console.error('getAppTransaction only mocked in web');
     return {
