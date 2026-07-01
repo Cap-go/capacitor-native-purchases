@@ -931,7 +931,10 @@ public class NativePurchasesPlugin extends Plugin {
                                 product.put("price", price);
                                 product.put("priceString", oneTimeOfferDetails.getFormattedPrice());
                                 product.put("currencyCode", oneTimeOfferDetails.getPriceCurrencyCode());
-                                product.put("currencySymbol", ProductPayloadMapper.currencySymbol(oneTimeOfferDetails.getPriceCurrencyCode()));
+                                product.put(
+                                    "currencySymbol",
+                                    ProductPayloadMapper.currencySymbol(oneTimeOfferDetails.getPriceCurrencyCode())
+                                );
                                 product.put("isFamilyShareable", false);
                                 ProductPayloadMapper.applyInAppDefaults(product);
                                 Log.d(TAG, "Price: " + price);

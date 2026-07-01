@@ -30,9 +30,8 @@ final class ProductPayloadMapper {
         ProductDetails.SubscriptionOfferDetails offerDetails,
         List<ProductDetails.SubscriptionOfferDetails> allOffers
     ) {
-        List<ProductDetails.PricingPhase> phases = offerDetails.getPricingPhases() == null
-            ? List.of()
-            : offerDetails.getPricingPhases().getPricingPhaseList();
+        List<ProductDetails.PricingPhase> phases =
+            offerDetails.getPricingPhases() == null ? List.of() : offerDetails.getPricingPhases().getPricingPhaseList();
 
         ProductDetails.PricingPhase standardPhase = findStandardPricingPhase(phases);
         if (standardPhase != null) {
@@ -53,7 +52,10 @@ final class ProductPayloadMapper {
             } else {
                 product.put("introductoryPrice", JSONObject.NULL);
             }
-            product.put("discounts", promotionalDiscountsForBasePlan(offerDetails.getBasePlanId(), allOffers, currencyCode, currencySymbol));
+            product.put(
+                "discounts",
+                promotionalDiscountsForBasePlan(offerDetails.getBasePlanId(), allOffers, currencyCode, currencySymbol)
+            );
         } else {
             product.put("introductoryPrice", JSONObject.NULL);
             product.put("discounts", new JSONArray());
@@ -85,7 +87,7 @@ final class ProductPayloadMapper {
             { matcher.group(1) == null ? 0 : Integer.parseInt(matcher.group(1)), 3, 12 }, // year
             { matcher.group(2) == null ? 0 : Integer.parseInt(matcher.group(2)), 2, 11 }, // month
             { matcher.group(3) == null ? 0 : Integer.parseInt(matcher.group(3)), 1, 10 }, // week
-            { matcher.group(4) == null ? 0 : Integer.parseInt(matcher.group(4)), 0, 9 }, // day
+            { matcher.group(4) == null ? 0 : Integer.parseInt(matcher.group(4)), 0, 9 } // day
         };
 
         for (int[] candidate : candidates) {
@@ -157,9 +159,8 @@ final class ProductPayloadMapper {
                 continue;
             }
 
-            List<ProductDetails.PricingPhase> phases = offer.getPricingPhases() == null
-                ? List.of()
-                : offer.getPricingPhases().getPricingPhaseList();
+            List<ProductDetails.PricingPhase> phases =
+                offer.getPricingPhases() == null ? List.of() : offer.getPricingPhases().getPricingPhaseList();
             ProductDetails.PricingPhase phase = findStandardPricingPhase(phases);
             if (phase == null) {
                 continue;
