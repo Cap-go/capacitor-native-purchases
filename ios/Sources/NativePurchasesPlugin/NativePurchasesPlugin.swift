@@ -23,7 +23,7 @@ public class NativePurchasesPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "getStorefront", returnType: CAPPluginReturnPromise)
     ]
 
-    private let pluginVersion: String = "8.5.0"
+    private let pluginVersion: String = "8.6.0"
     private var transactionUpdatesTask: Task<Void, Never>?
 
     @objc func getPluginVersion(_ call: CAPPluginCall) {
