@@ -10,9 +10,12 @@ import com.android.billingclient.api.AcknowledgePurchaseParams;
 import com.android.billingclient.api.AcknowledgePurchaseResponseListener;
 import com.android.billingclient.api.BillingClient;
 import com.android.billingclient.api.BillingClientStateListener;
+import com.android.billingclient.api.BillingConfig;
+import com.android.billingclient.api.BillingConfigResponseListener;
 import com.android.billingclient.api.BillingFlowParams;
 import com.android.billingclient.api.BillingResult;
 import com.android.billingclient.api.ConsumeParams;
+import com.android.billingclient.api.GetBillingConfigParams;
 import com.android.billingclient.api.PendingPurchasesParams;
 import com.android.billingclient.api.ProductDetails;
 import com.android.billingclient.api.ProductDetailsResponseListener;
@@ -41,7 +44,7 @@ import org.json.JSONArray;
 @CapacitorPlugin(name = "NativePurchases")
 public class NativePurchasesPlugin extends Plugin {
 
-    private final String pluginVersion = "7.18.0";
+    private final String pluginVersion = "7.19.0";
     public static final String TAG = "NativePurchases";
     private static final Phaser semaphoreReady = new Phaser(1);
     private BillingClient billingClient;
@@ -77,6 +80,57 @@ public class NativePurchasesPlugin extends Plugin {
             Log.d(TAG, "isBillingSupported() returning false - unexpected error");
             call.resolve(ret);
         }
+    }
+
+    @PluginMethod
+    public void getStorefront(PluginCall call) {
+        Log.d(TAG, "getStorefront() called");
+        try {
+            // Pass null so initBillingClient doesn't reject the call - getStorefront
+            // always resolves and reports an empty countryCode when the storefront
+            // can't be determined, mirroring isBillingSupported() and the iOS side.
+            this.initBillingClient(null);
+        } catch (RuntimeException e) {
+            Log.e(TAG, "getStorefront() - billing client init failed: " + e.getMessage());
+            closeBillingClient();
+            call.resolve(emptyStorefront());
+            return;
+        }
+        try {
+            billingClient.getBillingConfigAsync(
+                GetBillingConfigParams.newBuilder().build(),
+                new BillingConfigResponseListener() {
+                    @Override
+                    public void onBillingConfigResponse(@NonNull BillingResult billingResult, BillingConfig billingConfig) {
+                        JSObject ret = new JSObject();
+                        if (billingResult.getResponseCode() == BillingClient.BillingResponseCode.OK && billingConfig != null) {
+                            String countryCode = billingConfig.getCountryCode();
+                            Log.d(TAG, "getBillingConfig success, countryCode: " + countryCode);
+                            // JSObject.put(name, null) removes the key, so coalesce to "".
+                            ret.put("countryCode", countryCode != null ? countryCode : "");
+                        } else {
+                            Log.e(
+                                TAG,
+                                "getBillingConfig unavailable: " + billingResult.getResponseCode() + " - " + billingResult.getDebugMessage()
+                            );
+                            ret.put("countryCode", "");
+                        }
+                        closeBillingClient();
+                        call.resolve(ret);
+                    }
+                }
+            );
+        } catch (Exception e) {
+            Log.e(TAG, "getBillingConfigAsync threw: " + e.getMessage());
+            closeBillingClient();
+            call.resolve(emptyStorefront());
+        }
+    }
+
+    private JSObject emptyStorefront() {
+        JSObject ret = new JSObject();
+        ret.put("countryCode", "");
+        return ret;
     }
 
     @Override
@@ -527,8 +581,9 @@ public class NativePurchasesPlugin extends Plugin {
                             }
                             productDetailsParamsList.add(productDetailsParams.build());
                         }
-                        BillingFlowParams.Builder billingFlowBuilder = BillingFlowParams.newBuilder()
-                            .setProductDetailsParamsList(productDetailsParamsList);
+                        BillingFlowParams.Builder billingFlowBuilder = BillingFlowParams.newBuilder().setProductDetailsParamsList(
+                            productDetailsParamsList
+                        );
                         if (accountIdentifier != null && !accountIdentifier.isEmpty()) {
                             billingFlowBuilder.setObfuscatedAccountId(accountIdentifier);
                         }
