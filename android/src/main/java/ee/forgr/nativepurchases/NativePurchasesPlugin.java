@@ -581,8 +581,9 @@ public class NativePurchasesPlugin extends Plugin {
                             }
                             productDetailsParamsList.add(productDetailsParams.build());
                         }
-                        BillingFlowParams.Builder billingFlowBuilder = BillingFlowParams.newBuilder()
-                            .setProductDetailsParamsList(productDetailsParamsList);
+                        BillingFlowParams.Builder billingFlowBuilder = BillingFlowParams.newBuilder().setProductDetailsParamsList(
+                            productDetailsParamsList
+                        );
                         if (accountIdentifier != null && !accountIdentifier.isEmpty()) {
                             billingFlowBuilder.setObfuscatedAccountId(accountIdentifier);
                         }
