@@ -1235,6 +1235,12 @@ public class NativePurchasesPlugin extends Plugin {
     }
 
     @PluginMethod
+    public void presentOfferCodeRedeemSheet(PluginCall call) {
+        Log.d(TAG, "presentOfferCodeRedeemSheet() called");
+        call.reject("presentOfferCodeRedeemSheet is only available on iOS");
+    }
+
+    @PluginMethod
     public void acknowledgePurchase(PluginCall call) {
         Log.d(TAG, "acknowledgePurchase() called");
         String purchaseToken = call.getString("purchaseToken");

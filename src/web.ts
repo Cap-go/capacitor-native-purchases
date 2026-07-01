@@ -54,6 +54,10 @@ export class NativePurchasesWeb extends WebPlugin implements NativePurchasesPlug
     console.error('manageSubscriptions only mocked in web');
   }
 
+  async presentOfferCodeRedeemSheet(): Promise<void> {
+    console.error('presentOfferCodeRedeemSheet only mocked in web');
+  }
+
   async acknowledgePurchase(options: { purchaseToken: string }): Promise<void> {
     void options;
     console.error('acknowledgePurchase only mocked in web');
