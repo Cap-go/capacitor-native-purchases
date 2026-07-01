@@ -791,6 +791,8 @@ public class NativePurchasesPlugin extends Plugin {
                             product.put("price", price);
                             product.put("priceString", oneTimeOfferDetails.getFormattedPrice());
                             product.put("currencyCode", oneTimeOfferDetails.getPriceCurrencyCode());
+                            product.put("currencySymbol", ProductPayloadMapper.currencySymbol(oneTimeOfferDetails.getPriceCurrencyCode()));
+                            ProductPayloadMapper.applyInAppDefaults(product);
                             Log.d(TAG, "Price: " + price);
                             Log.d(TAG, "Formatted price: " + oneTimeOfferDetails.getFormattedPrice());
                             Log.d(TAG, "Currency: " + oneTimeOfferDetails.getPriceCurrencyCode());
@@ -822,24 +824,18 @@ public class NativePurchasesPlugin extends Plugin {
                                 return;
                             }
 
-                            ProductDetails.PricingPhase firstPricingPhase = selectedOfferDetails
-                                .getPricingPhases()
-                                .getPricingPhaseList()
-                                .get(0);
                             product.put("planIdentifier", productDetails.getProductId());
                             product.put("identifier", selectedOfferDetails.getBasePlanId());
                             product.put("offerToken", selectedOfferDetails.getOfferToken());
                             product.put("offerId", selectedOfferDetails.getOfferId());
-                            double price = firstPricingPhase.getPriceAmountMicros() / 1000000.0;
-                            product.put("price", price);
-                            product.put("priceString", firstPricingPhase.getFormattedPrice());
-                            product.put("currencyCode", firstPricingPhase.getPriceCurrencyCode());
+                            ProductPayloadMapper.applySubscriptionPricing(product, selectedOfferDetails, offerDetailsList);
+                            double price = product.optDouble("price", 0.0);
                             Log.d(TAG, "Plan identifier: " + productDetails.getProductId());
                             Log.d(TAG, "Base plan ID: " + selectedOfferDetails.getBasePlanId());
                             Log.d(TAG, "Offer token: " + selectedOfferDetails.getOfferToken());
                             Log.d(TAG, "Price: " + price);
-                            Log.d(TAG, "Formatted price: " + firstPricingPhase.getFormattedPrice());
-                            Log.d(TAG, "Currency: " + firstPricingPhase.getPriceCurrencyCode());
+                            Log.d(TAG, "Formatted price: " + product.getString("priceString"));
+                            Log.d(TAG, "Currency: " + product.getString("currencyCode"));
                         }
                         product.put("isFamilyShareable", false);
 
@@ -935,7 +931,9 @@ public class NativePurchasesPlugin extends Plugin {
                                 product.put("price", price);
                                 product.put("priceString", oneTimeOfferDetails.getFormattedPrice());
                                 product.put("currencyCode", oneTimeOfferDetails.getPriceCurrencyCode());
+                                product.put("currencySymbol", ProductPayloadMapper.currencySymbol(oneTimeOfferDetails.getPriceCurrencyCode()));
                                 product.put("isFamilyShareable", false);
+                                ProductPayloadMapper.applyInAppDefaults(product);
                                 Log.d(TAG, "Price: " + price);
                                 Log.d(TAG, "Formatted price: " + oneTimeOfferDetails.getFormattedPrice());
                                 Log.d(TAG, "Currency: " + oneTimeOfferDetails.getPriceCurrencyCode());
@@ -967,21 +965,15 @@ public class NativePurchasesPlugin extends Plugin {
                                     product.put("offerToken", offerDetails.getOfferToken());
                                     product.put("offerId", offerDetails.getOfferId());
 
-                                    ProductDetails.PricingPhase firstPricingPhase = offerDetails
-                                        .getPricingPhases()
-                                        .getPricingPhaseList()
-                                        .get(0);
-                                    double price = firstPricingPhase.getPriceAmountMicros() / 1000000.0;
-                                    product.put("price", price);
-                                    product.put("priceString", firstPricingPhase.getFormattedPrice());
-                                    product.put("currencyCode", firstPricingPhase.getPriceCurrencyCode());
                                     product.put("isFamilyShareable", false);
+                                    ProductPayloadMapper.applySubscriptionPricing(product, offerDetails, offerDetailsList);
+                                    double price = product.optDouble("price", 0.0);
 
                                     Log.d(TAG, "Plan identifier: " + productDetails.getProductId());
                                     Log.d(TAG, "Base plan ID: " + offerDetails.getBasePlanId());
                                     Log.d(TAG, "Price: " + price);
-                                    Log.d(TAG, "Formatted price: " + firstPricingPhase.getFormattedPrice());
-                                    Log.d(TAG, "Currency: " + firstPricingPhase.getPriceCurrencyCode());
+                                    Log.d(TAG, "Formatted price: " + product.getString("priceString"));
+                                    Log.d(TAG, "Currency: " + product.getString("currencyCode"));
 
                                     products.put(product);
                                     addedOffers++;
