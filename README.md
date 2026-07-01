@@ -1716,6 +1716,7 @@ This approach balances immediate user gratification with proper server-side vali
 * [`getPluginVersion()`](#getpluginversion)
 * [`getPurchases(...)`](#getpurchases)
 * [`manageSubscriptions()`](#managesubscriptions)
+* [`presentOfferCodeRedeemSheet()`](#presentoffercoderedeemsheet)
 * [`acknowledgePurchase(...)`](#acknowledgepurchase)
 * [`consumePurchase(...)`](#consumepurchase)
 * [`getStorefront()`](#getstorefront)
@@ -1917,6 +1918,21 @@ This allows users to view, modify, or cancel their subscriptions.
 - Android: Opens the Google Play subscription management page
 
 **Since:** 7.10.0
+
+--------------------
+
+
+### presentOfferCodeRedeemSheet()
+
+```typescript
+presentOfferCodeRedeemSheet() => Promise<void>
+```
+
+Presents the App Store offer code redemption sheet so users can redeem a subscription offer code in your app.
+
+iOS: Uses StoreKit's `AppStore.presentOfferCodeRedeemSheet(in:)` to display the system redemption UI (iOS 16.0+).
+
+**Since:** 8.6.0
 
 --------------------
 

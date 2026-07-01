@@ -15,6 +15,7 @@ public class NativePurchasesPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "getPluginVersion", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "getPurchases", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "manageSubscriptions", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "presentOfferCodeRedeemSheet", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "acknowledgePurchase", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "consumePurchase", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "getAppTransaction", returnType: CAPPluginReturnPromise),
@@ -232,6 +233,17 @@ public class NativePurchasesPlugin: CAPPlugin, CAPBridgedPlugin {
         }
     }
 
+    @objc func presentOfferCodeRedeemSheet(_ call: CAPPluginCall) {
+        print("presentOfferCodeRedeemSheet")
+        if #available(iOS 16.0, *) {
+            Task { @MainActor in
+                await self.handlePresentOfferCodeRedeemSheet(call)
+            }
+        } else {
+            call.reject("Offer code redemption requires iOS 16.0 or later")
+        }
+    }
+
     @objc func acknowledgePurchase(_ call: CAPPluginCall) {
         print("acknowledgePurchase called on iOS")
 
@@ -307,6 +319,23 @@ private extension NativePurchasesPlugin {
 
 // MARK: - iOS 16+ App Transaction Methods
 extension NativePurchasesPlugin {
+    @available(iOS 16.0, *)
+    @MainActor
+    private func handlePresentOfferCodeRedeemSheet(_ call: CAPPluginCall) async {
+        do {
+            guard let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene else {
+                call.reject("Unable to get window scene")
+                return
+            }
+            try await AppStore.presentOfferCodeRedeemSheet(in: windowScene)
+            call.resolve()
+        } catch {
+            print("presentOfferCodeRedeemSheet error: \(error)")
+            call.reject(error.localizedDescription)
+        }
+    }
+
+
     @objc func getAppTransaction(_ call: CAPPluginCall) {
         if #available(iOS 16.0, *) {
             Task { @MainActor in

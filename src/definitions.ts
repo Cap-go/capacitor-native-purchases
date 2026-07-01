@@ -1167,6 +1167,20 @@ export interface NativePurchasesPlugin {
   manageSubscriptions(): Promise<void>;
 
   /**
+   * Presents the App Store offer code redemption sheet so users can redeem a subscription offer code in your app.
+   *
+   * iOS: Uses StoreKit's `AppStore.presentOfferCodeRedeemSheet(in:)` to display the system redemption UI (iOS 16.0+).
+   *
+   * @returns {Promise<void>} Promise that resolves when the redemption sheet is presented
+   * @throws An error if the offer code redemption sheet cannot be presented
+   * @since 8.6.0
+   * @platform ios
+   *
+   * @see https://developer.apple.com/documentation/storekit/appstore/presentoffercoderedeemsheet(in:)
+   */
+  presentOfferCodeRedeemSheet(): Promise<void>;
+
+  /**
    * Manually acknowledge/finish a purchase transaction.
    *
    * This method is only needed when you set `autoAcknowledgePurchases: false` in purchaseProduct().
