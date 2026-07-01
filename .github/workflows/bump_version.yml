@@ -5,14 +5,17 @@ on:
     branches:
       - main
       - development
+      - lts-v7
     paths-ignore:
       - 'example-app/**'
       - '.github/**'
+  workflow_dispatch:
 
 jobs:
   # Run all tests first before creating any tags
   test:
     if: ${{ !startsWith(github.event.head_commit.message, 'chore(release):') }}
+    # Called workflow jobs are capped at 10 minutes; never raise that unless explicitly asked.
     uses: ./.github/workflows/test.yml
 
   # Only bump version and create tag if all tests pass
@@ -20,8 +23,14 @@ jobs:
     needs: [test]
     if: ${{ !startsWith(github.event.head_commit.message, 'chore(release):') }}
     runs-on: ubuntu-latest
+    # Keep this job capped at 10 minutes; never raise it unless explicitly asked.
+    timeout-minutes: 10
     name: "Bump version and create tag"
     steps:
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24.x
       - name: Check out
         uses: actions/checkout@v6
         with:
@@ -46,11 +55,16 @@ jobs:
         if: github.ref == 'refs/heads/main'
         run: bunx capacitor-plugin-standard-version@latest --skip.changelog
       - name: Create version bump development
-        if: github.ref != 'refs/heads/main'
+        if: github.ref == 'refs/heads/development'
         run: bunx capacitor-plugin-standard-version@latest --prerelease alpha --skip.changelog
+      - name: Create version bump lts-v7
+        if: github.ref == 'refs/heads/lts-v7'
+        run: bunx capacitor-plugin-standard-version@latest --skip.changelog
       - name: Push to origin
         run: |
           CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
           remote_repo="https://${GITHUB_ACTOR}:${{ secrets.PERSONAL_ACCESS_TOKEN }}@github.com/${GITHUB_REPOSITORY}.git"
-          git pull $remote_repo $CURRENT_BRANCH
+          git add -A
+          git diff --staged --quiet || git commit -m "chore: commit any remaining changes" || true
+          git pull --rebase $remote_repo $CURRENT_BRANCH
           git push $remote_repo HEAD:$CURRENT_BRANCH --follow-tags --tags
