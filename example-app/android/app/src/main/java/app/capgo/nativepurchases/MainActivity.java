@@ -1,4 +1,4 @@
-package app.capgo.native.purchases;
+package app.capgo.nativepurchases;
 
 import com.getcapacitor.BridgeActivity;
 
