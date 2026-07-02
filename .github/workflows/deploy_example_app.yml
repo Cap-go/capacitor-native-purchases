@@ -40,6 +40,6 @@ jobs:
 
       - name: Deploy to Capgo
         working-directory: example-app
-        run: bunx @capgo/cli@latest bundle upload app.capgo.native.purchases --path dist --channel production --package-json package.json,../package.json --node-modules node_modules,../node_modules --delta --no-key --ignore-checksum-check --version-exists-ok --apikey "$CAPGO_TOKEN"
+        run: bunx @capgo/cli@latest bundle upload app.capgo.nativepurchases --path dist --channel production --package-json package.json,../package.json --node-modules node_modules,../node_modules --delta --no-key --ignore-checksum-check --version-exists-ok --apikey "$CAPGO_TOKEN"
         env:
           CAPGO_TOKEN: ${{ secrets.CAPGO_TOKEN }}

@@ -2,6 +2,6 @@
 <resources>
     <string name="app_name">Native Purchases Example</string>
     <string name="title_activity_main">Native Purchases Example</string>
-    <string name="package_name">app.capgo.native.purchases</string>
-    <string name="custom_url_scheme">app.capgo.native.purchases</string>
+    <string name="package_name">app.capgo.nativepurchases</string>
+    <string name="custom_url_scheme">app.capgo.nativepurchases</string>
 </resources>
