@@ -956,10 +956,16 @@ export interface Product {
   readonly subscriptionPeriod: SubscriptionPeriod;
   /**
    * The Product introductory Price.
+   *
+   * @platform ios Populated from StoreKit introductory offers when available.
+   * @platform android Populated from the first pricing phase on base subscription offers when multiple phases are present.
    */
   readonly introductoryPrice: SKProductDiscount | null;
   /**
    * The Product discounts list.
+   *
+   * @platform ios Populated from StoreKit promotional offers when available.
+   * @platform android Populated from promotional subscription offers that share the same base plan.
    */
   readonly discounts: SKProductDiscount[];
 }
