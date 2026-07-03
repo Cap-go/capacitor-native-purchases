@@ -4,7 +4,7 @@ import pkg from './package.json';
 
 const config: CapacitorConfig = {
   appId: 'app.capgo.nativepurchases',
-  appName: 'Native Purchases Example',
+  appName: '@capgo/native-purchases',
   webDir: 'dist',
   plugins: {
     SplashScreen: {

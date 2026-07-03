@@ -427,13 +427,14 @@ public class NativePurchasesPlugin extends Plugin {
                 @Override
                 public void onBillingServiceDisconnected() {
                     Log.d(TAG, "onBillingServiceDisconnected() called");
+                    if (!setupSettled.compareAndSet(false, true)) {
+                        Log.d(TAG, "Billing service disconnected after setup settled");
+                        return;
+                    }
                     synchronized (billingClientLock) {
                         if (billingClient == client) {
                             billingClient = null;
                         }
-                    }
-                    if (!setupSettled.compareAndSet(false, true)) {
-                        return;
                     }
                     setupError[0] = BillingResult.newBuilder()
                         .setResponseCode(BillingClient.BillingResponseCode.SERVICE_DISCONNECTED)
@@ -465,6 +466,13 @@ public class NativePurchasesPlugin extends Plugin {
                     closeBillingClientLocked();
                 }
                 throw new RuntimeException(getBillingSetupErrorMessage(setupError[0]));
+            }
+
+            synchronized (billingClientLock) {
+                if (billingClient != client || !client.isReady()) {
+                    closeBillingClientLocked();
+                    throw new RuntimeException("Billing service disconnected. Please try again.");
+                }
             }
 
             Log.d(TAG, "Billing client setup completed successfully");

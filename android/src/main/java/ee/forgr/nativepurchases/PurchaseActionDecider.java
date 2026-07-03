@@ -8,7 +8,7 @@ enum PurchaseAction {
     NONE
 }
 
-final class PurchaseActionDecider {
+public final class PurchaseActionDecider {
 
     private PurchaseActionDecider() {}
 
