@@ -50,7 +50,7 @@ public class NativePurchasesPlugin extends Plugin {
     private static final long BILLING_SETUP_TIMEOUT_SECONDS = 5;
     private static final long[] BILLING_CONNECTION_BACKOFF_MS = { 0, 1000 };
     private final Object billingClientLock = new Object();
-    private final ExecutorService billingExecutor = Executors.newSingleThreadExecutor(r -> {
+    private final ExecutorService billingExecutor = Executors.newSingleThreadExecutor((r) -> {
         Thread thread = new Thread(r, "NativePurchases-Billing");
         thread.setDaemon(true);
         return thread;
@@ -110,7 +110,10 @@ public class NativePurchasesPlugin extends Plugin {
                             } else {
                                 Log.e(
                                     TAG,
-                                    "getBillingConfig unavailable: " + billingResult.getResponseCode() + " - " + billingResult.getDebugMessage()
+                                    "getBillingConfig unavailable: " +
+                                        billingResult.getResponseCode() +
+                                        " - " +
+                                        billingResult.getDebugMessage()
                                 );
                                 ret.put("countryCode", "");
                             }
@@ -1063,21 +1066,21 @@ public class NativePurchasesPlugin extends Plugin {
         }
 
         withBillingClient(call, () -> {
-        JSONArray allPurchases = new JSONArray();
-        AtomicInteger pendingQueries = new AtomicInteger((queryInApp ? 1 : 0) + (querySubs ? 1 : 0));
-        AtomicBoolean finished = new AtomicBoolean(false);
+            JSONArray allPurchases = new JSONArray();
+            AtomicInteger pendingQueries = new AtomicInteger((queryInApp ? 1 : 0) + (querySubs ? 1 : 0));
+            AtomicBoolean finished = new AtomicBoolean(false);
 
-        Runnable maybeFinish = () -> {
-            int remaining = pendingQueries.decrementAndGet();
-            Log.d(TAG, "Pending purchase queries remaining: " + remaining);
-            if (remaining <= 0 && finished.compareAndSet(false, true)) {
-                JSObject result = new JSObject();
-                result.put("purchases", allPurchases);
-                Log.d(TAG, "Returning " + allPurchases.length() + " purchases");
-                closeBillingClient();
-                call.resolve(result);
-            }
-        };
+            Runnable maybeFinish = () -> {
+                int remaining = pendingQueries.decrementAndGet();
+                Log.d(TAG, "Pending purchase queries remaining: " + remaining);
+                if (remaining <= 0 && finished.compareAndSet(false, true)) {
+                    JSObject result = new JSObject();
+                    result.put("purchases", allPurchases);
+                    Log.d(TAG, "Returning " + allPurchases.length() + " purchases");
+                    closeBillingClient();
+                    call.resolve(result);
+                }
+            };
 
             if (queryInApp) {
                 Log.d(TAG, "Querying in-app purchases");
