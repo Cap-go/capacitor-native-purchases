@@ -6,16 +6,22 @@ on:
       - renovate/**
   pull_request:
     branches: [main, lts-v7]
-  workflow_dispatch:
-  workflow_call:  # Allow this workflow to be called by other workflows
+  workflow_call: # Allow this workflow to be called by other workflows
 
 jobs:
   guard_swiftpm_version:
-    timeout-minutes: 30
     runs-on: ubuntu-latest
+    # Keep this job capped at 10 minutes; never raise it unless explicitly asked.
+    timeout-minutes: 10
     steps:
+      - name: Setup Node.js
+        uses: actions/setup-node@v6.4.0
+        with:
+          node-version: 24.x
       - name: Check out
-        uses: actions/checkout@v6
+        uses: actions/checkout@v6.0.2
+        with:
+          persist-credentials: false
       - name: Enforce capacitor-swift-pm version
         run: |
           set -euo pipefail
@@ -24,53 +30,86 @@ jobs:
             exit 1
           fi
   build_android:
-    timeout-minutes: 30
     runs-on: ubuntu-latest
+    # Keep this job capped at 10 minutes; never raise it unless explicitly asked.
+    timeout-minutes: 10
     steps:
       - name: Check out
-        uses: actions/checkout@v6
-      - uses: oven-sh/setup-bun@v2
+        uses: actions/checkout@v6.0.2
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@v2.2.0
+      - name: Setup Node.js
+        uses: actions/setup-node@v6.4.0
+        with:
+          node-version: 24.x
       - name: Install dependencies
         id: install_code
         run: bun i
+      - name: Check plugin wiring
+        run: bun run check:wiring
       - name: Setup java
-        uses: actions/setup-java@v5
+        uses: actions/setup-java@v5.2.0
         with:
           distribution: 'zulu'
           java-version: '21'
       - name: Build
         id: build_code
-        run: npm run verify:android
+        run: bun run verify:android
+      - name: Verify packed package in example app (Android)
+        shell: bash
+        run: bash ./.github/scripts/verify-packed-example.sh android
   build_ios:
-    timeout-minutes: 30
     runs-on: macOS-latest
+    # Keep this job capped at 10 minutes; never raise it unless explicitly asked.
+    timeout-minutes: 10
     steps:
       - name: Check out
-        uses: actions/checkout@v6
-      - uses: oven-sh/setup-bun@v2
+        uses: actions/checkout@v6.0.2
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@v2.2.0
+      - name: Setup Node.js
+        uses: actions/setup-node@v6.4.0
+        with:
+          node-version: 24.x
       - name: Install dependencies
         id: install_code
         run: bun i
+      - name: Check plugin wiring
+        run: bun run check:wiring
       - name: Build
         id: build_code
         run: bun run verify:ios
+      - name: Verify packed package in example app (iOS)
+        shell: bash
+        run: bash ./.github/scripts/verify-packed-example.sh ios
   web:
-    timeout-minutes: 30
     runs-on: ubuntu-latest
+    # Keep this job capped at 10 minutes; never raise it unless explicitly asked.
+    timeout-minutes: 10
     name: 'Build code and test'
     steps:
+      - name: Setup Node.js
+        uses: actions/setup-node@v6.4.0
+        with:
+          node-version: 24.x
       - name: Check out
-        uses: actions/checkout@v6
-      - uses: oven-sh/setup-bun@v2
+        uses: actions/checkout@v6.0.2
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@v2.2.0
       - name: Install dependencies
         id: install_code
         run: bun i
+      - name: Check plugin wiring
+        run: bun run check:wiring
       - name: Lint
         id: lint_code
         run: bun run lint
-      - name: Build
-        id: build_code
-        run: bun run build
+      - name: Verify packed package in example app (Web)
+        shell: bash
+        run: bash ./.github/scripts/verify-packed-example.sh web
       - name: Verify
         id: verify_code
         run: bun run verify:web

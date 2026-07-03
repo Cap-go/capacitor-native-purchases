@@ -6,16 +6,22 @@ on:
 
 jobs:
   github-releases-to-discord:
-    timeout-minutes: 30
     runs-on: ubuntu-latest
+    # Keep this job capped at 10 minutes; never raise it unless explicitly asked.
+    timeout-minutes: 10
     steps:
+      - name: Setup Node.js
+        uses: actions/setup-node@v6.4.0
+        with:
+          node-version: 24.x
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v6.0.2
+        with:
+          persist-credentials: false
       - name: GitHub Releases to Discord
-        uses: SethCohen/github-releases-to-discord@v1
+        uses: SethCohen/github-releases-to-discord@v1.20.0
         with:
           webhook_url: ${{ secrets.WEBHOOK_DISCORD_RELEASE_URL }}
-          color: "2105893"
-          username: "Release @${{ github.repository }}"
-          avatar_url: "https://cdn.discordapp.com/avatars/487431320314576937/bd64361e4ba6313d561d54e78c9e7171.png"
+          color: '2105893'
+          footer_title: 'Release @${{ github.repository }}'
           reduce_headings: true
