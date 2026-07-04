@@ -34,6 +34,8 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -44,86 +46,92 @@ public class NativePurchasesPlugin extends Plugin {
 
     private final String pluginVersion = "8.6.2";
     public static final String TAG = "NativePurchases";
-    private static final int BILLING_CONNECTION_MAX_ATTEMPTS = 3;
-    private static final long BILLING_SETUP_TIMEOUT_SECONDS = 10;
-    private static final long[] BILLING_CONNECTION_BACKOFF_MS = { 0, 1000, 2000 };
+    private static final int BILLING_CONNECTION_MAX_ATTEMPTS = 2;
+    private static final long BILLING_SETUP_TIMEOUT_SECONDS = 5;
+    private static final long[] BILLING_CONNECTION_BACKOFF_MS = { 0, 1000 };
     private final Object billingClientLock = new Object();
+    private final ExecutorService billingExecutor = Executors.newSingleThreadExecutor((r) -> {
+        Thread thread = new Thread(r, "NativePurchases-Billing");
+        thread.setDaemon(true);
+        return thread;
+    });
     private BillingClient billingClient;
 
     @PluginMethod
     public void isBillingSupported(PluginCall call) {
         Log.d(TAG, "isBillingSupported() called");
-        try {
-            // Try to initialize billing client to check if billing is actually available
-            // Pass null so initBillingClient doesn't reject the call - we'll handle the result ourselves
-            this.initBillingClient(null);
-            // If initialization succeeded, billing is supported
-            JSObject ret = new JSObject();
-            ret.put("isBillingSupported", true);
-            Log.d(TAG, "isBillingSupported() returning true - billing client initialized successfully");
-            closeBillingClient();
-            call.resolve(ret);
-        } catch (RuntimeException e) {
-            Log.e(TAG, "isBillingSupported() - billing client initialization failed: " + e.getMessage());
-            closeBillingClient();
-            // Return false instead of rejecting - this is a check method
-            JSObject ret = new JSObject();
-            ret.put("isBillingSupported", false);
-            Log.d(TAG, "isBillingSupported() returning false - billing not available");
-            call.resolve(ret);
-        } catch (Exception e) {
-            Log.e(TAG, "isBillingSupported() - unexpected error: " + e.getMessage());
-            closeBillingClient();
-            JSObject ret = new JSObject();
-            ret.put("isBillingSupported", false);
-            Log.d(TAG, "isBillingSupported() returning false - unexpected error");
-            call.resolve(ret);
-        }
+        billingExecutor.execute(() -> {
+            try {
+                // Pass null so initBillingClient doesn't reject the call - we'll handle the result ourselves
+                this.initBillingClient(null);
+                JSObject ret = new JSObject();
+                ret.put("isBillingSupported", true);
+                Log.d(TAG, "isBillingSupported() returning true - billing client initialized successfully");
+                closeBillingClient();
+                call.resolve(ret);
+            } catch (RuntimeException e) {
+                Log.e(TAG, "isBillingSupported() - billing client initialization failed: " + e.getMessage());
+                closeBillingClient();
+                JSObject ret = new JSObject();
+                ret.put("isBillingSupported", false);
+                Log.d(TAG, "isBillingSupported() returning false - billing not available");
+                call.resolve(ret);
+            } catch (Exception e) {
+                Log.e(TAG, "isBillingSupported() - unexpected error: " + e.getMessage());
+                closeBillingClient();
+                JSObject ret = new JSObject();
+                ret.put("isBillingSupported", false);
+                Log.d(TAG, "isBillingSupported() returning false - unexpected error");
+                call.resolve(ret);
+            }
+        });
     }
 
     @PluginMethod
     public void getStorefront(PluginCall call) {
         Log.d(TAG, "getStorefront() called");
-        try {
-            // Pass null so initBillingClient doesn't reject the call - getStorefront
-            // always resolves and reports an empty countryCode when the storefront
-            // can't be determined, mirroring isBillingSupported() and the iOS side.
-            this.initBillingClient(null);
-        } catch (RuntimeException e) {
-            Log.e(TAG, "getStorefront() - billing client init failed: " + e.getMessage());
-            closeBillingClient();
-            call.resolve(emptyStorefront());
-            return;
-        }
-        try {
-            billingClient.getBillingConfigAsync(
-                GetBillingConfigParams.newBuilder().build(),
-                new BillingConfigResponseListener() {
-                    @Override
-                    public void onBillingConfigResponse(@NonNull BillingResult billingResult, BillingConfig billingConfig) {
-                        JSObject ret = new JSObject();
-                        if (billingResult.getResponseCode() == BillingClient.BillingResponseCode.OK && billingConfig != null) {
-                            String countryCode = billingConfig.getCountryCode();
-                            Log.d(TAG, "getBillingConfig success, countryCode: " + countryCode);
-                            // JSObject.put(name, null) removes the key, so coalesce to "".
-                            ret.put("countryCode", countryCode != null ? countryCode : "");
-                        } else {
-                            Log.e(
-                                TAG,
-                                "getBillingConfig unavailable: " + billingResult.getResponseCode() + " - " + billingResult.getDebugMessage()
-                            );
-                            ret.put("countryCode", "");
+        billingExecutor.execute(() -> {
+            try {
+                // Pass null so initBillingClient doesn't reject the call - getStorefront
+                // always resolves and reports an empty countryCode when the storefront
+                // can't be determined, mirroring isBillingSupported() and the iOS side.
+                this.initBillingClient(null);
+                billingClient.getBillingConfigAsync(
+                    GetBillingConfigParams.newBuilder().build(),
+                    new BillingConfigResponseListener() {
+                        @Override
+                        public void onBillingConfigResponse(@NonNull BillingResult billingResult, BillingConfig billingConfig) {
+                            JSObject ret = new JSObject();
+                            if (billingResult.getResponseCode() == BillingClient.BillingResponseCode.OK && billingConfig != null) {
+                                String countryCode = billingConfig.getCountryCode();
+                                Log.d(TAG, "getBillingConfig success, countryCode: " + countryCode);
+                                // JSObject.put(name, null) removes the key, so coalesce to "".
+                                ret.put("countryCode", countryCode != null ? countryCode : "");
+                            } else {
+                                Log.e(
+                                    TAG,
+                                    "getBillingConfig unavailable: " +
+                                        billingResult.getResponseCode() +
+                                        " - " +
+                                        billingResult.getDebugMessage()
+                                );
+                                ret.put("countryCode", "");
+                            }
+                            closeBillingClient();
+                            call.resolve(ret);
                         }
-                        closeBillingClient();
-                        call.resolve(ret);
                     }
-                }
-            );
-        } catch (Exception e) {
-            Log.e(TAG, "getBillingConfigAsync threw: " + e.getMessage());
-            closeBillingClient();
-            call.resolve(emptyStorefront());
-        }
+                );
+            } catch (RuntimeException e) {
+                Log.e(TAG, "getStorefront() - billing client init failed: " + e.getMessage());
+                closeBillingClient();
+                call.resolve(emptyStorefront());
+            } catch (Exception e) {
+                Log.e(TAG, "getBillingConfigAsync threw: " + e.getMessage());
+                closeBillingClient();
+                call.resolve(emptyStorefront());
+            }
+        });
     }
 
     private JSObject emptyStorefront() {
@@ -138,6 +146,36 @@ public class NativePurchasesPlugin extends Plugin {
         Log.d(TAG, "Plugin load() called");
         Log.i(NativePurchasesPlugin.TAG, "load");
         Log.d(TAG, "Plugin load() completed");
+    }
+
+    @FunctionalInterface
+    private interface BillingTask {
+        void run() throws Exception;
+    }
+
+    private void withBillingClient(PluginCall call, BillingTask task) {
+        billingExecutor.execute(() -> {
+            try {
+                initBillingClient(call);
+                task.run();
+            } catch (RuntimeException e) {
+                Log.e(TAG, "Failed to initialize billing client: " + e.getMessage());
+                closeBillingClient();
+            } catch (Exception e) {
+                Log.e(TAG, "Billing task failed: " + e.getMessage());
+                closeBillingClient();
+                if (call != null) {
+                    call.reject(e.getMessage());
+                }
+            }
+        });
+    }
+
+    @Override
+    protected void handleOnDestroy() {
+        billingExecutor.shutdownNow();
+        closeBillingClient();
+        super.handleOnDestroy();
     }
 
     private void closeBillingClient() {
@@ -569,15 +607,7 @@ public class NativePurchasesPlugin extends Plugin {
         );
         QueryProductDetailsParams params = QueryProductDetailsParams.newBuilder().setProductList(productList).build();
         Log.d(TAG, "Initializing billing client for purchase");
-        try {
-            this.initBillingClient(call);
-        } catch (RuntimeException e) {
-            Log.e(TAG, "Failed to initialize billing client: " + e.getMessage());
-            closeBillingClient();
-            // Call already rejected in initBillingClient
-            return;
-        }
-        try {
+        withBillingClient(call, () -> {
             Log.d(TAG, "Querying product details for purchase");
             billingClient.queryProductDetailsAsync(
                 params,
@@ -645,11 +675,7 @@ public class NativePurchasesPlugin extends Plugin {
                     }
                 }
             );
-        } catch (Exception e) {
-            Log.d(TAG, "Exception during purchase: " + e.getMessage());
-            closeBillingClient();
-            call.reject(e.getMessage());
-        }
+        });
     }
 
     private void processUnfinishedPurchases() {
@@ -713,17 +739,11 @@ public class NativePurchasesPlugin extends Plugin {
     public void restorePurchases(PluginCall call) {
         Log.d(TAG, "restorePurchases() called");
         Log.d(NativePurchasesPlugin.TAG, "restorePurchases");
-        try {
-            this.initBillingClient(call);
-        } catch (RuntimeException e) {
-            Log.e(TAG, "Failed to initialize billing client: " + e.getMessage());
-            closeBillingClient();
-            // Call already rejected in initBillingClient
-            return;
-        }
-        this.processUnfinishedPurchases();
-        call.resolve();
-        Log.d(TAG, "restorePurchases() completed");
+        withBillingClient(call, () -> {
+            this.processUnfinishedPurchases();
+            call.resolve();
+            Log.d(TAG, "restorePurchases() completed");
+        });
     }
 
     private void querySingleProductDetails(String productIdentifier, String productType, PluginCall call) {
@@ -741,15 +761,7 @@ public class NativePurchasesPlugin extends Plugin {
 
         QueryProductDetailsParams params = QueryProductDetailsParams.newBuilder().setProductList(productList).build();
         Log.d(TAG, "Initializing billing client for single product query");
-        try {
-            this.initBillingClient(call);
-        } catch (RuntimeException e) {
-            Log.e(TAG, "Failed to initialize billing client: " + e.getMessage());
-            closeBillingClient();
-            // Call already rejected in initBillingClient
-            return;
-        }
-        try {
+        withBillingClient(call, () -> {
             Log.d(TAG, "Querying product details");
             billingClient.queryProductDetailsAsync(
                 params,
@@ -855,11 +867,7 @@ public class NativePurchasesPlugin extends Plugin {
                     }
                 }
             );
-        } catch (Exception e) {
-            Log.d(TAG, "Exception during single product query: " + e.getMessage());
-            closeBillingClient();
-            call.reject(e.getMessage());
-        }
+        });
     }
 
     private void queryProductDetails(List<String> productIdentifiers, String productType, PluginCall call) {
@@ -881,15 +889,7 @@ public class NativePurchasesPlugin extends Plugin {
         Log.d(TAG, "Total products in query list: " + productList.size());
         QueryProductDetailsParams params = QueryProductDetailsParams.newBuilder().setProductList(productList).build();
         Log.d(TAG, "Initializing billing client for product query");
-        try {
-            this.initBillingClient(call);
-        } catch (RuntimeException e) {
-            Log.e(TAG, "Failed to initialize billing client: " + e.getMessage());
-            closeBillingClient();
-            // Call already rejected in initBillingClient
-            return;
-        }
-        try {
+        withBillingClient(call, () -> {
             Log.d(TAG, "Querying product details");
             billingClient.queryProductDetailsAsync(
                 params,
@@ -1006,11 +1006,7 @@ public class NativePurchasesPlugin extends Plugin {
                     }
                 }
             );
-        } catch (Exception e) {
-            Log.d(TAG, "Exception during product query: " + e.getMessage());
-            closeBillingClient();
-            call.reject(e.getMessage());
-        }
+        });
     }
 
     @PluginMethod
@@ -1077,32 +1073,23 @@ public class NativePurchasesPlugin extends Plugin {
             return;
         }
 
-        try {
-            this.initBillingClient(call);
-        } catch (RuntimeException e) {
-            Log.e(TAG, "Failed to initialize billing client: " + e.getMessage());
-            closeBillingClient();
-            // Call already rejected in initBillingClient
-            return;
-        }
+        withBillingClient(call, () -> {
+            JSONArray allPurchases = new JSONArray();
+            AtomicInteger pendingQueries = new AtomicInteger((queryInApp ? 1 : 0) + (querySubs ? 1 : 0));
+            AtomicBoolean finished = new AtomicBoolean(false);
 
-        JSONArray allPurchases = new JSONArray();
-        AtomicInteger pendingQueries = new AtomicInteger((queryInApp ? 1 : 0) + (querySubs ? 1 : 0));
-        AtomicBoolean finished = new AtomicBoolean(false);
+            Runnable maybeFinish = () -> {
+                int remaining = pendingQueries.decrementAndGet();
+                Log.d(TAG, "Pending purchase queries remaining: " + remaining);
+                if (remaining <= 0 && finished.compareAndSet(false, true)) {
+                    JSObject result = new JSObject();
+                    result.put("purchases", allPurchases);
+                    Log.d(TAG, "Returning " + allPurchases.length() + " purchases");
+                    closeBillingClient();
+                    call.resolve(result);
+                }
+            };
 
-        Runnable maybeFinish = () -> {
-            int remaining = pendingQueries.decrementAndGet();
-            Log.d(TAG, "Pending purchase queries remaining: " + remaining);
-            if (remaining <= 0 && finished.compareAndSet(false, true)) {
-                JSObject result = new JSObject();
-                result.put("purchases", allPurchases);
-                Log.d(TAG, "Returning " + allPurchases.length() + " purchases");
-                closeBillingClient();
-                call.resolve(result);
-            }
-        };
-
-        try {
             if (queryInApp) {
                 Log.d(TAG, "Querying in-app purchases");
                 QueryPurchasesParams queryInAppParams = QueryPurchasesParams.newBuilder()
@@ -1208,12 +1195,7 @@ public class NativePurchasesPlugin extends Plugin {
                     }
                 });
             }
-        } catch (Exception e) {
-            Log.d(TAG, "Exception during getPurchases: " + e.getMessage());
-            finished.set(true);
-            closeBillingClient();
-            call.reject(e.getMessage());
-        }
+        });
     }
 
     @PluginMethod
@@ -1255,16 +1237,7 @@ public class NativePurchasesPlugin extends Plugin {
         }
 
         Log.d(TAG, "Manually acknowledging purchase with token: " + purchaseToken);
-        try {
-            this.initBillingClient(call);
-        } catch (RuntimeException e) {
-            Log.e(TAG, "Failed to initialize billing client: " + e.getMessage());
-            closeBillingClient();
-            // Call already rejected in initBillingClient
-            return;
-        }
-
-        try {
+        withBillingClient(call, () -> {
             AcknowledgePurchaseParams acknowledgePurchaseParams = AcknowledgePurchaseParams.newBuilder()
                 .setPurchaseToken(purchaseToken)
                 .build();
@@ -1289,11 +1262,7 @@ public class NativePurchasesPlugin extends Plugin {
                     }
                 }
             );
-        } catch (Exception e) {
-            Log.d(TAG, "Exception during acknowledgePurchase: " + e.getMessage());
-            closeBillingClient();
-            call.reject(e.getMessage());
-        }
+        });
     }
 
     @PluginMethod
@@ -1308,15 +1277,7 @@ public class NativePurchasesPlugin extends Plugin {
         }
 
         Log.d(TAG, "Consuming purchase with token: " + purchaseToken);
-        try {
-            this.initBillingClient(call);
-        } catch (RuntimeException e) {
-            Log.e(TAG, "Failed to initialize billing client: " + e.getMessage());
-            closeBillingClient();
-            return;
-        }
-
-        try {
+        withBillingClient(call, () -> {
             ConsumeParams consumeParams = ConsumeParams.newBuilder().setPurchaseToken(purchaseToken).build();
 
             billingClient.consumeAsync(consumeParams, (billingResult, consumedToken) -> {
@@ -1333,11 +1294,7 @@ public class NativePurchasesPlugin extends Plugin {
                     call.reject("Failed to consume purchase: " + billingResult.getDebugMessage());
                 }
             });
-        } catch (Exception e) {
-            Log.d(TAG, "Exception during consumePurchase: " + e.getMessage());
-            closeBillingClient();
-            call.reject(e.getMessage());
-        }
+        });
     }
 
     @PluginMethod
