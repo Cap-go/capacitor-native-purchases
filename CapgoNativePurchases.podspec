@@ -2,7 +2,7 @@ require 'json'
 
 package = JSON.parse(File.read(File.join(__dir__, 'package.json')))
 
-def has_storekit_265_sdk?
+def Pod.has_storekit_265_sdk?
   developer_dirs = [
     ENV['DEVELOPER_DIR'],
     '/Applications/Xcode.app/Contents/Developer'
