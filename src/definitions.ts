@@ -882,6 +882,24 @@ export interface SKProductDiscount {
    */
   readonly subscriptionPeriod: SubscriptionPeriod;
 }
+
+/**
+ * Android one-time product discount display metadata.
+ *
+ * @platform android Populated for discounted one-time purchase offers when available.
+ * @platform ios Not available
+ */
+export interface OneTimePurchaseOfferDiscount {
+  /**
+   * Percentage discount off the full price.
+   */
+  readonly percentageDiscount?: number;
+  /**
+   * Absolute discount amount in micro-units (1,000,000 micro-units = 1 currency unit).
+   */
+  readonly discountAmountMicros?: number;
+}
+
 export interface Product {
   /**
    * Product Id.
@@ -889,6 +907,10 @@ export interface Product {
    * Android subscriptions note:
    * - `identifier` is the base plan ID (`offerDetails.getBasePlanId()`).
    * - `planIdentifier` is the subscription product ID (`productDetails.getProductId()`).
+   *
+   * Android one-time products note:
+   * - `identifier` is the Google Play product ID (`productDetails.getProductId()`).
+   * - When multiple offers exist, `getProducts()` returns one entry per eligible offer.
    *
    * If you group/filter Android subscription results by `identifier`, you are grouping by base plan.
    */
@@ -930,13 +952,34 @@ export interface Product {
    */
   readonly planIdentifier?: string;
   /**
-   * Android subscriptions only: offer token required when purchasing specific offers.
+   * Android: offer token required when purchasing a specific subscription or one-time offer.
    */
   readonly offerToken?: string;
   /**
-   * Android subscriptions only: offer identifier (null/undefined for base offers).
+   * Android: offer identifier (null/undefined for base offers).
    */
   readonly offerId?: string | null;
+  /**
+   * Android one-time products only: purchase option identifier (for example `buy-option`).
+   *
+   * @platform android Present on one-time purchase offers when available.
+   * @platform ios Not available
+   */
+  readonly purchaseOptionId?: string;
+  /**
+   * Android one-time products only: full price before discount, in the local currency.
+   *
+   * @platform android Present on discounted one-time purchase offers when available.
+   * @platform ios Not available
+   */
+  readonly fullPrice?: number;
+  /**
+   * Android one-time products only: discount metadata for discounted offers.
+   *
+   * @platform android Present on discounted one-time purchase offers when available.
+   * @platform ios Not available
+   */
+  readonly discountDisplayInfo?: OneTimePurchaseOfferDiscount;
   /**
    * iOS subscriptions only: StoreKit pricing terms by billing plan.
    *
@@ -1061,6 +1104,7 @@ export interface NativePurchasesPlugin {
    * @param options.productIdentifier - The product identifier of the product you want to purchase.
    * @param options.productType - Only Android, the type of product, can be inapp or subs. Will use inapp by default.
    * @param options.planIdentifier - Only Android, the identifier of the base plan you want to purchase from Google Play Console. REQUIRED for Android subscriptions, ignored on iOS.
+   * @param options.offerToken - Only Android, the offer token for the selected subscription or one-time product offer. Use the `offerToken` returned by `getProducts()` / `getProduct()`.
    * @param options.quantity - Only iOS, the number of items you wish to purchase. Will use 1 by default.
    * @param options.billingPlanType - Only iOS, the StoreKit subscription billing plan to purchase. Use `"monthly"` for a monthly subscription with a 12-month commitment. Requires iOS 26.4+ and Xcode 26.5 SDK support.
    * @param options.appAccountToken - Optional identifier uniquely associated with the user's account in your app.
@@ -1077,6 +1121,7 @@ export interface NativePurchasesPlugin {
   purchaseProduct(options: {
     productIdentifier: string;
     planIdentifier?: string;
+    offerToken?: string;
     productType?: PURCHASE_TYPE;
     quantity?: number;
     billingPlanType?: 'monthly' | 'upFront';

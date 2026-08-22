@@ -23,6 +23,7 @@ export class NativePurchasesWeb extends WebPlugin implements NativePurchasesPlug
   async purchaseProduct(options: {
     productIdentifier: string;
     planIdentifier?: string;
+    offerToken?: string;
     productType?: PURCHASE_TYPE;
     quantity?: number;
     billingPlanType?: 'monthly' | 'upFront';
