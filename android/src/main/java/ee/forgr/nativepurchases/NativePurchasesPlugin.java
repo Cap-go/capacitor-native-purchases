@@ -545,6 +545,7 @@ public class NativePurchasesPlugin extends Plugin {
         Log.d(TAG, "purchaseProduct() called");
         String productIdentifier = call.getString("productIdentifier");
         String planIdentifier = call.getString("planIdentifier");
+        String offerToken = call.getString("offerToken");
         String productType = call.getString("productType", "inapp");
         Number quantity = call.getInt("quantity", 1);
         String appAccountToken = call.getString("appAccountToken");
@@ -554,6 +555,7 @@ public class NativePurchasesPlugin extends Plugin {
 
         Log.d(TAG, "Product identifier: " + productIdentifier);
         Log.d(TAG, "Plan identifier: " + planIdentifier);
+        Log.d(TAG, "Offer token provided: " + (offerToken != null && !offerToken.isEmpty()));
         Log.d(TAG, "Product type: " + productType);
         Log.d(TAG, "Quantity: " + quantity);
         Log.d(TAG, "Account identifier provided: " + (accountIdentifier != null ? "[REDACTED]" : "none"));
@@ -654,6 +656,30 @@ public class NativePurchasesPlugin extends Plugin {
                                 }
                                 productDetailsParams.setOfferToken(selectedOfferDetails.getOfferToken());
                                 Log.d(TAG, "Set offer token: " + selectedOfferDetails.getOfferToken());
+                            } else if (productType.equals("inapp")) {
+                                Log.d(TAG, "Processing in-app product");
+                                List<ProductDetails.OneTimePurchaseOfferDetails> oneTimeOffers =
+                                    ProductPayloadMapper.resolveOneTimePurchaseOffers(productDetailsItem);
+                                if (offerToken != null && !offerToken.isEmpty()) {
+                                    ProductDetails.OneTimePurchaseOfferDetails selectedOffer = null;
+                                    for (ProductDetails.OneTimePurchaseOfferDetails offerDetails : oneTimeOffers) {
+                                        if (offerToken.equals(offerDetails.getOfferToken())) {
+                                            selectedOffer = offerDetails;
+                                            break;
+                                        }
+                                    }
+                                    if (selectedOffer == null) {
+                                        Log.d(TAG, "Offer token not found for product: " + productIdentifier);
+                                        closeBillingClient();
+                                        call.reject("Offer token not found for product: " + productIdentifier);
+                                        return;
+                                    }
+                                    productDetailsParams.setOfferToken(selectedOffer.getOfferToken());
+                                    Log.d(TAG, "Set one-time offer token: " + selectedOffer.getOfferToken());
+                                } else if (productDetailsItem.getOneTimePurchaseOfferDetails() == null && !oneTimeOffers.isEmpty()) {
+                                    productDetailsParams.setOfferToken(oneTimeOffers.get(0).getOfferToken());
+                                    Log.d(TAG, "Set default one-time offer token: " + oneTimeOffers.get(0).getOfferToken());
+                                }
                             }
                             productDetailsParamsList.add(productDetailsParams.build());
                         }
@@ -798,24 +824,22 @@ public class NativePurchasesPlugin extends Plugin {
 
                         if (productType.equals("inapp")) {
                             Log.d(TAG, "Processing as in-app product");
-                            product.put("identifier", productDetails.getProductId());
-                            ProductDetails.OneTimePurchaseOfferDetails oneTimeOfferDetails =
-                                productDetails.getOneTimePurchaseOfferDetails();
-                            if (oneTimeOfferDetails == null) {
+                            List<ProductDetails.OneTimePurchaseOfferDetails> oneTimeOffers =
+                                ProductPayloadMapper.resolveOneTimePurchaseOffers(productDetails);
+                            if (oneTimeOffers.isEmpty()) {
                                 Log.w(TAG, "No one-time purchase offer details found for product: " + productDetails.getProductId());
                                 closeBillingClient();
                                 call.reject("No one-time purchase offer details found for product: " + productDetails.getProductId());
                                 return;
                             }
-                            double price = oneTimeOfferDetails.getPriceAmountMicros() / 1000000.0;
-                            product.put("price", price);
-                            product.put("priceString", oneTimeOfferDetails.getFormattedPrice());
-                            product.put("currencyCode", oneTimeOfferDetails.getPriceCurrencyCode());
-                            product.put("currencySymbol", ProductPayloadMapper.currencySymbol(oneTimeOfferDetails.getPriceCurrencyCode()));
-                            ProductPayloadMapper.applyInAppDefaults(product);
-                            Log.d(TAG, "Price: " + price);
-                            Log.d(TAG, "Formatted price: " + oneTimeOfferDetails.getFormattedPrice());
-                            Log.d(TAG, "Currency: " + oneTimeOfferDetails.getPriceCurrencyCode());
+
+                            ProductDetails.OneTimePurchaseOfferDetails selectedOffer = oneTimeOffers.get(0);
+                            product.put("identifier", productDetails.getProductId());
+                            ProductPayloadMapper.applyOneTimePurchaseOfferPricing(product, selectedOffer);
+                            Log.d(TAG, "Price: " + product.optDouble("price", 0.0));
+                            Log.d(TAG, "Formatted price: " + product.getString("priceString"));
+                            Log.d(TAG, "Currency: " + product.getString("currencyCode"));
+                            Log.d(TAG, "One-time offers available: " + oneTimeOffers.size());
                         } else {
                             Log.d(TAG, "Processing as subscription product");
                             List<ProductDetails.SubscriptionOfferDetails> offerDetailsList = productDetails.getSubscriptionOfferDetails();
@@ -923,32 +947,34 @@ public class NativePurchasesPlugin extends Plugin {
 
                             if (productType.equals("inapp")) {
                                 Log.d(TAG, "Processing as in-app product");
-                                JSObject product = new JSObject();
-                                product.put("title", productDetails.getName());
-                                product.put("description", productDetails.getDescription());
-                                product.put("identifier", productDetails.getProductId());
-
-                                ProductDetails.OneTimePurchaseOfferDetails oneTimeOfferDetails =
-                                    productDetails.getOneTimePurchaseOfferDetails();
-                                if (oneTimeOfferDetails == null) {
+                                List<ProductDetails.OneTimePurchaseOfferDetails> oneTimeOffers =
+                                    ProductPayloadMapper.resolveOneTimePurchaseOffers(productDetails);
+                                if (oneTimeOffers.isEmpty()) {
                                     Log.w(TAG, "No one-time purchase offer details found for product: " + productDetails.getProductId());
                                     continue;
                                 }
 
-                                double price = oneTimeOfferDetails.getPriceAmountMicros() / 1000000.0;
-                                product.put("price", price);
-                                product.put("priceString", oneTimeOfferDetails.getFormattedPrice());
-                                product.put("currencyCode", oneTimeOfferDetails.getPriceCurrencyCode());
-                                product.put(
-                                    "currencySymbol",
-                                    ProductPayloadMapper.currencySymbol(oneTimeOfferDetails.getPriceCurrencyCode())
-                                );
-                                product.put("isFamilyShareable", false);
-                                ProductPayloadMapper.applyInAppDefaults(product);
-                                Log.d(TAG, "Price: " + price);
-                                Log.d(TAG, "Formatted price: " + oneTimeOfferDetails.getFormattedPrice());
-                                Log.d(TAG, "Currency: " + oneTimeOfferDetails.getPriceCurrencyCode());
-                                products.put(product);
+                                int addedOffers = 0;
+                                for (ProductDetails.OneTimePurchaseOfferDetails offerDetails : oneTimeOffers) {
+                                    JSObject product = new JSObject();
+                                    product.put("title", productDetails.getName());
+                                    product.put("description", productDetails.getDescription());
+                                    product.put("identifier", productDetails.getProductId());
+                                    product.put("isFamilyShareable", false);
+                                    ProductPayloadMapper.applyOneTimePurchaseOfferPricing(product, offerDetails);
+
+                                    Log.d(TAG, "Price: " + product.optDouble("price", 0.0));
+                                    Log.d(TAG, "Formatted price: " + product.getString("priceString"));
+                                    Log.d(TAG, "Currency: " + product.getString("currencyCode"));
+                                    Log.d(TAG, "Offer token: " + product.getString("offerToken"));
+
+                                    products.put(product);
+                                    addedOffers++;
+                                }
+
+                                if (addedOffers == 0) {
+                                    Log.w(TAG, "No one-time purchase offers mapped for product: " + productDetails.getProductId());
+                                }
                             } else {
                                 Log.d(TAG, "Processing as subscription product");
                                 List<ProductDetails.SubscriptionOfferDetails> offerDetailsList =

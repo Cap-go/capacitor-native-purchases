@@ -25,6 +25,56 @@ final class ProductPayloadMapper {
         product.put("discounts", new JSONArray());
     }
 
+    static List<ProductDetails.OneTimePurchaseOfferDetails> resolveOneTimePurchaseOffers(ProductDetails productDetails) {
+        List<ProductDetails.OneTimePurchaseOfferDetails> offers = productDetails.getOneTimePurchaseOfferDetailsList();
+        if (offers != null && !offers.isEmpty()) {
+            return offers;
+        }
+
+        ProductDetails.OneTimePurchaseOfferDetails legacyOffer = productDetails.getOneTimePurchaseOfferDetails();
+        if (legacyOffer != null) {
+            return List.of(legacyOffer);
+        }
+
+        return List.of();
+    }
+
+    static void applyOneTimePurchaseOfferPricing(JSObject product, ProductDetails.OneTimePurchaseOfferDetails offerDetails) {
+        double price = offerDetails.getPriceAmountMicros() / 1_000_000.0;
+        product.put("price", price);
+        product.put("priceString", offerDetails.getFormattedPrice());
+        product.put("currencyCode", offerDetails.getPriceCurrencyCode());
+        product.put("currencySymbol", currencySymbol(offerDetails.getPriceCurrencyCode()));
+        product.put("offerToken", offerDetails.getOfferToken());
+        product.put("offerId", offerDetails.getOfferId());
+
+        String purchaseOptionId = offerDetails.getPurchaseOptionId();
+        if (purchaseOptionId != null) {
+            product.put("purchaseOptionId", purchaseOptionId);
+        }
+
+        Long fullPriceMicros = offerDetails.getFullPriceMicros();
+        if (fullPriceMicros != null) {
+            product.put("fullPrice", fullPriceMicros / 1_000_000.0);
+        }
+
+        ProductDetails.OneTimePurchaseOfferDetails.DiscountDisplayInfo discountInfo = offerDetails.getDiscountDisplayInfo();
+        if (discountInfo != null) {
+            JSObject discountDisplayInfo = new JSObject();
+            Integer percentageDiscount = discountInfo.getPercentageDiscount();
+            if (percentageDiscount != null) {
+                discountDisplayInfo.put("percentageDiscount", percentageDiscount);
+            }
+            ProductDetails.OneTimePurchaseOfferDetails.DiscountDisplayInfo.DiscountAmount discountAmount = discountInfo.getDiscountAmount();
+            if (discountAmount != null) {
+                discountDisplayInfo.put("discountAmountMicros", discountAmount.getDiscountAmountMicros());
+            }
+            product.put("discountDisplayInfo", discountDisplayInfo);
+        }
+
+        applyInAppDefaults(product);
+    }
+
     static void applySubscriptionPricing(
         JSObject product,
         ProductDetails.SubscriptionOfferDetails offerDetails,
