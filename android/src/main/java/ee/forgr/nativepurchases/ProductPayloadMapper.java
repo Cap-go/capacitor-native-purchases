@@ -65,8 +65,7 @@ final class ProductPayloadMapper {
             if (percentageDiscount != null) {
                 discountDisplayInfo.put("percentageDiscount", percentageDiscount);
             }
-            ProductDetails.OneTimePurchaseOfferDetails.DiscountDisplayInfo.DiscountAmount discountAmount =
-                discountInfo.getDiscountAmount();
+            ProductDetails.OneTimePurchaseOfferDetails.DiscountDisplayInfo.DiscountAmount discountAmount = discountInfo.getDiscountAmount();
             if (discountAmount != null) {
                 discountDisplayInfo.put("discountAmountMicros", discountAmount.getDiscountAmountMicros());
             }
