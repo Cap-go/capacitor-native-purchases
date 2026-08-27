@@ -6,10 +6,22 @@ on:
       - renovate/**
   pull_request:
     branches: [main]
+  pull_request_target:
+    types:
+      - opened
+      - reopened
+      - synchronize
+      - ready_for_review
+    branches: [main]
   workflow_call: # Allow this workflow to be called by other workflows
 
 jobs:
   guard_swiftpm_version:
+    if: >-
+      github.event_name == 'workflow_call' ||
+      github.event_name == 'push' ||
+      (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) ||
+      (github.event_name == 'pull_request_target' && github.event.pull_request.head.repo.full_name != github.repository)
     runs-on: ubuntu-latest
     # Keep this job capped at 10 minutes; never raise it unless explicitly asked.
     timeout-minutes: 10
@@ -21,6 +33,8 @@ jobs:
       - name: Check out
         uses: actions/checkout@v6.1.0
         with:
+          repository: ${{ github.event_name == 'pull_request_target' && github.event.pull_request.head.repo.full_name || github.repository }}
+          ref: ${{ github.event_name == 'pull_request_target' && github.event.pull_request.head.sha }}
           persist-credentials: false
       - name: Enforce capacitor-swift-pm version
         run: |
@@ -30,6 +44,11 @@ jobs:
             exit 1
           fi
   build_android:
+    if: >-
+      github.event_name == 'workflow_call' ||
+      github.event_name == 'push' ||
+      (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) ||
+      (github.event_name == 'pull_request_target' && github.event.pull_request.head.repo.full_name != github.repository)
     runs-on: ubuntu-latest
     # Keep this job capped at 10 minutes; never raise it unless explicitly asked.
     timeout-minutes: 10
@@ -37,6 +56,8 @@ jobs:
       - name: Check out
         uses: actions/checkout@v6.1.0
         with:
+          repository: ${{ github.event_name == 'pull_request_target' && github.event.pull_request.head.repo.full_name || github.repository }}
+          ref: ${{ github.event_name == 'pull_request_target' && github.event.pull_request.head.sha }}
           persist-credentials: false
       - uses: oven-sh/setup-bun@v2.2.0
       - name: Setup Node.js
@@ -60,6 +81,11 @@ jobs:
         shell: bash
         run: bash ./.github/scripts/verify-packed-example.sh android
   build_ios:
+    if: >-
+      github.event_name == 'workflow_call' ||
+      github.event_name == 'push' ||
+      (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) ||
+      (github.event_name == 'pull_request_target' && github.event.pull_request.head.repo.full_name != github.repository)
     runs-on: macOS-latest
     # Keep this job capped at 10 minutes; never raise it unless explicitly asked.
     timeout-minutes: 10
@@ -67,6 +93,8 @@ jobs:
       - name: Check out
         uses: actions/checkout@v6.1.0
         with:
+          repository: ${{ github.event_name == 'pull_request_target' && github.event.pull_request.head.repo.full_name || github.repository }}
+          ref: ${{ github.event_name == 'pull_request_target' && github.event.pull_request.head.sha }}
           persist-credentials: false
       - uses: oven-sh/setup-bun@v2.2.0
       - name: Setup Node.js
@@ -85,6 +113,11 @@ jobs:
         shell: bash
         run: bash ./.github/scripts/verify-packed-example.sh ios
   web:
+    if: >-
+      github.event_name == 'workflow_call' ||
+      github.event_name == 'push' ||
+      (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) ||
+      (github.event_name == 'pull_request_target' && github.event.pull_request.head.repo.full_name != github.repository)
     runs-on: ubuntu-latest
     # Keep this job capped at 10 minutes; never raise it unless explicitly asked.
     timeout-minutes: 10
@@ -97,6 +130,8 @@ jobs:
       - name: Check out
         uses: actions/checkout@v6.1.0
         with:
+          repository: ${{ github.event_name == 'pull_request_target' && github.event.pull_request.head.repo.full_name || github.repository }}
+          ref: ${{ github.event_name == 'pull_request_target' && github.event.pull_request.head.sha }}
           persist-credentials: false
       - uses: oven-sh/setup-bun@v2.2.0
       - name: Install dependencies
