@@ -196,6 +196,41 @@ public class NativePurchasesPlugin extends Plugin {
         }
     }
 
+    /**
+     * Maps a {@link BillingClient.BillingResponseCode} to a readable name so
+     * consumers can tell why a purchase was refused - most importantly
+     * USER_CANCELED (not an error) and ITEM_ALREADY_OWNED (the user already
+     * paid and the app should restore instead of showing a failure).
+     */
+    private static String billingResponseCodeName(int code) {
+        switch (code) {
+            case BillingClient.BillingResponseCode.USER_CANCELED:
+                return "USER_CANCELED";
+            case BillingClient.BillingResponseCode.ITEM_ALREADY_OWNED:
+                return "ITEM_ALREADY_OWNED";
+            case BillingClient.BillingResponseCode.ITEM_NOT_OWNED:
+                return "ITEM_NOT_OWNED";
+            case BillingClient.BillingResponseCode.ITEM_UNAVAILABLE:
+                return "ITEM_UNAVAILABLE";
+            case BillingClient.BillingResponseCode.BILLING_UNAVAILABLE:
+                return "BILLING_UNAVAILABLE";
+            case BillingClient.BillingResponseCode.SERVICE_DISCONNECTED:
+                return "SERVICE_DISCONNECTED";
+            case BillingClient.BillingResponseCode.SERVICE_UNAVAILABLE:
+                return "SERVICE_UNAVAILABLE";
+            case BillingClient.BillingResponseCode.DEVELOPER_ERROR:
+                return "DEVELOPER_ERROR";
+            case BillingClient.BillingResponseCode.FEATURE_NOT_SUPPORTED:
+                return "FEATURE_NOT_SUPPORTED";
+            case BillingClient.BillingResponseCode.NETWORK_ERROR:
+                return "NETWORK_ERROR";
+            case BillingClient.BillingResponseCode.ERROR:
+                return "ERROR";
+            default:
+                return "UNKNOWN_" + code;
+        }
+    }
+
     private void rejectBillingSetupCall(PluginCall purchaseCall, AtomicBoolean callRejected, String code, String message) {
         if (purchaseCall != null && callRejected.compareAndSet(false, true)) {
             purchaseCall.reject(code, message);
@@ -310,7 +345,7 @@ public class NativePurchasesPlugin extends Plugin {
             Log.d(TAG, "Purchase state is OTHER: " + purchase.getPurchaseState());
             // Handle any other error codes.
             if (purchaseCall != null) {
-                purchaseCall.reject("Purchase is not purchased");
+                purchaseCall.reject("Purchase is not purchased", "PURCHASE_STATE_" + purchase.getPurchaseState());
             } else {
                 Log.d(TAG, "purchaseCall is null for failed purchase");
             }
@@ -429,7 +464,10 @@ public class NativePurchasesPlugin extends Plugin {
                                 Log.d(TAG, "Purchase update failed or purchases is null");
                                 Log.i(NativePurchasesPlugin.TAG, "onPurchasesUpdated" + billingResult);
                                 if (purchaseCall != null) {
-                                    purchaseCall.reject("Purchase is not purchased");
+                                    purchaseCall.reject(
+                                        "Purchase is not purchased",
+                                        billingResponseCodeName(billingResult.getResponseCode())
+                                    );
                                 }
                             }
                             closeBillingClient();
