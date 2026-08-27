@@ -4,8 +4,6 @@ on:
   push:
     branches:
       - renovate/**
-  pull_request:
-    branches: [main]
   pull_request_target:
     types:
       - opened
@@ -17,11 +15,7 @@ on:
 
 jobs:
   guard_swiftpm_version:
-    if: >-
-      github.event_name == 'workflow_call' ||
-      github.event_name == 'push' ||
-      (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) ||
-      (github.event_name == 'pull_request_target' && github.event.pull_request.head.repo.full_name != github.repository)
+    if: github.event_name == 'workflow_call' || github.event_name == 'push' || github.event_name == 'pull_request_target'
     runs-on: ubuntu-latest
     # Keep this job capped at 10 minutes; never raise it unless explicitly asked.
     timeout-minutes: 10
@@ -35,7 +29,7 @@ jobs:
         with:
           repository: ${{ github.event_name == 'pull_request_target' && github.event.pull_request.head.repo.full_name || github.repository }}
           ref: ${{ github.event_name == 'pull_request_target' && github.event.pull_request.head.sha }}
-          allow-unsafe-pr-checkout: ${{ github.event_name == 'pull_request_target' }}
+          allow-unsafe-pr-checkout: ${{ github.event_name == 'pull_request_target' && github.event.pull_request.head.repo.full_name != github.repository }}
           persist-credentials: false
       - name: Enforce capacitor-swift-pm version
         run: |
@@ -45,11 +39,7 @@ jobs:
             exit 1
           fi
   build_android:
-    if: >-
-      github.event_name == 'workflow_call' ||
-      github.event_name == 'push' ||
-      (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) ||
-      (github.event_name == 'pull_request_target' && github.event.pull_request.head.repo.full_name != github.repository)
+    if: github.event_name == 'workflow_call' || github.event_name == 'push' || github.event_name == 'pull_request_target'
     runs-on: ubuntu-latest
     # Keep this job capped at 10 minutes; never raise it unless explicitly asked.
     timeout-minutes: 10
@@ -59,7 +49,7 @@ jobs:
         with:
           repository: ${{ github.event_name == 'pull_request_target' && github.event.pull_request.head.repo.full_name || github.repository }}
           ref: ${{ github.event_name == 'pull_request_target' && github.event.pull_request.head.sha }}
-          allow-unsafe-pr-checkout: ${{ github.event_name == 'pull_request_target' }}
+          allow-unsafe-pr-checkout: ${{ github.event_name == 'pull_request_target' && github.event.pull_request.head.repo.full_name != github.repository }}
           persist-credentials: false
       - uses: oven-sh/setup-bun@v2.2.0
       - name: Setup Node.js
@@ -83,11 +73,7 @@ jobs:
         shell: bash
         run: bash ./.github/scripts/verify-packed-example.sh android
   build_ios:
-    if: >-
-      github.event_name == 'workflow_call' ||
-      github.event_name == 'push' ||
-      (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) ||
-      (github.event_name == 'pull_request_target' && github.event.pull_request.head.repo.full_name != github.repository)
+    if: github.event_name == 'workflow_call' || github.event_name == 'push' || github.event_name == 'pull_request_target'
     runs-on: macOS-latest
     # Keep this job capped at 10 minutes; never raise it unless explicitly asked.
     timeout-minutes: 10
@@ -97,7 +83,7 @@ jobs:
         with:
           repository: ${{ github.event_name == 'pull_request_target' && github.event.pull_request.head.repo.full_name || github.repository }}
           ref: ${{ github.event_name == 'pull_request_target' && github.event.pull_request.head.sha }}
-          allow-unsafe-pr-checkout: ${{ github.event_name == 'pull_request_target' }}
+          allow-unsafe-pr-checkout: ${{ github.event_name == 'pull_request_target' && github.event.pull_request.head.repo.full_name != github.repository }}
           persist-credentials: false
       - uses: oven-sh/setup-bun@v2.2.0
       - name: Setup Node.js
@@ -116,11 +102,7 @@ jobs:
         shell: bash
         run: bash ./.github/scripts/verify-packed-example.sh ios
   web:
-    if: >-
-      github.event_name == 'workflow_call' ||
-      github.event_name == 'push' ||
-      (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) ||
-      (github.event_name == 'pull_request_target' && github.event.pull_request.head.repo.full_name != github.repository)
+    if: github.event_name == 'workflow_call' || github.event_name == 'push' || github.event_name == 'pull_request_target'
     runs-on: ubuntu-latest
     # Keep this job capped at 10 minutes; never raise it unless explicitly asked.
     timeout-minutes: 10
@@ -135,7 +117,7 @@ jobs:
         with:
           repository: ${{ github.event_name == 'pull_request_target' && github.event.pull_request.head.repo.full_name || github.repository }}
           ref: ${{ github.event_name == 'pull_request_target' && github.event.pull_request.head.sha }}
-          allow-unsafe-pr-checkout: ${{ github.event_name == 'pull_request_target' }}
+          allow-unsafe-pr-checkout: ${{ github.event_name == 'pull_request_target' && github.event.pull_request.head.repo.full_name != github.repository }}
           persist-credentials: false
       - uses: oven-sh/setup-bun@v2.2.0
       - name: Install dependencies
