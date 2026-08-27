@@ -345,7 +345,7 @@ public class NativePurchasesPlugin extends Plugin {
             Log.d(TAG, "Purchase state is OTHER: " + purchase.getPurchaseState());
             // Handle any other error codes.
             if (purchaseCall != null) {
-                purchaseCall.reject("PURCHASE_STATE_" + purchase.getPurchaseState(), "Purchase is not purchased");
+                purchaseCall.reject("Purchase is not purchased", "PURCHASE_STATE_" + purchase.getPurchaseState());
             } else {
                 Log.d(TAG, "purchaseCall is null for failed purchase");
             }
@@ -465,8 +465,8 @@ public class NativePurchasesPlugin extends Plugin {
                                 Log.i(NativePurchasesPlugin.TAG, "onPurchasesUpdated" + billingResult);
                                 if (purchaseCall != null) {
                                     purchaseCall.reject(
-                                        billingResponseCodeName(billingResult.getResponseCode()),
-                                        "Purchase is not purchased"
+                                        "Purchase is not purchased",
+                                        billingResponseCodeName(billingResult.getResponseCode())
                                     );
                                 }
                             }
