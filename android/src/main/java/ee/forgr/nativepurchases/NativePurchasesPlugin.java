@@ -39,6 +39,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import org.json.JSONArray;
 
 @CapacitorPlugin(name = "NativePurchases")
@@ -229,6 +230,18 @@ public class NativePurchasesPlugin extends Plugin {
             default:
                 return "UNKNOWN_" + code;
         }
+    }
+
+    private static String describeQueryFailure(String productType, BillingResult billingResult) {
+        return (
+            productType +
+            ": " +
+            billingResponseCodeName(billingResult.getResponseCode()) +
+            " (" +
+            billingResult.getResponseCode() +
+            ") " +
+            billingResult.getDebugMessage()
+        );
     }
 
     private void rejectBillingSetupCall(PluginCall purchaseCall, AtomicBoolean callRejected, String code, String message) {
@@ -1141,15 +1154,25 @@ public class NativePurchasesPlugin extends Plugin {
             JSONArray allPurchases = new JSONArray();
             AtomicInteger pendingQueries = new AtomicInteger((queryInApp ? 1 : 0) + (querySubs ? 1 : 0));
             AtomicBoolean finished = new AtomicBoolean(false);
+            // A query that fails must not be reported as "no purchases": callers use an
+            // empty list to revoke entitlements, so a transient Play error would strip
+            // a paying user. Remember the first failure and reject instead.
+            AtomicReference<String> queryFailure = new AtomicReference<>(null);
 
             Runnable maybeFinish = () -> {
                 int remaining = pendingQueries.decrementAndGet();
                 Log.d(TAG, "Pending purchase queries remaining: " + remaining);
                 if (remaining <= 0 && finished.compareAndSet(false, true)) {
+                    closeBillingClient();
+                    String failure = queryFailure.get();
+                    if (failure != null) {
+                        Log.w(TAG, "Rejecting getPurchases: " + failure);
+                        call.reject("Failed to query purchases: " + failure, "QUERY_PURCHASES_FAILED");
+                        return;
+                    }
                     JSObject result = new JSObject();
                     result.put("purchases", allPurchases);
                     Log.d(TAG, "Returning " + allPurchases.length() + " purchases");
-                    closeBillingClient();
                     call.resolve(result);
                 }
             };
@@ -1198,9 +1221,11 @@ public class NativePurchasesPlugin extends Plugin {
                             }
                         } else {
                             Log.d(TAG, "In-app purchase query failed: " + billingResult.getDebugMessage());
+                            queryFailure.compareAndSet(null, describeQueryFailure("inapp", billingResult));
                         }
                     } catch (Exception ex) {
                         Log.d(TAG, "Error processing in-app purchase query: " + ex.getMessage());
+                        queryFailure.compareAndSet(null, describeQueryFailure("inapp", billingResult) + " / " + ex.getMessage());
                     } finally {
                         maybeFinish.run();
                     }
@@ -1251,9 +1276,11 @@ public class NativePurchasesPlugin extends Plugin {
                             }
                         } else {
                             Log.d(TAG, "Subscription purchase query failed: " + billingResult.getDebugMessage());
+                            queryFailure.compareAndSet(null, describeQueryFailure("subs", billingResult));
                         }
                     } catch (Exception ex) {
                         Log.d(TAG, "Error processing subscription purchase query: " + ex.getMessage());
+                        queryFailure.compareAndSet(null, describeQueryFailure("subs", billingResult) + " / " + ex.getMessage());
                     } finally {
                         maybeFinish.run();
                     }
