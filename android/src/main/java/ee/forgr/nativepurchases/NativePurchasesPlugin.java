@@ -29,7 +29,6 @@ import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
-import com.google.common.collect.ImmutableList;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -652,7 +651,7 @@ public class NativePurchasesPlugin extends Plugin {
         // The planIdentifier is used later when setting the offer token
         Log.d(TAG, "Using product ID for query: " + productIdentifier);
 
-        ImmutableList<QueryProductDetailsParams.Product> productList = ImmutableList.of(
+        List<QueryProductDetailsParams.Product> productList = Collections.singletonList(
             QueryProductDetailsParams.Product.newBuilder()
                 .setProductId(productIdentifier)
                 .setProductType(productType.equals("inapp") ? BillingClient.ProductType.INAPP : BillingClient.ProductType.SUBS)
