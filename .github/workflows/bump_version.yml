@@ -26,17 +26,17 @@ jobs:
     name: 'Bump version and create tag'
     steps:
       - name: Setup Node.js
-        uses: actions/setup-node@v6.5.0
+        uses: actions/setup-node@v7
         with:
           node-version: 24.x
       - name: Check out
-        uses: actions/checkout@v7.0.1
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
           filter: blob:none
           persist-credentials: false
           token: '${{ secrets.PERSONAL_ACCESS_TOKEN }}'
-      - uses: oven-sh/setup-bun@v2.2.0
+      - uses: oven-sh/setup-bun@v2
       - name: Install dependencies
         id: install_code
         run: bun i

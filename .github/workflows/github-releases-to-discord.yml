@@ -11,15 +11,15 @@ jobs:
     timeout-minutes: 10
     steps:
       - name: Setup Node.js
-        uses: actions/setup-node@v6.5.0
+        uses: actions/setup-node@v7
         with:
           node-version: 24.x
       - name: Checkout
-        uses: actions/checkout@v7.0.1
+        uses: actions/checkout@v7
         with:
           persist-credentials: false
       - name: GitHub Releases to Discord
-        uses: SethCohen/github-releases-to-discord@v1.20.0
+        uses: SethCohen/github-releases-to-discord@v1
         with:
           webhook_url: ${{ secrets.WEBHOOK_DISCORD_RELEASE_URL }}
           color: '2105893'
