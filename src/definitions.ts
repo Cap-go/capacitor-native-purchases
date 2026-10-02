@@ -1377,6 +1377,9 @@ export interface NativePurchasesPlugin {
    *
    * Use on app launch when `autoFinishTransactions` is `false` to recover work after a restart.
    *
+   * **Android:** Includes only purchases in the `PURCHASED` state that are not yet acknowledged.
+   * Pending purchases are excluded until Google Play marks them purchased.
+   *
    * @since 8.9.0
    */
   getUnfinishedTransactions(): Promise<{ transactions: Transaction[] }>;

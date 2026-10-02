@@ -2078,6 +2078,9 @@ Returns transactions that still need finishing on iOS, or unacknowledged purchas
 
 Use on app launch when `autoFinishTransactions` is `false` to recover work after a restart.
 
+**Android:** Includes only purchases in the `PURCHASED` state that are not yet acknowledged.
+Pending purchases are excluded until Google Play marks them purchased.
+
 **Returns:** <code>Promise&lt;{ transactions: Transaction[]; }&gt;</code>
 
 **Since:** 8.9.0
