@@ -400,6 +400,10 @@ public class NativePurchasesPlugin extends Plugin {
 
             switch (action) {
                 case CONSUME:
+                    if (!autoFinishTransactions) {
+                        Log.d(TAG, "Consumable purchase deferred until manual consumePurchase()");
+                        break;
+                    }
                     Log.d(TAG, "Purchase flagged as consumable, consuming...");
                     ConsumeParams consumeParams = ConsumeParams.newBuilder().setPurchaseToken(purchase.getPurchaseToken()).build();
                     billingClient.consumeAsync(consumeParams, this::onConsumeResponse);
