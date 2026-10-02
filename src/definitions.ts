@@ -580,6 +580,17 @@ export interface Transaction {
    * @platform android Present for subscriptions in grace period
    */
   readonly isInGracePeriod?: boolean;
+  /**
+   * Whether the StoreKit transaction still needs to be finished with `finishTransaction()`.
+   *
+   * Present when the transaction is returned from `getUnfinishedTransactions()` or from
+   * `transactionUpdated` while `autoFinishTransactions` is `false`.
+   *
+   * @since 8.9.0
+   * @platform ios Present when the transaction is unfinished in StoreKit 2
+   * @platform android Not available (use `isAcknowledged === false` instead)
+   */
+  readonly needsFinish?: boolean;
 }
 
 export interface TransactionVerificationFailedEvent {
@@ -1015,6 +1026,47 @@ export interface Product {
 
 export interface NativePurchasesPlugin {
   /**
+   * Configure plugin-wide purchase finishing behavior.
+   *
+   * Call this as early as possible (ideally before other NativePurchases APIs). You can also set
+   * `autoFinishTransactions` in `capacitor.config` under `plugins.NativePurchases` so iOS applies
+   * the value before the native `transactionUpdated` listener starts.
+   *
+   * **`autoFinishTransactions` (default `true`)**
+   *
+   * - **iOS (StoreKit 2)**: When `true`, the plugin finishes transactions automatically for
+   *   `transactionUpdated`, `restorePurchases`, and `purchaseProduct` (together with
+   *   `autoAcknowledgePurchases`). When `false`, transactions stay unfinished until you call
+   *   `finishTransaction()` (or `acknowledgePurchase()` with the transaction ID).
+   * - **Android**: When `true`, `restorePurchases()` may auto-acknowledge unacknowledged purchases
+   *   (recovery flow). When `false`, recovery does not acknowledge; use `acknowledgePurchase()`.
+   *   Per-purchase acknowledgment is still controlled by `autoAcknowledgePurchases` on
+   *   `purchaseProduct()`.
+   *
+   * **`autoAcknowledgePurchases`** applies only to the `purchaseProduct()` call and does not change
+   * how the iOS `transactionUpdated` listener finishes transactions. Use this method (or config) for that.
+   *
+   * @param options.autoFinishTransactions When false, manual finishing/acknowledgment is required for the flows above.
+   * @since 8.9.0
+   *
+   * @example
+   * ```typescript
+   * // capacitor.config.ts
+   * export default {
+   *   plugins: {
+   *     NativePurchases: {
+   *       autoFinishTransactions: false,
+   *     },
+   *   },
+   * };
+   *
+   * // Optional runtime override (affects subsequent native operations)
+   * await NativePurchases.configure({ autoFinishTransactions: false });
+   * ```
+   */
+  configure(options?: { autoFinishTransactions?: boolean }): Promise<void>;
+
+  /**
    * Restores a user's previous  and links their appUserIDs to any user's also using those .
    */
   restorePurchases(): Promise<void>;
@@ -1114,7 +1166,10 @@ export interface NativePurchasesPlugin {
    *                                  SECURITY: DO NOT use PII like emails in cleartext - use UUID or hashed value.
    *                                  RECOMMENDED: Use UUID v5 with deterministic generation for cross-platform compatibility.
    * @param options.isConsumable - Only Android, when true the purchase token is consumed after granting entitlement (for consumable in-app items). Defaults to false.
-   * @param options.autoAcknowledgePurchases - When false, the purchase/transaction will NOT be automatically acknowledged/finished. You must manually call acknowledgePurchase() or the purchase may be refunded. Defaults to true.
+   * @param options.autoAcknowledgePurchases - When false, this purchase is not auto-finished/acknowledged when
+   *                                           `autoFinishTransactions` is also true. Does not disable auto-finishing on
+   *                                           the iOS `transactionUpdated` listener; use `configure({ autoFinishTransactions: false })`
+   *                                           for manual finishing across purchase and recovery flows. Defaults to true.
    *                                           - **Android**: Must acknowledge within 3 days or Google Play will refund
    *                                           - **iOS**: Unfinished transactions remain in the queue and may block future purchases
    */
@@ -1298,6 +1353,31 @@ export interface NativePurchasesPlugin {
   acknowledgePurchase(options: { purchaseToken: string }): Promise<void>;
 
   /**
+   * Finish a StoreKit 2 transaction on iOS after you validate delivery on your backend.
+   *
+   * Equivalent to `acknowledgePurchase({ purchaseToken: transactionId })` on iOS. Safe to call more
+   * than once; finishing an already finished transaction resolves successfully.
+   *
+   * **Android**: Google Play uses purchase acknowledgment, not StoreKit finishing. Call
+   * `acknowledgePurchase({ purchaseToken })` instead. This method rejects on Android.
+   *
+   * @param options.transactionId StoreKit transaction ID from the `Transaction` object (numeric string).
+   * @since 8.9.0
+   * @platform ios Finishes the transaction with StoreKit 2
+   * @platform android Rejects; use `acknowledgePurchase()`
+   */
+  finishTransaction(options: { transactionId: string }): Promise<void>;
+
+  /**
+   * Returns transactions that still need finishing on iOS, or unacknowledged purchases on Android.
+   *
+   * Use on app launch when `autoFinishTransactions` is `false` to recover work after a restart.
+   *
+   * @since 8.9.0
+   */
+  getUnfinishedTransactions(): Promise<{ transactions: Transaction[] }>;
+
+  /**
    * Consume an in-app purchase on Android.
    *
    * Consuming a purchase does two things:
@@ -1383,6 +1463,11 @@ export interface NativePurchasesPlugin {
   /**
    * Listen for StoreKit transaction updates delivered by Apple's Transaction.updates.
    * Fires on app launch if there are unfinished transactions, and for any updates afterward.
+   *
+   * When `autoFinishTransactions` is `true` (default), the plugin finishes each verified transaction
+   * before emitting the event. When `false`, the event includes `needsFinish: true` and you must call
+   * `finishTransaction()` after backend validation.
+   *
    * iOS only.
    */
   addListener(

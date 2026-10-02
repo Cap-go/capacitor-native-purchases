@@ -20,10 +20,14 @@ public class NativePurchasesPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "consumePurchase", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "getAppTransaction", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "isEntitledToOldBusinessModel", returnType: CAPPluginReturnPromise),
-        CAPPluginMethod(name: "getStorefront", returnType: CAPPluginReturnPromise)
+        CAPPluginMethod(name: "getStorefront", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "configure", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "getUnfinishedTransactions", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "finishTransaction", returnType: CAPPluginReturnPromise)
     ]
 
     private let pluginVersion: String = "8.8.1"
+    fileprivate var autoFinishTransactions: Bool = true
     private var transactionUpdatesTask: Task<Void, Never>?
 
     @objc func getPluginVersion(_ call: CAPPluginCall) {
@@ -31,6 +35,7 @@ public class NativePurchasesPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     override public func load() {
+        readAutoFinishTransactionsFromConfig()
         super.load()
         startTransactionUpdatesListener()
     }
@@ -47,13 +52,18 @@ public class NativePurchasesPlugin: CAPPlugin, CAPBridgedPlugin {
                 guard !Task.isCancelled else { break }
                 switch result {
                 case .verified(let transaction):
-                    let payload = await TransactionHelpers.buildTransactionResponse(
+                    let shouldFinish = await MainActor.run { self?.autoFinishTransactions ?? true }
+                    var payload = await TransactionHelpers.buildTransactionResponse(
                         from: transaction,
                         jwsRepresentation: result.jwsRepresentation,
                         alwaysIncludeWillCancel: true
                     )
-                    await transaction.finish()
-                    try? await Task.sleep(nanoseconds: 500_000_000)
+                    if shouldFinish {
+                        await transaction.finish()
+                        try? await Task.sleep(nanoseconds: 500_000_000)
+                    } else {
+                        payload["needsFinish"] = true
+                    }
                     await MainActor.run {
                         self?.notifyListeners("transactionUpdated", data: payload)
                     }
@@ -132,7 +142,8 @@ public class NativePurchasesPlugin: CAPPlugin, CAPBridgedPlugin {
 
                 let result = try await product.purchase(options: purchaseOptions)
                 print("purchaseProduct result \(result)")
-                await self.handlePurchaseResult(result, call: call, autoFinish: autoAcknowledge)
+                let shouldAutoFinish = self.autoFinishTransactions && autoAcknowledge
+                await self.handlePurchaseResult(result, call: call, autoFinish: shouldAutoFinish)
             } catch {
                 print(error)
                 call.reject(error.localizedDescription)
@@ -144,9 +155,12 @@ public class NativePurchasesPlugin: CAPPlugin, CAPBridgedPlugin {
         print("restorePurchases")
         Task {
             do {
+                let autoFinishLegacyQueue = await MainActor.run { self.autoFinishTransactions }
                 try await AppStore.sync()
-                for transaction in SKPaymentQueue.default().transactions {
-                    SKPaymentQueue.default().finishTransaction(transaction)
+                if autoFinishLegacyQueue {
+                    for transaction in SKPaymentQueue.default().transactions {
+                        SKPaymentQueue.default().finishTransaction(transaction)
+                    }
                 }
                 await MainActor.run { call.resolve() }
             } catch {
@@ -258,26 +272,16 @@ public class NativePurchasesPlugin: CAPPlugin, CAPBridgedPlugin {
         }
 
         Task {
-            var foundTransaction: Transaction?
-            for await verificationResult in Transaction.all {
-                if case .verified(let transaction) = verificationResult, transaction.id == transactionId {
-                    foundTransaction = transaction
-                    break
-                }
-            }
-
-            guard let transaction = foundTransaction else {
+            do {
+                try await finishStoreKitTransaction(transactionId: transactionId)
                 await MainActor.run {
-                    call.reject("Transaction not found or already finished. Transaction ID: \(transactionId)")
+                    print("Transaction finished successfully")
+                    call.resolve()
                 }
-                return
-            }
-
-            print("Manually finishing transaction: \(transaction.id)")
-            await transaction.finish()
-            await MainActor.run {
-                print("Transaction finished successfully")
-                call.resolve()
+            } catch let error as FinishTransactionError {
+                await MainActor.run { call.reject(error.message) }
+            } catch {
+                await MainActor.run { call.reject(error.localizedDescription) }
             }
         }
     }

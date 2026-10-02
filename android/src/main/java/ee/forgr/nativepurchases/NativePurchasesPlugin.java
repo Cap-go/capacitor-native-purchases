@@ -57,6 +57,94 @@ public class NativePurchasesPlugin extends Plugin {
         return thread;
     });
     private BillingClient billingClient;
+    private boolean autoFinishTransactions = true;
+
+    @PluginMethod
+    public void configure(PluginCall call) {
+        Boolean value = call.getBoolean("autoFinishTransactions");
+        if (value != null) {
+            autoFinishTransactions = value;
+            Log.d(TAG, "autoFinishTransactions set to " + value);
+        }
+        call.resolve();
+    }
+
+    @PluginMethod
+    public void finishTransaction(PluginCall call) {
+        call.reject(
+            "finishTransaction is for StoreKit 2 on iOS. On Android, call acknowledgePurchase({ purchaseToken }) to acknowledge Google Play purchases."
+        );
+    }
+
+    @PluginMethod
+    public void getUnfinishedTransactions(PluginCall call) {
+        Log.d(TAG, "getUnfinishedTransactions() called");
+        withBillingClient(call, () -> {
+            JSONArray unacknowledged = new JSONArray();
+            AtomicInteger pendingQueries = new AtomicInteger(2);
+            AtomicBoolean finished = new AtomicBoolean(false);
+
+            Runnable maybeFinish = () -> {
+                if (pendingQueries.decrementAndGet() <= 0 && finished.compareAndSet(false, true)) {
+                    closeBillingClient();
+                    JSObject result = new JSObject();
+                    result.put("transactions", unacknowledged);
+                    call.resolve(result);
+                }
+            };
+
+            QueryPurchasesParams inAppParams = QueryPurchasesParams.newBuilder().setProductType(BillingClient.ProductType.INAPP).build();
+            billingClient.queryPurchasesAsync(inAppParams, (billingResult, purchases) -> {
+                appendUnacknowledgedPurchases(billingResult, purchases, "inapp", unacknowledged);
+                maybeFinish.run();
+            });
+
+            QueryPurchasesParams subsParams = QueryPurchasesParams.newBuilder().setProductType(BillingClient.ProductType.SUBS).build();
+            billingClient.queryPurchasesAsync(subsParams, (billingResult, purchases) -> {
+                appendUnacknowledgedPurchases(billingResult, purchases, "subs", unacknowledged);
+                maybeFinish.run();
+            });
+        });
+    }
+
+    private void appendUnacknowledgedPurchases(
+        BillingResult billingResult,
+        List<Purchase> purchases,
+        String productType,
+        JSONArray target
+    ) {
+        if (billingResult.getResponseCode() != BillingClient.BillingResponseCode.OK || purchases == null) {
+            return;
+        }
+        for (Purchase purchase : purchases) {
+            if (purchase.getPurchaseState() == Purchase.PurchaseState.PURCHASED && !purchase.isAcknowledged()) {
+                target.put(buildPurchaseTransactionObject(purchase, productType));
+            }
+        }
+    }
+
+    private JSObject buildPurchaseTransactionObject(Purchase purchase, String productType) {
+        AccountIdentifiers accountIdentifiers = purchase.getAccountIdentifiers();
+        String purchaseAccountId = accountIdentifiers != null ? accountIdentifiers.getObfuscatedAccountId() : null;
+        JSObject purchaseData = new JSObject();
+        purchaseData.put("transactionId", purchase.getPurchaseToken());
+        purchaseData.put("productIdentifier", purchase.getProducts().isEmpty() ? null : purchase.getProducts().get(0));
+        purchaseData.put(
+            "purchaseDate",
+            new java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", java.util.Locale.US).format(
+                new java.util.Date(purchase.getPurchaseTime())
+            )
+        );
+        purchaseData.put("quantity", purchase.getQuantity());
+        purchaseData.put("productType", productType);
+        purchaseData.put("orderId", purchase.getOrderId());
+        purchaseData.put("purchaseToken", purchase.getPurchaseToken());
+        purchaseData.put("isAcknowledged", purchase.isAcknowledged());
+        purchaseData.put("purchaseState", String.valueOf(purchase.getPurchaseState()));
+        purchaseData.put("appAccountToken", purchaseAccountId);
+        purchaseData.put("willCancel", null);
+        return purchaseData;
+    }
 
     @PluginMethod
     public void isBillingSupported(PluginCall call) {
@@ -143,8 +231,9 @@ public class NativePurchasesPlugin extends Plugin {
 
     @Override
     public void load() {
+        autoFinishTransactions = getConfig().getBoolean("autoFinishTransactions", true);
         super.load();
-        Log.d(TAG, "Plugin load() called");
+        Log.d(TAG, "Plugin load() called, autoFinishTransactions=" + autoFinishTransactions);
         Log.i(NativePurchasesPlugin.TAG, "load");
         Log.d(TAG, "Plugin load() completed");
     }
@@ -278,7 +367,8 @@ public class NativePurchasesPlugin extends Plugin {
             Log.d(TAG, "Purchase state is PURCHASED");
             boolean isConsumable = purchaseCall != null && purchaseCall.getBoolean("isConsumable", false);
             boolean autoAcknowledge = purchaseCall != null ? purchaseCall.getBoolean("autoAcknowledgePurchases", true) : true;
-            Log.d(TAG, "Auto-acknowledge enabled: " + autoAcknowledge);
+            boolean shouldAutoAcknowledge = autoFinishTransactions && autoAcknowledge;
+            Log.d(TAG, "Auto-acknowledge enabled: " + shouldAutoAcknowledge);
 
             PurchaseAction action = PurchaseActionDecider.decide(isConsumable, purchase);
 
@@ -293,7 +383,7 @@ public class NativePurchasesPlugin extends Plugin {
                     billingClient.consumeAsync(consumeParams, this::onConsumeResponse);
                     break;
                 case ACKNOWLEDGE:
-                    if (autoAcknowledge) {
+                    if (shouldAutoAcknowledge) {
                         Log.d(TAG, "Purchase not acknowledged, auto-acknowledging...");
                         acknowledgePurchase(purchase.getPurchaseToken());
                     } else {
@@ -777,6 +867,10 @@ public class NativePurchasesPlugin extends Plugin {
 
         if (billingResult.getResponseCode() == BillingClient.BillingResponseCode.OK) {
             assert purchases != null;
+            if (!autoFinishTransactions) {
+                Log.d(TAG, "autoFinishTransactions disabled, skipping recovery acknowledgment");
+                return;
+            }
             for (Purchase purchase : purchases) {
                 Log.d(TAG, "Processing purchase: " + purchase.getOrderId());
                 Log.d(TAG, "Purchase state: " + purchase.getPurchaseState());
