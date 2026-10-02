@@ -8,7 +8,7 @@ extension NativePurchasesPlugin {
 
     @objc func configure(_ call: CAPPluginCall) {
         if let value = call.getBool("autoFinishTransactions") {
-            autoFinishTransactions = value
+            applyAutoFinishTransactionsSetting(value)
             print("autoFinishTransactions set to \(value)")
         }
         call.resolve()
@@ -42,7 +42,10 @@ extension NativePurchasesPlugin {
 
         Task {
             do {
-                try await finishStoreKitTransaction(transactionId: transactionId)
+                try await finishStoreKitTransaction(
+                    transactionId: transactionId,
+                    transactionIdString: transactionIdString
+                )
                 await MainActor.run { call.resolve() }
             } catch let error as FinishTransactionError {
                 await MainActor.run { call.reject(error.message) }
@@ -52,14 +55,18 @@ extension NativePurchasesPlugin {
         }
     }
 
-    func finishStoreKitTransaction(transactionId: UInt64) async throws {
+    func finishStoreKitTransaction(transactionId: UInt64, transactionIdString: String) async throws {
         for await result in Transaction.unfinished {
-            guard case .verified(let transaction) = result, transaction.id == transactionId else {
+            switch result {
+            case .verified(let transaction) where transaction.id == transactionId:
+                print("Manually finishing transaction: \(transaction.id)")
+                await transaction.finish()
+                return
+            case .unverified(let transaction, let error) where transaction.id == transactionId:
+                throw FinishTransactionError.verificationFailed(error.localizedDescription)
+            default:
                 continue
             }
-            print("Manually finishing transaction: \(transaction.id)")
-            await transaction.finish()
-            return
         }
 
         for await verificationResult in Transaction.all {
@@ -69,17 +76,33 @@ extension NativePurchasesPlugin {
             }
         }
 
+        let finishedLegacyTransaction = await MainActor.run { () -> Bool in
+            for paymentTransaction in SKPaymentQueue.default().transactions {
+                if paymentTransaction.transactionIdentifier == transactionIdString {
+                    SKPaymentQueue.default().finishTransaction(paymentTransaction)
+                    return true
+                }
+            }
+            return false
+        }
+        if finishedLegacyTransaction {
+            return
+        }
+
         throw FinishTransactionError.notFound(transactionId)
     }
 }
 
 enum FinishTransactionError: Error {
     case notFound(UInt64)
+    case verificationFailed(String)
 
     var message: String {
         switch self {
         case .notFound(let id):
             return "Transaction not found or already finished. Transaction ID: \(id)"
+        case .verificationFailed(let reason):
+            return "Transaction verification failed: \(reason)"
         }
     }
 }

@@ -45,6 +45,11 @@ public class NativePurchasesPlugin: CAPPlugin, CAPBridgedPlugin {
         transactionUpdatesTask = nil
     }
 
+    func applyAutoFinishTransactionsSetting(_ value: Bool) {
+        autoFinishTransactions = value
+        startTransactionUpdatesListener()
+    }
+
     private func startTransactionUpdatesListener() {
         transactionUpdatesTask?.cancel()
         transactionUpdatesTask = Task.detached { [weak self] in
@@ -273,7 +278,10 @@ public class NativePurchasesPlugin: CAPPlugin, CAPBridgedPlugin {
 
         Task {
             do {
-                try await finishStoreKitTransaction(transactionId: transactionId)
+                try await finishStoreKitTransaction(
+                    transactionId: transactionId,
+                    transactionIdString: purchaseToken
+                )
                 await MainActor.run {
                     print("Transaction finished successfully")
                     call.resolve()
