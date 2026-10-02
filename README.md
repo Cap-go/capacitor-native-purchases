@@ -2004,8 +2004,6 @@ acknowledgePurchase(options: { purchaseToken: string; }) => Promise<void>
 
 Manually acknowledge/finish a purchase transaction.
 
-Manually acknowledge/finish a purchase transaction.
-
 Call this when automatic finishing or acknowledgment is disabled, for example
 `purchaseProduct({ autoAcknowledgePurchases: false })`, `configure({ autoFinishTransactions: false })`
 (Android recovery or iOS updates), or when a returned transaction has `needsFinish: true`.
