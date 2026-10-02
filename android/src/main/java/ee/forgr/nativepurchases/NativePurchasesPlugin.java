@@ -151,10 +151,7 @@ public class NativePurchasesPlugin extends Plugin {
     private JSObject buildPurchaseTransactionObject(Purchase purchase, String productType) {
         AccountIdentifiers accountIdentifiers = purchase.getAccountIdentifiers();
         String purchaseAccountId = accountIdentifiers != null ? accountIdentifiers.getObfuscatedAccountId() : null;
-        java.text.SimpleDateFormat purchaseDateFormat = new java.text.SimpleDateFormat(
-            "yyyy-MM-dd'T'HH:mm:ss'Z'",
-            java.util.Locale.US
-        );
+        java.text.SimpleDateFormat purchaseDateFormat = new java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", java.util.Locale.US);
         purchaseDateFormat.setTimeZone(java.util.TimeZone.getTimeZone("UTC"));
         JSObject purchaseData = new JSObject();
         purchaseData.put("transactionId", purchase.getPurchaseToken());
