@@ -57,7 +57,7 @@ public class NativePurchasesPlugin extends Plugin {
         return thread;
     });
     private BillingClient billingClient;
-    private boolean autoFinishTransactions = true;
+    private volatile boolean autoFinishTransactions = true;
 
     @PluginMethod
     public void configure(PluginCall call) {
@@ -83,10 +83,17 @@ public class NativePurchasesPlugin extends Plugin {
             JSONArray unacknowledged = new JSONArray();
             AtomicInteger pendingQueries = new AtomicInteger(2);
             AtomicBoolean finished = new AtomicBoolean(false);
+            AtomicReference<String> queryFailure = new AtomicReference<>(null);
 
             Runnable maybeFinish = () -> {
                 if (pendingQueries.decrementAndGet() <= 0 && finished.compareAndSet(false, true)) {
                     closeBillingClient();
+                    String failure = queryFailure.get();
+                    if (failure != null) {
+                        Log.w(TAG, "Rejecting getUnfinishedTransactions: " + failure);
+                        call.reject("Failed to query purchases: " + failure, "QUERY_PURCHASES_FAILED");
+                        return;
+                    }
                     JSObject result = new JSObject();
                     result.put("transactions", unacknowledged);
                     call.resolve(result);
@@ -95,14 +102,32 @@ public class NativePurchasesPlugin extends Plugin {
 
             QueryPurchasesParams inAppParams = QueryPurchasesParams.newBuilder().setProductType(BillingClient.ProductType.INAPP).build();
             billingClient.queryPurchasesAsync(inAppParams, (billingResult, purchases) -> {
-                appendUnacknowledgedPurchases(billingResult, purchases, "inapp", unacknowledged);
-                maybeFinish.run();
+                try {
+                    if (billingResult.getResponseCode() == BillingClient.BillingResponseCode.OK && purchases != null) {
+                        appendUnacknowledgedPurchases(billingResult, purchases, "inapp", unacknowledged);
+                    } else {
+                        queryFailure.compareAndSet(null, describeQueryFailure("inapp", billingResult));
+                    }
+                } catch (Exception ex) {
+                    queryFailure.compareAndSet(null, describeQueryFailure("inapp", billingResult) + " / " + ex.getMessage());
+                } finally {
+                    maybeFinish.run();
+                }
             });
 
             QueryPurchasesParams subsParams = QueryPurchasesParams.newBuilder().setProductType(BillingClient.ProductType.SUBS).build();
             billingClient.queryPurchasesAsync(subsParams, (billingResult, purchases) -> {
-                appendUnacknowledgedPurchases(billingResult, purchases, "subs", unacknowledged);
-                maybeFinish.run();
+                try {
+                    if (billingResult.getResponseCode() == BillingClient.BillingResponseCode.OK && purchases != null) {
+                        appendUnacknowledgedPurchases(billingResult, purchases, "subs", unacknowledged);
+                    } else {
+                        queryFailure.compareAndSet(null, describeQueryFailure("subs", billingResult));
+                    }
+                } catch (Exception ex) {
+                    queryFailure.compareAndSet(null, describeQueryFailure("subs", billingResult) + " / " + ex.getMessage());
+                } finally {
+                    maybeFinish.run();
+                }
             });
         });
     }
