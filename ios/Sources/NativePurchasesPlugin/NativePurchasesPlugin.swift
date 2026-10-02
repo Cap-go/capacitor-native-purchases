@@ -47,7 +47,6 @@ public class NativePurchasesPlugin: CAPPlugin, CAPBridgedPlugin {
 
     func applyAutoFinishTransactionsSetting(_ value: Bool) {
         autoFinishTransactions = value
-        startTransactionUpdatesListener()
     }
 
     private func startTransactionUpdatesListener() {
@@ -160,12 +159,9 @@ public class NativePurchasesPlugin: CAPPlugin, CAPBridgedPlugin {
         print("restorePurchases")
         Task {
             do {
-                let autoFinishLegacyQueue = await MainActor.run { self.autoFinishTransactions }
                 try await AppStore.sync()
-                if autoFinishLegacyQueue {
-                    for transaction in SKPaymentQueue.default().transactions {
-                        SKPaymentQueue.default().finishTransaction(transaction)
-                    }
+                for transaction in SKPaymentQueue.default().transactions {
+                    SKPaymentQueue.default().finishTransaction(transaction)
                 }
                 await MainActor.run { call.resolve() }
             } catch {

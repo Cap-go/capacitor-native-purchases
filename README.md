@@ -1708,8 +1708,8 @@ By default the plugin finishes StoreKit 2 transactions and acknowledges Google P
 
 | Setting | Scope |
 | -------- | ----- |
-| `autoFinishTransactions` (default `true`) | Plugin-wide: iOS `transactionUpdated`, `restorePurchases`, and combined with per-purchase flags for `purchaseProduct`. Android `restorePurchases` recovery acknowledgment. |
-| `autoAcknowledgePurchases` on `purchaseProduct()` (default `true`) | Single purchase call only. Does not change the iOS `transactionUpdated` listener. |
+| `autoFinishTransactions` (default `true`) | Plugin-wide: iOS `transactionUpdated` and `purchaseProduct` when combined with `autoAcknowledgePurchases`. Android `restorePurchases` recovery and `purchaseProduct` when combined with `autoAcknowledgePurchases`. |
+| `autoAcknowledgePurchases` on `purchaseProduct()` (default `true`) | Per purchase call. Effective auto finish/ack requires both flags to be true. Does not change the iOS `transactionUpdated` listener by itself. |
 
 Set `autoFinishTransactions: false` in `capacitor.config` under `plugins.NativePurchases` so iOS applies it before the native update listener starts, or call `NativePurchases.configure({ autoFinishTransactions: false })` at startup.
 
@@ -1721,7 +1721,7 @@ Set `autoFinishTransactions: false` in `capacitor.config` under `plugins.NativeP
 
 **Android**
 
-Use `acknowledgePurchase({ purchaseToken })` after validation. `finishTransaction()` is iOS-only and rejects on Android. With `autoFinishTransactions: false`, `restorePurchases()` does not auto-acknowledge; use `getUnfinishedTransactions()` to list purchases where `isAcknowledged === false`.
+Use `acknowledgePurchase({ purchaseToken })` after validation when automatic acknowledgment is off (for example `configure({ autoFinishTransactions: false })` or `purchaseProduct({ autoAcknowledgePurchases: false })`). `finishTransaction()` is iOS-only and rejects on Android. With `autoFinishTransactions: false`, `restorePurchases()` does not auto-acknowledge; use `getUnfinishedTransactions()` to list purchases where `isAcknowledged === false`.
 
 ## API
 
@@ -1771,13 +1771,13 @@ the value before the native `transactionUpdated` listener starts.
 **`autoFinishTransactions` (default `true`)**
 
 - **iOS (StoreKit 2)**: When `true`, the plugin finishes transactions automatically for
-  `transactionUpdated`, `restorePurchases`, and `purchaseProduct` (together with
-  `autoAcknowledgePurchases`). When `false`, transactions stay unfinished until you call
+  `transactionUpdated`, `restorePurchases`, and `purchaseProduct` (when
+  `autoAcknowledgePurchases` is also true). When `false`, transactions stay unfinished until you call
   `finishTransaction()` (or `acknowledgePurchase()` with the transaction ID).
 - **Android**: When `true`, `restorePurchases()` may auto-acknowledge unacknowledged purchases
   (recovery flow). When `false`, recovery does not acknowledge; use `acknowledgePurchase()`.
-  Per-purchase acknowledgment is still controlled by `autoAcknowledgePurchases` on
-  `purchaseProduct()`.
+  `purchaseProduct()` auto-acknowledges only when both `autoFinishTransactions` and
+  `autoAcknowledgePurchases` are true.
 
 **`autoAcknowledgePurchases`** applies only to the `purchaseProduct()` call and does not change
 how the iOS `transactionUpdated` listener finishes transactions. Use this method (or config) for that.
@@ -2004,7 +2004,11 @@ acknowledgePurchase(options: { purchaseToken: string; }) => Promise<void>
 
 Manually acknowledge/finish a purchase transaction.
 
-This method is only needed when you set `autoAcknowledgePurchases: false` in purchaseProduct().
+Manually acknowledge/finish a purchase transaction.
+
+Call this when automatic finishing or acknowledgment is disabled, for example
+`purchaseProduct({ autoAcknowledgePurchases: false })`, `configure({ autoFinishTransactions: false })`
+(Android recovery or iOS updates), or when a returned transaction has `needsFinish: true`.
 
 **Platform Behavior:**
 - **Android**: Acknowledges the purchase with Google Play. Must be called within 3 days or the purchase will be refunded.

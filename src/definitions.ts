@@ -1035,13 +1035,13 @@ export interface NativePurchasesPlugin {
    * **`autoFinishTransactions` (default `true`)**
    *
    * - **iOS (StoreKit 2)**: When `true`, the plugin finishes transactions automatically for
-   *   `transactionUpdated`, `restorePurchases`, and `purchaseProduct` (together with
-   *   `autoAcknowledgePurchases`). When `false`, transactions stay unfinished until you call
+   *   `transactionUpdated`, `restorePurchases`, and `purchaseProduct` (when
+   *   `autoAcknowledgePurchases` is also true). When `false`, transactions stay unfinished until you call
    *   `finishTransaction()` (or `acknowledgePurchase()` with the transaction ID).
    * - **Android**: When `true`, `restorePurchases()` may auto-acknowledge unacknowledged purchases
    *   (recovery flow). When `false`, recovery does not acknowledge; use `acknowledgePurchase()`.
-   *   Per-purchase acknowledgment is still controlled by `autoAcknowledgePurchases` on
-   *   `purchaseProduct()`.
+   *   `purchaseProduct()` auto-acknowledges only when both `autoFinishTransactions` and
+   *   `autoAcknowledgePurchases` are true.
    *
    * **`autoAcknowledgePurchases`** applies only to the `purchaseProduct()` call and does not change
    * how the iOS `transactionUpdated` listener finishes transactions. Use this method (or config) for that.
@@ -1289,7 +1289,11 @@ export interface NativePurchasesPlugin {
   /**
    * Manually acknowledge/finish a purchase transaction.
    *
-   * This method is only needed when you set `autoAcknowledgePurchases: false` in purchaseProduct().
+   * Manually acknowledge/finish a purchase transaction.
+   *
+   * Call this when automatic finishing or acknowledgment is disabled, for example
+   * `purchaseProduct({ autoAcknowledgePurchases: false })`, `configure({ autoFinishTransactions: false })`
+   * (Android recovery or iOS updates), or when a returned transaction has `needsFinish: true`.
    *
    * **Platform Behavior:**
    * - **Android**: Acknowledges the purchase with Google Play. Must be called within 3 days or the purchase will be refunded.
