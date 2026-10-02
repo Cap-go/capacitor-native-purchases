@@ -12,7 +12,7 @@ extension NativePurchasesPlugin {
         case let .success(verificationResult):
             switch verificationResult {
             case .verified(let transaction):
-                let response = await TransactionHelpers.buildTransactionResponse(
+                var response = await TransactionHelpers.buildTransactionResponse(
                     from: transaction,
                     jwsRepresentation: verificationResult.jwsRepresentation
                 )
@@ -21,6 +21,7 @@ extension NativePurchasesPlugin {
                     await transaction.finish()
                 } else {
                     print("Manual finish required for verified transaction")
+                    response["needsFinish"] = true
                 }
                 call.resolve(response)
             case .unverified(_, let error):

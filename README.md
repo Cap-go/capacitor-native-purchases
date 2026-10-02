@@ -1702,10 +1702,32 @@ Comments on best practices:
 
 This approach balances immediate user gratification with proper server-side validation, adhering to Apple and Google's guidelines while still maintaining the integrity of your purchase system.
 
+## Manual transaction finishing
+
+By default the plugin finishes StoreKit 2 transactions and acknowledges Google Play purchases automatically. If you must validate on your backend before finishing, disable automatic finishing and complete transactions yourself.
+
+| Setting | Scope |
+| -------- | ----- |
+| `autoFinishTransactions` (default `true`) | Plugin-wide: iOS `transactionUpdated` and `purchaseProduct` when combined with `autoAcknowledgePurchases`. Android `restorePurchases` recovery and `purchaseProduct` when combined with `autoAcknowledgePurchases`. |
+| `autoAcknowledgePurchases` on `purchaseProduct()` (default `true`) | Per purchase call. Effective auto finish/ack requires both flags to be true. Does not change the iOS `transactionUpdated` listener by itself. |
+
+Set `autoFinishTransactions: false` in `capacitor.config` under `plugins.NativePurchases` so iOS applies it before the native update listener starts, or call `NativePurchases.configure({ autoFinishTransactions: false })` at startup.
+
+**iOS recovery flow**
+
+1. On launch, call `getUnfinishedTransactions()` or listen for `transactionUpdated` (events include `needsFinish: true` when manual mode is on).
+2. Validate on your backend.
+3. Call `finishTransaction({ transactionId })` or `acknowledgePurchase({ purchaseToken: transactionId })`. Repeated calls on an already finished transaction succeed.
+
+**Android**
+
+Use `acknowledgePurchase({ purchaseToken })` after validation when automatic acknowledgment is off (for example `configure({ autoFinishTransactions: false })` or `purchaseProduct({ autoAcknowledgePurchases: false })`). `finishTransaction()` is iOS-only and rejects on Android. With `autoFinishTransactions: false`, `restorePurchases()` does not auto-acknowledge; use `getUnfinishedTransactions()` to list purchases where `isAcknowledged === false`.
+
 ## API
 
 <docgen-index>
 
+* [`configure(...)`](#configure)
 * [`restorePurchases()`](#restorepurchases)
 * [`getAppTransaction()`](#getapptransaction)
 * [`isEntitledToOldBusinessModel(...)`](#isentitledtooldbusinessmodel)
@@ -1718,6 +1740,8 @@ This approach balances immediate user gratification with proper server-side vali
 * [`manageSubscriptions()`](#managesubscriptions)
 * [`presentOfferCodeRedeemSheet()`](#presentoffercoderedeemsheet)
 * [`acknowledgePurchase(...)`](#acknowledgepurchase)
+* [`finishTransaction(...)`](#finishtransaction)
+* [`getUnfinishedTransactions()`](#getunfinishedtransactions)
 * [`consumePurchase(...)`](#consumepurchase)
 * [`getStorefront()`](#getstorefront)
 * [`addListener('transactionUpdated', ...)`](#addlistenertransactionupdated-)
@@ -1731,6 +1755,41 @@ This approach balances immediate user gratification with proper server-side vali
 
 <docgen-api>
 <!--Update the source file JSDoc comments and rerun docgen to update the docs below-->
+
+### configure(...)
+
+```typescript
+configure(options?: { autoFinishTransactions?: boolean | undefined; } | undefined) => Promise<void>
+```
+
+Configure plugin-wide purchase finishing behavior.
+
+Call this as early as possible (ideally before other NativePurchases APIs). You can also set
+`autoFinishTransactions` in `capacitor.config` under `plugins.NativePurchases` so iOS applies
+the value before the native `transactionUpdated` listener starts.
+
+**`autoFinishTransactions` (default `true`)**
+
+- **iOS (StoreKit 2)**: When `true`, the plugin finishes transactions automatically for
+  `transactionUpdated`, `restorePurchases`, and `purchaseProduct` (when
+  `autoAcknowledgePurchases` is also true). When `false`, transactions stay unfinished until you call
+  `finishTransaction()` (or `acknowledgePurchase()` with the transaction ID).
+- **Android**: When `true`, `restorePurchases()` may auto-acknowledge unacknowledged purchases
+  (recovery flow). When `false`, recovery does not acknowledge; use `acknowledgePurchase()`.
+  `purchaseProduct()` auto-acknowledges only when both `autoFinishTransactions` and
+  `autoAcknowledgePurchases` are true.
+
+**`autoAcknowledgePurchases`** applies only to the `purchaseProduct()` call and does not change
+how the iOS `transactionUpdated` listener finishes transactions. Use this method (or config) for that.
+
+| Param         | Type                                               |
+| ------------- | -------------------------------------------------- |
+| **`options`** | <code>{ autoFinishTransactions?: boolean; }</code> |
+
+**Since:** 8.9.0
+
+--------------------
+
 
 ### restorePurchases()
 
@@ -1945,7 +2004,9 @@ acknowledgePurchase(options: { purchaseToken: string; }) => Promise<void>
 
 Manually acknowledge/finish a purchase transaction.
 
-This method is only needed when you set `autoAcknowledgePurchases: false` in purchaseProduct().
+Call this when automatic finishing or acknowledgment is disabled, for example
+`purchaseProduct({ autoAcknowledgePurchases: false })`, `configure({ autoFinishTransactions: false })`
+(Android recovery or iOS updates), or when a returned transaction has `needsFinish: true`.
 
 **Platform Behavior:**
 - **Android**: Acknowledges the purchase with Google Play. Must be called within 3 days or the purchase will be refunded.
@@ -1978,6 +2039,49 @@ await NativePurchases.acknowledgePurchase({
 | **`options`** | <code>{ purchaseToken: string; }</code> | - The purchase to acknowledge |
 
 **Since:** 7.14.0
+
+--------------------
+
+
+### finishTransaction(...)
+
+```typescript
+finishTransaction(options: { transactionId: string; }) => Promise<void>
+```
+
+Finish a StoreKit 2 transaction on iOS after you validate delivery on your backend.
+
+Equivalent to `acknowledgePurchase({ purchaseToken: transactionId })` on iOS. Safe to call more
+than once; finishing an already finished transaction resolves successfully.
+
+**Android**: Google Play uses purchase acknowledgment, not StoreKit finishing. Call
+`acknowledgePurchase({ purchaseToken })` instead. This method rejects on Android.
+
+| Param         | Type                                    |
+| ------------- | --------------------------------------- |
+| **`options`** | <code>{ transactionId: string; }</code> |
+
+**Since:** 8.9.0
+
+--------------------
+
+
+### getUnfinishedTransactions()
+
+```typescript
+getUnfinishedTransactions() => Promise<{ transactions: Transaction[]; }>
+```
+
+Returns transactions that still need finishing on iOS, or unacknowledged purchases on Android.
+
+Use on app launch when `autoFinishTransactions` is `false` to recover work after a restart.
+
+**Android:** Includes only purchases in the `PURCHASED` state that are not yet acknowledged.
+Pending purchases are excluded until Google Play marks them purchased.
+
+**Returns:** <code>Promise&lt;{ transactions: Transaction[]; }&gt;</code>
+
+**Since:** 8.9.0
 
 --------------------
 
@@ -2058,6 +2162,11 @@ addListener(eventName: 'transactionUpdated', listenerFunc: (transaction: Transac
 
 Listen for StoreKit transaction updates delivered by Apple's <a href="#transaction">Transaction</a>.updates.
 Fires on app launch if there are unfinished transactions, and for any updates afterward.
+
+When `autoFinishTransactions` is `true` (default), the plugin finishes each verified transaction
+before emitting the event. When `false`, the event includes `needsFinish: true` and you must call
+`finishTransaction()` after backend validation.
+
 iOS only.
 
 | Param              | Type                                                                          |
@@ -2154,6 +2263,7 @@ which is useful for determining if users are entitled to features from earlier b
 | **`isTrialPeriod`**        | <code>boolean</code>                                                                                          | Whether the transaction is in a trial period. - `true`: Currently in free trial period - `false`: Not in trial period                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |                   | 1.0.0  |
 | **`isInIntroPricePeriod`** | <code>boolean</code>                                                                                          | Whether the transaction is in an introductory price period. Introductory pricing is a discounted rate, different from a free trial. - `true`: Currently using introductory pricing - `false`: Not in intro period                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |                   | 1.0.0  |
 | **`isInGracePeriod`**      | <code>boolean</code>                                                                                          | Whether the transaction is in a grace period. Grace period allows users to fix payment issues while maintaining access. You typically want to continue providing access during this time. - `true`: Subscription payment failed but user still has access - `false`: Not in grace period                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |                   | 1.0.0  |
+| **`needsFinish`**          | <code>boolean</code>                                                                                          | Whether the StoreKit transaction still needs to be finished with `finishTransaction()`. Present when the transaction is returned from `getUnfinishedTransactions()` or from `transactionUpdated` while `autoFinishTransactions` is `false`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |                   | 8.9.0  |
 
 
 #### TransactionCommitmentInfo

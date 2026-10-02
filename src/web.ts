@@ -3,6 +3,20 @@ import { WebPlugin } from '@capacitor/core';
 import type { AppTransaction, NativePurchasesPlugin, Product, PURCHASE_TYPE, Transaction } from './definitions';
 
 export class NativePurchasesWeb extends WebPlugin implements NativePurchasesPlugin {
+  async configure(options?: { autoFinishTransactions?: boolean }): Promise<void> {
+    void options;
+  }
+
+  async getUnfinishedTransactions(): Promise<{ transactions: Transaction[] }> {
+    console.error('getUnfinishedTransactions only mocked in web');
+    return { transactions: [] };
+  }
+
+  async finishTransaction(options: { transactionId: string }): Promise<void> {
+    void options;
+    console.error('finishTransaction only mocked in web');
+  }
+
   async restorePurchases(): Promise<void> {
     console.error('restorePurchases only mocked in web');
   }

@@ -146,6 +146,21 @@ internal class TransactionHelpers {
         return dictionary
     }
 
+    static func collectUnfinishedTransactions() async throws -> [[String: Any]] {
+        var unfinished: [[String: Any]] = []
+        for await result in Transaction.unfinished {
+            guard case .verified(let transaction) = result else { continue }
+            var payload = await buildTransactionResponse(
+                from: transaction,
+                jwsRepresentation: result.jwsRepresentation,
+                alwaysIncludeWillCancel: true
+            )
+            payload["needsFinish"] = true
+            unfinished.append(payload)
+        }
+        return unfinished
+    }
+
     static func collectAllPurchases(appAccountTokenFilter: String?, onlyCurrentEntitlements: Bool = false) async throws -> [[String: Any]] {
         var allPurchases: [[String: Any]] = []
         if onlyCurrentEntitlements {
