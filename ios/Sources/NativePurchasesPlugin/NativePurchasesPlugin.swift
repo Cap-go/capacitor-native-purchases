@@ -27,7 +27,7 @@ public class NativePurchasesPlugin: CAPPlugin, CAPBridgedPlugin {
     ]
 
     private let pluginVersion: String = "8.8.1"
-    fileprivate var autoFinishTransactions: Bool = true
+    private var autoFinishTransactions: Bool = true
     private var transactionUpdatesTask: Task<Void, Never>?
 
     @objc func getPluginVersion(_ call: CAPPluginCall) {
