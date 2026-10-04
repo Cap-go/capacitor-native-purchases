@@ -1721,7 +1721,7 @@ Set `autoFinishTransactions: false` in `capacitor.config` under `plugins.NativeP
 
 **Android**
 
-Use `acknowledgePurchase({ purchaseToken })` after validation when automatic acknowledgment is off (for example `configure({ autoFinishTransactions: false })` or `purchaseProduct({ autoAcknowledgePurchases: false })`). `finishTransaction()` is iOS-only and rejects on Android. With `autoFinishTransactions: false`, `restorePurchases()` does not auto-acknowledge; use `getUnfinishedTransactions()` to list purchases where `isAcknowledged === false`.
+After validation when automatic acknowledgment is off (for example `configure({ autoFinishTransactions: false })` or `purchaseProduct({ autoAcknowledgePurchases: false })`), call `consumePurchase({ purchaseToken })` for consumable in-app products (acknowledges and consumes), or `acknowledgePurchase({ purchaseToken })` for non-consumables and subscriptions. `finishTransaction()` is iOS-only and rejects on Android. With `autoFinishTransactions: false`, `restorePurchases()` does not auto-acknowledge; use `getUnfinishedTransactions()` to list unacknowledged purchases in the `PURCHASED` state (`isAcknowledged === false`).
 
 ## API
 
@@ -2076,8 +2076,10 @@ Returns transactions that still need finishing on iOS, or unacknowledged purchas
 
 Use on app launch when `autoFinishTransactions` is `false` to recover work after a restart.
 
-**Android:** Includes only purchases in the `PURCHASED` state that are not yet acknowledged.
-Pending purchases are excluded until Google Play marks them purchased.
+**Android recovery:** After validation, call `consumePurchase({ purchaseToken })` for consumable
+in-app products (acknowledges and consumes). Call `acknowledgePurchase({ purchaseToken })` for
+non-consumables and subscriptions. Includes only purchases in the `PURCHASED` state that are not
+yet acknowledged. Pending purchases are excluded until Google Play marks them purchased.
 
 **Returns:** <code>Promise&lt;{ transactions: Transaction[]; }&gt;</code>
 

@@ -1375,8 +1375,10 @@ export interface NativePurchasesPlugin {
    *
    * Use on app launch when `autoFinishTransactions` is `false` to recover work after a restart.
    *
-   * **Android:** Includes only purchases in the `PURCHASED` state that are not yet acknowledged.
-   * Pending purchases are excluded until Google Play marks them purchased.
+   * **Android recovery:** After validation, call `consumePurchase({ purchaseToken })` for consumable
+   * in-app products (acknowledges and consumes). Call `acknowledgePurchase({ purchaseToken })` for
+   * non-consumables and subscriptions. Includes only purchases in the `PURCHASED` state that are not
+   * yet acknowledged. Pending purchases are excluded until Google Play marks them purchased.
    *
    * @since 8.9.0
    */
