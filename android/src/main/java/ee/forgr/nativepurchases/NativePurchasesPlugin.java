@@ -148,15 +148,19 @@ public class NativePurchasesPlugin extends Plugin {
         }
     }
 
+    private static String formatUtcIso8601(long timeMillis) {
+        java.text.SimpleDateFormat purchaseDateFormat = new java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", java.util.Locale.US);
+        purchaseDateFormat.setTimeZone(java.util.TimeZone.getTimeZone("UTC"));
+        return purchaseDateFormat.format(new java.util.Date(timeMillis));
+    }
+
     private JSObject buildPurchaseTransactionObject(Purchase purchase, String productType) {
         AccountIdentifiers accountIdentifiers = purchase.getAccountIdentifiers();
         String purchaseAccountId = accountIdentifiers != null ? accountIdentifiers.getObfuscatedAccountId() : null;
-        java.text.SimpleDateFormat purchaseDateFormat = new java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", java.util.Locale.US);
-        purchaseDateFormat.setTimeZone(java.util.TimeZone.getTimeZone("UTC"));
         JSObject purchaseData = new JSObject();
         purchaseData.put("transactionId", purchase.getPurchaseToken());
         purchaseData.put("productIdentifier", purchase.getProducts().isEmpty() ? null : purchase.getProducts().get(0));
-        purchaseData.put("purchaseDate", purchaseDateFormat.format(new java.util.Date(purchase.getPurchaseTime())));
+        purchaseData.put("purchaseDate", formatUtcIso8601(purchase.getPurchaseTime()));
         purchaseData.put("quantity", purchase.getQuantity());
         purchaseData.put("productType", productType);
         purchaseData.put("orderId", purchase.getOrderId());
@@ -425,12 +429,7 @@ public class NativePurchasesPlugin extends Plugin {
             JSObject ret = new JSObject();
             ret.put("transactionId", purchase.getPurchaseToken());
             ret.put("productIdentifier", purchase.getProducts().get(0));
-            ret.put(
-                "purchaseDate",
-                new java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", java.util.Locale.US).format(
-                    new java.util.Date(purchase.getPurchaseTime())
-                )
-            );
+            ret.put("purchaseDate", formatUtcIso8601(purchase.getPurchaseTime()));
             ret.put("quantity", purchase.getQuantity());
             ret.put("productType", purchase.getPurchaseState() == Purchase.PurchaseState.PURCHASED ? "inapp" : "subs");
             ret.put("orderId", purchase.getOrderId());
@@ -1321,12 +1320,7 @@ public class NativePurchasesPlugin extends Plugin {
                                     "productIdentifier",
                                     purchase.getProducts().isEmpty() ? null : purchase.getProducts().get(0)
                                 );
-                                purchaseData.put(
-                                    "purchaseDate",
-                                    new java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", java.util.Locale.US).format(
-                                        new java.util.Date(purchase.getPurchaseTime())
-                                    )
-                                );
+                                purchaseData.put("purchaseDate", formatUtcIso8601(purchase.getPurchaseTime()));
                                 purchaseData.put("quantity", purchase.getQuantity());
                                 purchaseData.put("productType", "inapp");
                                 purchaseData.put("orderId", purchase.getOrderId());
@@ -1376,12 +1370,7 @@ public class NativePurchasesPlugin extends Plugin {
                                     "productIdentifier",
                                     purchase.getProducts().isEmpty() ? null : purchase.getProducts().get(0)
                                 );
-                                purchaseData.put(
-                                    "purchaseDate",
-                                    new java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", java.util.Locale.US).format(
-                                        new java.util.Date(purchase.getPurchaseTime())
-                                    )
-                                );
+                                purchaseData.put("purchaseDate", formatUtcIso8601(purchase.getPurchaseTime()));
                                 purchaseData.put("quantity", purchase.getQuantity());
                                 purchaseData.put("productType", "subs");
                                 purchaseData.put("orderId", purchase.getOrderId());
@@ -1537,9 +1526,7 @@ public class NativePurchasesPlugin extends Plugin {
 
             // First install time on this device (milliseconds since epoch)
             long firstInstallTime = packageInfo.firstInstallTime;
-            String originalPurchaseDate = new java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", java.util.Locale.US).format(
-                new java.util.Date(firstInstallTime)
-            );
+            String originalPurchaseDate = formatUtcIso8601(firstInstallTime);
             appTransaction.put("originalPurchaseDate", originalPurchaseDate);
 
             // Package name (bundle ID equivalent)
