@@ -160,8 +160,20 @@ public class NativePurchasesPlugin: CAPPlugin, CAPBridgedPlugin {
         Task {
             do {
                 try await AppStore.sync()
-                for transaction in SKPaymentQueue.default().transactions {
-                    SKPaymentQueue.default().finishTransaction(transaction)
+                let shouldAutoFinish = await MainActor.run { self.autoFinishTransactions }
+                if shouldAutoFinish {
+                    await MainActor.run {
+                        for transaction in SKPaymentQueue.default().transactions {
+                            switch transaction.transactionState {
+                            case .purchasing, .deferred:
+                                continue
+                            case .purchased, .restored, .failed:
+                                SKPaymentQueue.default().finishTransaction(transaction)
+                            @unknown default:
+                                continue
+                            }
+                        }
+                    }
                 }
                 await MainActor.run { call.resolve() }
             } catch {

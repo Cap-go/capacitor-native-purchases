@@ -400,7 +400,7 @@ public class NativePurchasesPlugin extends Plugin {
 
             switch (action) {
                 case CONSUME:
-                    if (!autoFinishTransactions) {
+                    if (!shouldAutoAcknowledge) {
                         Log.d(TAG, "Consumable purchase deferred until manual consumePurchase()");
                         break;
                     }
