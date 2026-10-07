@@ -22,6 +22,9 @@ public class ProductPayloadMapperTest {
     public void applyInAppDefaults_setsIntroEligibilityUnknown() {
         JSObject product = new JSObject();
         ProductPayloadMapper.applyInAppDefaults(product);
-        assertEquals(ProductPayloadMapper.INTRO_ELIGIBILITY_UNKNOWN, product.getInteger("introEligibility"));
+        assertEquals(
+            ProductPayloadMapper.INTRO_ELIGIBILITY_UNKNOWN,
+            product.getInteger("introEligibility", ProductPayloadMapper.INTRO_ELIGIBILITY_UNKNOWN)
+        );
     }
 }
