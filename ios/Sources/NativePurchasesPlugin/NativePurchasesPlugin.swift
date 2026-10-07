@@ -165,7 +165,10 @@ public class NativePurchasesPlugin: CAPPlugin, CAPBridgedPlugin {
             do {
                 let products = try await Product.products(for: productIdentifiers)
                 NativePurchasesLog.debug("getProducts returned \(products.count) product(s)")
-                let productsJson: [[String: Any]] = products.map { $0.dictionary }
+                var productsJson: [[String: Any]] = []
+                for product in products {
+                    productsJson.append(await product.pluginDictionary())
+                }
                 await MainActor.run { call.resolve(["products": productsJson]) }
             } catch {
                 NativePurchasesLog.debug("error \(error)")
@@ -189,7 +192,8 @@ public class NativePurchasesPlugin: CAPPlugin, CAPBridgedPlugin {
                 let products = try await Product.products(for: [productIdentifier])
                 NativePurchasesLog.debug("getProduct returned \(products.count) product(s)")
                 if let product = products.first {
-                    await MainActor.run { call.resolve(["product": product.dictionary]) }
+                    let payload = await product.pluginDictionary()
+                    await MainActor.run { call.resolve(["product": payload]) }
                 } else {
                     await MainActor.run { call.reject("Product not found") }
                 }
