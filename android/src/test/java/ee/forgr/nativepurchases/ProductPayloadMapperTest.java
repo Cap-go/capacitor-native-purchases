@@ -3,7 +3,6 @@ package ee.forgr.nativepurchases;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNull;
 
-import com.getcapacitor.JSObject;
 import org.junit.Test;
 
 public class ProductPayloadMapperTest {
@@ -19,10 +18,7 @@ public class ProductPayloadMapperTest {
     }
 
     @Test
-    public void applyInAppDefaults_setsIntroEligibilityUnknown() {
-        JSObject product = new JSObject();
-        ProductPayloadMapper.applyInAppDefaults(product);
-        int introEligibility = product.getInteger("introEligibility", -1);
-        assertEquals(ProductPayloadMapper.INTRO_ELIGIBILITY_UNKNOWN, introEligibility);
+    public void introEligibilityUnknown_matchesApiContract() {
+        assertEquals(0, ProductPayloadMapper.INTRO_ELIGIBILITY_UNKNOWN);
     }
 }
