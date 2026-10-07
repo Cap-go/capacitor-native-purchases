@@ -2323,8 +2323,8 @@ Android one-time product discount display metadata.
 | Members                                   | Value          | Description                                                                  |
 | ----------------------------------------- | -------------- | ---------------------------------------------------------------------------- |
 | **`INTRO_ELIGIBILITY_STATUS_UNKNOWN`**    | <code>0</code> | doesn't have enough information to determine eligibility.                    |
-| **`INTRO_ELIGIBILITY_STATUS_INELIGIBLE`** |                | The user is not eligible for a free trial or intro pricing for this product. |
-| **`INTRO_ELIGIBILITY_STATUS_ELIGIBLE`**   |                | The user is eligible for a free trial or intro pricing for this product.     |
+| **`INTRO_ELIGIBILITY_STATUS_INELIGIBLE`** | <code>1</code> | The user is not eligible for a free trial or intro pricing for this product. |
+| **`INTRO_ELIGIBILITY_STATUS_ELIGIBLE`**   | <code>2</code> | The user is eligible for a free trial or intro pricing for this product.     |
 
 </docgen-api>
 

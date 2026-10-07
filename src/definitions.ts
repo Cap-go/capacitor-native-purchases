@@ -136,11 +136,11 @@ export enum INTRO_ELIGIBILITY_STATUS {
   /**
    * The user is not eligible for a free trial or intro pricing for this product.
    */
-  INTRO_ELIGIBILITY_STATUS_INELIGIBLE,
+  INTRO_ELIGIBILITY_STATUS_INELIGIBLE = 1,
   /**
    * The user is eligible for a free trial or intro pricing for this product.
    */
-  INTRO_ELIGIBILITY_STATUS_ELIGIBLE,
+  INTRO_ELIGIBILITY_STATUS_ELIGIBLE = 2,
 }
 
 export interface Transaction {
