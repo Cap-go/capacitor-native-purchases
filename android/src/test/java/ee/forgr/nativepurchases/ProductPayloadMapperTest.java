@@ -3,6 +3,7 @@ package ee.forgr.nativepurchases;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNull;
 
+import com.getcapacitor.JSObject;
 import org.junit.Test;
 
 public class ProductPayloadMapperTest {
@@ -15,5 +16,12 @@ public class ProductPayloadMapperTest {
     @Test
     public void currencySymbol_returnsSymbolForKnownCurrency() {
         assertEquals("$", ProductPayloadMapper.currencySymbol("USD"));
+    }
+
+    @Test
+    public void applyInAppDefaults_setsIntroEligibilityUnknown() {
+        JSObject product = new JSObject();
+        ProductPayloadMapper.applyInAppDefaults(product);
+        assertEquals(ProductPayloadMapper.INTRO_ELIGIBILITY_UNKNOWN, product.getInteger("introEligibility"));
     }
 }

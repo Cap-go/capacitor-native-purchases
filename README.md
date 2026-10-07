@@ -2212,6 +2212,7 @@ which is useful for determining if users are entitled to features from earlier b
 | **`pricingTerms`**                | <code>SubscriptionPricingTerms[]</code>                                               | iOS subscriptions only: StoreKit pricing terms by billing plan. For subscriptions with a monthly billing plan and 12-month commitment, this includes both the standard up-front plan and the monthly commitment plan. Display both `billingDisplayPrice` and `commitmentInfo.priceString` before starting a monthly commitment purchase.                                                                                                                                                                                      | 8.3.8 |
 | **`subscriptionPeriod`**          | <code><a href="#subscriptionperiod">SubscriptionPeriod</a></code>                     | The <a href="#product">Product</a> subscription group identifier.                                                                                                                                                                                                                                                                                                                                                                                                                                                             |       |
 | **`introductoryPrice`**           | <code><a href="#skproductdiscount">SKProductDiscount</a> \| null</code>               | The <a href="#product">Product</a> introductory Price.                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |       |
+| **`introEligibility`**            | <code><a href="#intro_eligibility_status">INTRO_ELIGIBILITY_STATUS</a></code>         | Whether the current store account is eligible for an introductory offer on this subscription.                                                                                                                                                                                                                                                                                                                                                                                                                                 | 8.8.3 |
 | **`discounts`**                   | <code>SKProductDiscount[]</code>                                                      | The <a href="#product">Product</a> discounts list.                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |       |
 
 
@@ -2315,6 +2316,15 @@ Android one-time product discount display metadata.
 | ----------- | -------------------- | ---------------------------------- |
 | **`INAPP`** | <code>'inapp'</code> | A type of SKU for in-app products. |
 | **`SUBS`**  | <code>'subs'</code>  | A type of SKU for subscriptions.   |
+
+
+#### INTRO_ELIGIBILITY_STATUS
+
+| Members                                   | Value          | Description                                                                  |
+| ----------------------------------------- | -------------- | ---------------------------------------------------------------------------- |
+| **`INTRO_ELIGIBILITY_STATUS_UNKNOWN`**    | <code>0</code> | doesn't have enough information to determine eligibility.                    |
+| **`INTRO_ELIGIBILITY_STATUS_INELIGIBLE`** |                | The user is not eligible for a free trial or intro pricing for this product. |
+| **`INTRO_ELIGIBILITY_STATUS_ELIGIBLE`**   |                | The user is eligible for a free trial or intro pricing for this product.     |
 
 </docgen-api>
 

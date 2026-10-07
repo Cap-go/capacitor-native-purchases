@@ -32,6 +32,7 @@ public class NativePurchasesPlugin: CAPPlugin, CAPBridgedPlugin {
 
     override public func load() {
         super.load()
+        NativePurchasesLog.configure(debugLogging: getConfig().getBoolean("debugLogging", false))
         startTransactionUpdatesListener()
     }
 
@@ -74,7 +75,7 @@ public class NativePurchasesPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     @objc func getStorefront(_ call: CAPPluginCall) {
-        print("getStorefront")
+        NativePurchasesLog.debug("getStorefront")
         Task {
             let storefront = await Storefront.current
             await MainActor.run {
@@ -85,7 +86,7 @@ public class NativePurchasesPlugin: CAPPlugin, CAPBridgedPlugin {
                     ])
                 } else {
                     // No storefront (e.g. alternative distribution).
-                    print("getStorefront: no storefront available")
+                    NativePurchasesLog.debug("getStorefront: no storefront available")
                     call.resolve(["countryCode": ""])
                 }
             }
@@ -93,7 +94,7 @@ public class NativePurchasesPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     @objc func purchaseProduct(_ call: CAPPluginCall) {
-        print("purchaseProduct")
+        NativePurchasesLog.debug("purchaseProduct")
         let productIdentifier = call.getString("productIdentifier", "")
         let quantity = call.getInt("quantity", 1)
         let appAccountToken = call.getString("appAccountToken")
@@ -105,7 +106,7 @@ public class NativePurchasesPlugin: CAPPlugin, CAPBridgedPlugin {
             return
         }
 
-        print("Auto-acknowledge enabled: \(autoAcknowledge)")
+        NativePurchasesLog.debug("Auto-acknowledge enabled: \(autoAcknowledge)")
 
         Task { @MainActor in
             do {
@@ -131,17 +132,17 @@ public class NativePurchasesPlugin: CAPPlugin, CAPBridgedPlugin {
                 }
 
                 let result = try await product.purchase(options: purchaseOptions)
-                print("purchaseProduct result \(result)")
+                NativePurchasesLog.debug("purchaseProduct flow finished with result type \(String(describing: result))")
                 await self.handlePurchaseResult(result, call: call, autoFinish: autoAcknowledge)
             } catch {
-                print(error)
+                NativePurchasesLog.debug(error)
                 call.reject(error.localizedDescription)
             }
         }
     }
 
     @objc func restorePurchases(_ call: CAPPluginCall) {
-        print("restorePurchases")
+        NativePurchasesLog.debug("restorePurchases")
         Task {
             do {
                 try await AppStore.sync()
@@ -158,16 +159,16 @@ public class NativePurchasesPlugin: CAPPlugin, CAPBridgedPlugin {
     @objc func getProducts(_ call: CAPPluginCall) {
         let productIdentifiers = call.getArray("productIdentifiers", String.self) ?? []
         let productType = call.getString("productType", "inapp")
-        print("productIdentifiers \(productIdentifiers)")
-        print("productType \(productType)")
+        NativePurchasesLog.debug("productIdentifiers \(productIdentifiers)")
+        NativePurchasesLog.debug("productType \(productType)")
         Task {
             do {
                 let products = try await Product.products(for: productIdentifiers)
-                print("products \(products)")
+                NativePurchasesLog.debug("getProducts returned \(products.count) product(s)")
                 let productsJson: [[String: Any]] = products.map { $0.dictionary }
                 await MainActor.run { call.resolve(["products": productsJson]) }
             } catch {
-                print("error \(error)")
+                NativePurchasesLog.debug("error \(error)")
                 await MainActor.run { call.reject(error.localizedDescription) }
             }
         }
@@ -176,8 +177,8 @@ public class NativePurchasesPlugin: CAPPlugin, CAPBridgedPlugin {
     @objc func getProduct(_ call: CAPPluginCall) {
         let productIdentifier = call.getString("productIdentifier") ?? ""
         let productType = call.getString("productType", "inapp")
-        print("productIdentifier \(productIdentifier)")
-        print("productType \(productType)")
+        NativePurchasesLog.debug("productIdentifier \(productIdentifier)")
+        NativePurchasesLog.debug("productType \(productType)")
         if productIdentifier.isEmpty {
             call.reject("productIdentifier is empty")
             return
@@ -186,21 +187,21 @@ public class NativePurchasesPlugin: CAPPlugin, CAPBridgedPlugin {
         Task {
             do {
                 let products = try await Product.products(for: [productIdentifier])
-                print("products \(products)")
+                NativePurchasesLog.debug("getProduct returned \(products.count) product(s)")
                 if let product = products.first {
                     await MainActor.run { call.resolve(["product": product.dictionary]) }
                 } else {
                     await MainActor.run { call.reject("Product not found") }
                 }
             } catch {
-                print(error)
+                NativePurchasesLog.debug(error)
                 await MainActor.run { call.reject(error.localizedDescription) }
             }
         }
     }
 
     @objc func getPurchases(_ call: CAPPluginCall) {
-        print("getPurchases")
+        NativePurchasesLog.debug("getPurchases")
         let appAccountTokenFilter = call.getString("appAccountToken")
         let onlyCurrentEntitlements = call.getBool("onlyCurrentEntitlements") ?? false
         Task {
@@ -217,7 +218,7 @@ public class NativePurchasesPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     @objc func manageSubscriptions(_ call: CAPPluginCall) {
-        print("manageSubscriptions")
+        NativePurchasesLog.debug("manageSubscriptions")
         Task { @MainActor in
             do {
                 guard let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene else {
@@ -227,14 +228,14 @@ public class NativePurchasesPlugin: CAPPlugin, CAPBridgedPlugin {
                 try await AppStore.showManageSubscriptions(in: windowScene)
                 call.resolve()
             } catch {
-                print("manageSubscriptions error: \(error)")
+                NativePurchasesLog.debug("manageSubscriptions error: \(error)")
                 call.reject(error.localizedDescription)
             }
         }
     }
 
     @objc func presentOfferCodeRedeemSheet(_ call: CAPPluginCall) {
-        print("presentOfferCodeRedeemSheet")
+        NativePurchasesLog.debug("presentOfferCodeRedeemSheet")
         if #available(iOS 16.0, *) {
             Task { @MainActor in
                 await self.handlePresentOfferCodeRedeemSheet(call)
@@ -245,7 +246,7 @@ public class NativePurchasesPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     @objc func acknowledgePurchase(_ call: CAPPluginCall) {
-        print("acknowledgePurchase called on iOS")
+        NativePurchasesLog.debug("acknowledgePurchase called on iOS")
 
         guard let purchaseToken = call.getString("purchaseToken") else {
             call.reject("purchaseToken is required")
@@ -273,10 +274,10 @@ public class NativePurchasesPlugin: CAPPlugin, CAPBridgedPlugin {
                 return
             }
 
-            print("Manually finishing transaction: \(transaction.id)")
+            NativePurchasesLog.debug("Manually finishing transaction")
             await transaction.finish()
             await MainActor.run {
-                print("Transaction finished successfully")
+                NativePurchasesLog.debug("Transaction finished successfully")
                 call.resolve()
             }
         }
@@ -330,7 +331,7 @@ extension NativePurchasesPlugin {
             try await AppStore.presentOfferCodeRedeemSheet(in: windowScene)
             call.resolve()
         } catch {
-            print("presentOfferCodeRedeemSheet error: \(error)")
+            NativePurchasesLog.debug("presentOfferCodeRedeemSheet error: \(error)")
             call.reject(error.localizedDescription)
         }
     }
@@ -364,7 +365,7 @@ extension NativePurchasesPlugin {
     @available(iOS 16.0, *)
     @MainActor
     private func handleGetAppTransaction(_ call: CAPPluginCall) async {
-        print("getAppTransaction called on iOS")
+        NativePurchasesLog.debug("getAppTransaction called on iOS")
         do {
             let verificationResult = try await AppTransaction.shared
             switch verificationResult {
@@ -384,7 +385,7 @@ extension NativePurchasesPlugin {
                 call.reject("App transaction verification failed: \(error.localizedDescription)")
             }
         } catch {
-            print("getAppTransaction error: \(error)")
+            NativePurchasesLog.debug("getAppTransaction error: \(error)")
             call.reject("Failed to get app transaction: \(error.localizedDescription)")
         }
     }
@@ -395,7 +396,7 @@ extension NativePurchasesPlugin {
         _ call: CAPPluginCall,
         targetBuildNumber: String
     ) async {
-        print("isEntitledToOldBusinessModel called with targetBuildNumber: \(targetBuildNumber)")
+        NativePurchasesLog.debug("isEntitledToOldBusinessModel called with targetBuildNumber: \(targetBuildNumber)")
         do {
             let verificationResult = try await AppTransaction.shared
             switch verificationResult {
@@ -411,7 +412,7 @@ extension NativePurchasesPlugin {
                 call.reject("App transaction verification failed: \(error.localizedDescription)")
             }
         } catch {
-            print("isEntitledToOldBusinessModel error: \(error)")
+            NativePurchasesLog.debug("isEntitledToOldBusinessModel error: \(error)")
             call.reject("Failed to get app transaction: \(error.localizedDescription)")
         }
     }

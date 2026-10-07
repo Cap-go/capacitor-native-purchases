@@ -60,6 +60,7 @@ extension Product {
             product["subscriptionGroupIdentifier"] = subscription.subscriptionGroupID
             product["subscriptionPeriod"] = subscription.subscriptionPeriod.dictionary
 
+            let hasIntroOffer = subscription.introductoryOffer != nil
             if let introOffer = subscription.introductoryOffer {
                 product["introductoryPrice"] = introOffer.dictionary(
                     currencyCode: currencyCode,
@@ -69,6 +70,11 @@ extension Product {
                 product["introductoryPrice"] = NSNull()
             }
 
+            product["introEligibility"] = IntroEligibilityMapper.status(
+                hasIntroOffer: hasIntroOffer,
+                isEligibleForIntroOffer: hasIntroOffer ? subscription.isEligibleForIntroOffer : nil
+            )
+
             product["discounts"] = subscription.promotionalOffers.map {
                 $0.dictionary(currencyCode: currencyCode, currencySymbol: currencySymbol)
             }
@@ -76,6 +82,7 @@ extension Product {
             product["subscriptionGroupIdentifier"] = ""
             product["subscriptionPeriod"] = ["numberOfUnits": 0, "unit": 0]
             product["introductoryPrice"] = NSNull()
+            product["introEligibility"] = IntroEligibilityMapper.status(hasIntroOffer: false, isEligibleForIntroOffer: nil)
             product["discounts"] = [] as [[String: Any]]
         }
 

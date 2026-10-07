@@ -1005,6 +1005,14 @@ export interface Product {
    */
   readonly introductoryPrice: SKProductDiscount | null;
   /**
+   * Whether the current store account is eligible for an introductory offer on this subscription.
+   *
+   * @platform ios Set from StoreKit `isEligibleForIntroOffer` when the product has an introductory offer.
+   * @platform android Always `INTRO_ELIGIBILITY_STATUS_UNKNOWN` (Google Play filters ineligible offers in billing).
+   * @since 8.8.3
+   */
+  readonly introEligibility?: INTRO_ELIGIBILITY_STATUS;
+  /**
    * The Product discounts list.
    *
    * @platform ios Populated from StoreKit promotional offers when available.
