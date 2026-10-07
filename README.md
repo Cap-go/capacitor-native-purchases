@@ -18,11 +18,11 @@ Sell in-app purchases and subscriptions in your Capacitor app with StoreKit on i
 ## Key features
 
 - **Products**: `getProducts()` and `getProduct()` return localized prices and details.
-- **Purchases**: `purchaseProduct()` for consumables, non-consumables and subscriptions, with `acknowledgePurchase()` and `consumePurchase()`.
+- **Purchases**: `purchaseProduct()` for consumables, non-consumables and subscriptions, with `acknowledgePurchase()`, plus `consumePurchase()` on Android.
 - **Restore and history**: `restorePurchases()` and `getPurchases()`.
 - **Subscription tools**: `manageSubscriptions()`, `presentOfferCodeRedeemSheet()` and `getStorefront()`.
-- **Transaction events**: `transactionUpdated` and `transactionVerificationFailed`, plus receipt data for server-side validation.
-- **Platforms**: iOS and Android. Purchases are mocked on web.
+- **Server validation**: receipt data and the `transactionUpdated` and `transactionVerificationFailed` events on iOS, purchase tokens on Android.
+- **Platforms**: iOS and Android. Web mocks the purchase calls for development, except `consumePurchase()`, which is Android only.
 
 ## In-app Purchases Made Easy
 
@@ -1336,7 +1336,7 @@ If you're coming from cordova-plugin-purchase, here's the mapping:
 | cordova-plugin-purchase | @capgo/native-purchases | Platform | Notes |
 |-------------------------|-------------------------|----------|-------|
 | `transaction.transactionReceipt` | `transaction.receipt` (base64) | iOS | Legacy StoreKit receipt format (same value as Cordova) |
-|, | `transaction.jwsRepresentation` (JWS) | iOS | StoreKit 2 JWS format (iOS 15+, additional field with no Cordova equivalent; Apple's recommended modern format for new implementations) |
+| - | `transaction.jwsRepresentation` (JWS) | iOS | StoreKit 2 JWS format (iOS 15+, additional field with no Cordova equivalent; Apple's recommended modern format for new implementations) |
 | `transaction.purchaseToken` | `transaction.purchaseToken` | Android | Same field name |
 
 **This plugin already exposes everything you need for backend verification!** The `receipt` and `purchaseToken` fields contain the complete verified receipt data, and `jwsRepresentation` provides an additional StoreKit 2 representation when available.
