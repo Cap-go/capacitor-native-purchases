@@ -62,7 +62,7 @@ public class NativePurchasesPlugin extends Plugin {
         Boolean value = call.getBoolean("autoFinishTransactions");
         if (value != null) {
             autoFinishTransactions = value;
-            Log.d(TAG, "autoFinishTransactions set to " + value);
+            NativePurchasesLog.d(TAG, "autoFinishTransactions set to " + value);
         }
         call.resolve();
     }
@@ -76,7 +76,7 @@ public class NativePurchasesPlugin extends Plugin {
 
     @PluginMethod
     public void getUnfinishedTransactions(PluginCall call) {
-        Log.d(TAG, "getUnfinishedTransactions() called");
+        NativePurchasesLog.d(TAG, "getUnfinishedTransactions() called");
         withBillingClient(call, () -> {
             JSONArray unacknowledged = new JSONArray();
             AtomicInteger pendingQueries = new AtomicInteger(2);
@@ -88,7 +88,7 @@ public class NativePurchasesPlugin extends Plugin {
                     closeBillingClient();
                     String failure = queryFailure.get();
                     if (failure != null) {
-                        Log.w(TAG, "Rejecting getUnfinishedTransactions: " + failure);
+                        NativePurchasesLog.w(TAG, "Rejecting getUnfinishedTransactions: " + failure);
                         call.reject("Failed to query purchases: " + failure, "QUERY_PURCHASES_FAILED");
                         return;
                     }
@@ -914,7 +914,7 @@ public class NativePurchasesPlugin extends Plugin {
         if (billingResult.getResponseCode() == BillingClient.BillingResponseCode.OK) {
             assert purchases != null;
             if (!autoFinishTransactions) {
-                Log.d(TAG, "autoFinishTransactions disabled, skipping recovery acknowledgment");
+                NativePurchasesLog.d(TAG, "autoFinishTransactions disabled, skipping recovery acknowledgment");
                 return;
             }
             for (Purchase purchase : purchases) {
