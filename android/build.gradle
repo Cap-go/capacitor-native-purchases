@@ -20,6 +20,9 @@ apply plugin: 'com.android.library'
 android {
     namespace = "ee.forgr.nativepurchases"
     compileSdk = project.hasProperty('compileSdkVersion') ? rootProject.ext.compileSdkVersion : 36
+    buildFeatures {
+        buildConfig true
+    }
     defaultConfig {
         minSdkVersion project.hasProperty('minSdkVersion') ? rootProject.ext.minSdkVersion : 24
         targetSdkVersion project.hasProperty('targetSdkVersion') ? rootProject.ext.targetSdkVersion : 36

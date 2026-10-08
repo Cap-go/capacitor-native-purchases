@@ -136,11 +136,11 @@ export enum INTRO_ELIGIBILITY_STATUS {
   /**
    * The user is not eligible for a free trial or intro pricing for this product.
    */
-  INTRO_ELIGIBILITY_STATUS_INELIGIBLE,
+  INTRO_ELIGIBILITY_STATUS_INELIGIBLE = 1,
   /**
    * The user is eligible for a free trial or intro pricing for this product.
    */
-  INTRO_ELIGIBILITY_STATUS_ELIGIBLE,
+  INTRO_ELIGIBILITY_STATUS_ELIGIBLE = 2,
 }
 
 export interface Transaction {
@@ -1004,6 +1004,14 @@ export interface Product {
    * @platform android Populated from the first pricing phase on base subscription offers when multiple phases are present.
    */
   readonly introductoryPrice: SKProductDiscount | null;
+  /**
+   * Whether the current store account is eligible for an introductory offer on this subscription.
+   *
+   * @platform ios Set from StoreKit `isEligibleForIntroOffer` when the product has an introductory offer.
+   * @platform android Always `INTRO_ELIGIBILITY_STATUS_UNKNOWN` (Google Play filters ineligible offers in billing).
+   * @since 8.8.3
+   */
+  readonly introEligibility?: INTRO_ELIGIBILITY_STATUS;
   /**
    * The Product discounts list.
    *

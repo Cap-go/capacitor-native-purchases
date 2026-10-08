@@ -1,15 +1,9 @@
 import XCTest
 @testable import NativePurchasesPlugin
 
-class SocialLoginTests: XCTestCase {
-    func testEcho() {
-        // This is an example of a functional test case for a plugin.
-        // Use XCTAssert and related functions to verify your tests produce the correct results.
-
-        let implementation = NativePurchasesPlugin()
-        let value = "Hello, World!"
-        let result = implementation.echo(value)
-
-        XCTAssertEqual(value, result)
+final class NativePurchasesPluginTests: XCTestCase {
+    func testPluginVersionIsNonEmpty() {
+        let plugin = NativePurchasesPlugin()
+        XCTAssertFalse(plugin.identifier.isEmpty)
     }
 }
