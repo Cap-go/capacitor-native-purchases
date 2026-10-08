@@ -55,6 +55,120 @@ public class NativePurchasesPlugin extends Plugin {
         return thread;
     });
     private BillingClient billingClient;
+    private volatile boolean autoFinishTransactions = true;
+
+    @PluginMethod
+    public void configure(PluginCall call) {
+        Boolean value = call.getBoolean("autoFinishTransactions");
+        if (value != null) {
+            autoFinishTransactions = value;
+            NativePurchasesLog.d(TAG, "autoFinishTransactions set to " + value);
+        }
+        call.resolve();
+    }
+
+    @PluginMethod
+    public void finishTransaction(PluginCall call) {
+        call.reject(
+            "finishTransaction is for StoreKit 2 on iOS. On Android, call acknowledgePurchase({ purchaseToken }) to acknowledge Google Play purchases."
+        );
+    }
+
+    @PluginMethod
+    public void getUnfinishedTransactions(PluginCall call) {
+        NativePurchasesLog.d(TAG, "getUnfinishedTransactions() called");
+        withBillingClient(call, () -> {
+            JSONArray unacknowledged = new JSONArray();
+            AtomicInteger pendingQueries = new AtomicInteger(2);
+            AtomicBoolean finished = new AtomicBoolean(false);
+            AtomicReference<String> queryFailure = new AtomicReference<>(null);
+
+            Runnable maybeFinish = () -> {
+                if (pendingQueries.decrementAndGet() <= 0 && finished.compareAndSet(false, true)) {
+                    closeBillingClient();
+                    String failure = queryFailure.get();
+                    if (failure != null) {
+                        NativePurchasesLog.w(TAG, "Rejecting getUnfinishedTransactions: " + failure);
+                        call.reject("Failed to query purchases: " + failure, "QUERY_PURCHASES_FAILED");
+                        return;
+                    }
+                    JSObject result = new JSObject();
+                    result.put("transactions", unacknowledged);
+                    call.resolve(result);
+                }
+            };
+
+            QueryPurchasesParams inAppParams = QueryPurchasesParams.newBuilder().setProductType(BillingClient.ProductType.INAPP).build();
+            billingClient.queryPurchasesAsync(inAppParams, (billingResult, purchases) -> {
+                try {
+                    if (billingResult.getResponseCode() == BillingClient.BillingResponseCode.OK && purchases != null) {
+                        appendUnacknowledgedPurchases(billingResult, purchases, "inapp", unacknowledged);
+                    } else {
+                        queryFailure.compareAndSet(null, describeQueryFailure("inapp", billingResult));
+                    }
+                } catch (Exception ex) {
+                    queryFailure.compareAndSet(null, describeQueryFailure("inapp", billingResult) + " / " + ex.getMessage());
+                } finally {
+                    maybeFinish.run();
+                }
+            });
+
+            QueryPurchasesParams subsParams = QueryPurchasesParams.newBuilder().setProductType(BillingClient.ProductType.SUBS).build();
+            billingClient.queryPurchasesAsync(subsParams, (billingResult, purchases) -> {
+                try {
+                    if (billingResult.getResponseCode() == BillingClient.BillingResponseCode.OK && purchases != null) {
+                        appendUnacknowledgedPurchases(billingResult, purchases, "subs", unacknowledged);
+                    } else {
+                        queryFailure.compareAndSet(null, describeQueryFailure("subs", billingResult));
+                    }
+                } catch (Exception ex) {
+                    queryFailure.compareAndSet(null, describeQueryFailure("subs", billingResult) + " / " + ex.getMessage());
+                } finally {
+                    maybeFinish.run();
+                }
+            });
+        });
+    }
+
+    private void appendUnacknowledgedPurchases(
+        BillingResult billingResult,
+        List<Purchase> purchases,
+        String productType,
+        JSONArray target
+    ) {
+        if (billingResult.getResponseCode() != BillingClient.BillingResponseCode.OK || purchases == null) {
+            return;
+        }
+        for (Purchase purchase : purchases) {
+            if (purchase.getPurchaseState() == Purchase.PurchaseState.PURCHASED && !purchase.isAcknowledged()) {
+                target.put(buildPurchaseTransactionObject(purchase, productType));
+            }
+        }
+    }
+
+    private static String formatUtcIso8601(long timeMillis) {
+        java.text.SimpleDateFormat purchaseDateFormat = new java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", java.util.Locale.US);
+        purchaseDateFormat.setTimeZone(java.util.TimeZone.getTimeZone("UTC"));
+        return purchaseDateFormat.format(new java.util.Date(timeMillis));
+    }
+
+    private JSObject buildPurchaseTransactionObject(Purchase purchase, String productType) {
+        AccountIdentifiers accountIdentifiers = purchase.getAccountIdentifiers();
+        String purchaseAccountId = accountIdentifiers != null ? accountIdentifiers.getObfuscatedAccountId() : null;
+        JSObject purchaseData = new JSObject();
+        purchaseData.put("transactionId", purchase.getPurchaseToken());
+        purchaseData.put("productIdentifier", purchase.getProducts().isEmpty() ? null : purchase.getProducts().get(0));
+        purchaseData.put("purchaseDate", formatUtcIso8601(purchase.getPurchaseTime()));
+        purchaseData.put("quantity", purchase.getQuantity());
+        purchaseData.put("productType", productType);
+        purchaseData.put("orderId", purchase.getOrderId());
+        purchaseData.put("purchaseToken", purchase.getPurchaseToken());
+        purchaseData.put("isAcknowledged", purchase.isAcknowledged());
+        purchaseData.put("purchaseState", String.valueOf(purchase.getPurchaseState()));
+        purchaseData.put("appAccountToken", purchaseAccountId);
+        purchaseData.put("willCancel", null);
+        return purchaseData;
+    }
 
     @PluginMethod
     public void isBillingSupported(PluginCall call) {
@@ -141,9 +255,10 @@ public class NativePurchasesPlugin extends Plugin {
 
     @Override
     public void load() {
+        autoFinishTransactions = getConfig().getBoolean("autoFinishTransactions", true);
         super.load();
         NativePurchasesLog.configure(getConfig().getBoolean("debugLogging", false));
-        NativePurchasesLog.d(TAG, "Plugin load() called");
+        NativePurchasesLog.d(TAG, "Plugin load() called, autoFinishTransactions=" + autoFinishTransactions);
         NativePurchasesLog.i(NativePurchasesPlugin.TAG, "load");
         NativePurchasesLog.d(TAG, "Plugin load() completed");
     }
@@ -274,7 +389,8 @@ public class NativePurchasesPlugin extends Plugin {
             NativePurchasesLog.d(TAG, "Purchase state is PURCHASED");
             boolean isConsumable = purchaseCall != null && purchaseCall.getBoolean("isConsumable", false);
             boolean autoAcknowledge = purchaseCall != null ? purchaseCall.getBoolean("autoAcknowledgePurchases", true) : true;
-            NativePurchasesLog.d(TAG, "Auto-acknowledge enabled: " + autoAcknowledge);
+            boolean shouldAutoAcknowledge = autoFinishTransactions && autoAcknowledge;
+            NativePurchasesLog.d(TAG, "Auto-acknowledge enabled: " + shouldAutoAcknowledge);
 
             PurchaseAction action = PurchaseActionDecider.decide(isConsumable, purchase);
 
@@ -284,12 +400,16 @@ public class NativePurchasesPlugin extends Plugin {
 
             switch (action) {
                 case CONSUME:
+                    if (!shouldAutoAcknowledge) {
+                        NativePurchasesLog.d(TAG, "Consumable purchase deferred until manual consumePurchase()");
+                        break;
+                    }
                     NativePurchasesLog.d(TAG, "Purchase flagged as consumable, consuming...");
                     ConsumeParams consumeParams = ConsumeParams.newBuilder().setPurchaseToken(purchase.getPurchaseToken()).build();
                     billingClient.consumeAsync(consumeParams, this::onConsumeResponse);
                     break;
                 case ACKNOWLEDGE:
-                    if (autoAcknowledge) {
+                    if (shouldAutoAcknowledge) {
                         NativePurchasesLog.d(TAG, "Purchase not acknowledged, auto-acknowledging...");
                         acknowledgePurchase(purchase.getPurchaseToken());
                     } else {
@@ -308,12 +428,7 @@ public class NativePurchasesPlugin extends Plugin {
             JSObject ret = new JSObject();
             ret.put("transactionId", purchase.getPurchaseToken());
             ret.put("productIdentifier", purchase.getProducts().get(0));
-            ret.put(
-                "purchaseDate",
-                new java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", java.util.Locale.US).format(
-                    new java.util.Date(purchase.getPurchaseTime())
-                )
-            );
+            ret.put("purchaseDate", formatUtcIso8601(purchase.getPurchaseTime()));
             ret.put("quantity", purchase.getQuantity());
             ret.put("productType", purchase.getPurchaseState() == Purchase.PurchaseState.PURCHASED ? "inapp" : "subs");
             ret.put("orderId", purchase.getOrderId());
@@ -798,6 +913,10 @@ public class NativePurchasesPlugin extends Plugin {
 
         if (billingResult.getResponseCode() == BillingClient.BillingResponseCode.OK) {
             assert purchases != null;
+            if (!autoFinishTransactions) {
+                NativePurchasesLog.d(TAG, "autoFinishTransactions disabled, skipping recovery acknowledgment");
+                return;
+            }
             for (Purchase purchase : purchases) {
                 NativePurchasesLog.d(TAG, "Processing purchase for products: " + purchase.getProducts());
                 NativePurchasesLog.d(TAG, "Purchase state: " + purchase.getPurchaseState());
@@ -1253,12 +1372,7 @@ public class NativePurchasesPlugin extends Plugin {
                                     "productIdentifier",
                                     purchase.getProducts().isEmpty() ? null : purchase.getProducts().get(0)
                                 );
-                                purchaseData.put(
-                                    "purchaseDate",
-                                    new java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", java.util.Locale.US).format(
-                                        new java.util.Date(purchase.getPurchaseTime())
-                                    )
-                                );
+                                purchaseData.put("purchaseDate", formatUtcIso8601(purchase.getPurchaseTime()));
                                 purchaseData.put("quantity", purchase.getQuantity());
                                 purchaseData.put("productType", "inapp");
                                 purchaseData.put("orderId", purchase.getOrderId());
@@ -1308,12 +1422,7 @@ public class NativePurchasesPlugin extends Plugin {
                                     "productIdentifier",
                                     purchase.getProducts().isEmpty() ? null : purchase.getProducts().get(0)
                                 );
-                                purchaseData.put(
-                                    "purchaseDate",
-                                    new java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", java.util.Locale.US).format(
-                                        new java.util.Date(purchase.getPurchaseTime())
-                                    )
-                                );
+                                purchaseData.put("purchaseDate", formatUtcIso8601(purchase.getPurchaseTime()));
                                 purchaseData.put("quantity", purchase.getQuantity());
                                 purchaseData.put("productType", "subs");
                                 purchaseData.put("orderId", purchase.getOrderId());
@@ -1472,9 +1581,7 @@ public class NativePurchasesPlugin extends Plugin {
 
             // First install time on this device (milliseconds since epoch)
             long firstInstallTime = packageInfo.firstInstallTime;
-            String originalPurchaseDate = new java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", java.util.Locale.US).format(
-                new java.util.Date(firstInstallTime)
-            );
+            String originalPurchaseDate = formatUtcIso8601(firstInstallTime);
             appTransaction.put("originalPurchaseDate", originalPurchaseDate);
 
             // Package name (bundle ID equivalent)
