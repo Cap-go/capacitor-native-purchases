@@ -20,8 +20,12 @@ final class ProductPayloadMapper {
 
     private ProductPayloadMapper() {}
 
+    /** Matches {@code INTRO_ELIGIBILITY_STATUS_UNKNOWN} in the TypeScript API. */
+    static final int INTRO_ELIGIBILITY_UNKNOWN = 0;
+
     static void applyInAppDefaults(JSObject product) {
         product.put("introductoryPrice", JSONObject.NULL);
+        product.put("introEligibility", INTRO_ELIGIBILITY_UNKNOWN);
         product.put("discounts", new JSONArray());
     }
 
@@ -94,6 +98,8 @@ final class ProductPayloadMapper {
 
         String currencyCode = standardPhase != null ? standardPhase.getPriceCurrencyCode() : product.getString("currencyCode", "");
         String currencySymbol = currencySymbol(currencyCode);
+
+        product.put("introEligibility", INTRO_ELIGIBILITY_UNKNOWN);
 
         if (offerDetails.getOfferId() == null) {
             ProductDetails.PricingPhase introPhase = findIntroductoryPricingPhase(phases);

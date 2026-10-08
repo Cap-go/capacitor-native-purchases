@@ -93,6 +93,21 @@ extension Product {
 
         return product
     }
+
+    func pluginDictionary() async -> [String: Any] {
+        var product = dictionary
+        if let subscription = subscription {
+            let hasIntroOffer = subscription.introductoryOffer != nil
+            let isEligible: Bool? = hasIntroOffer ? await subscription.isEligibleForIntroOffer : nil
+            product["introEligibility"] = IntroEligibilityMapper.status(
+                hasIntroOffer: hasIntroOffer,
+                isEligibleForIntroOffer: isEligible
+            )
+        } else {
+            product["introEligibility"] = IntroEligibilityMapper.status(hasIntroOffer: false, isEligibleForIntroOffer: nil)
+        }
+        return product
+    }
 }
 
 private extension Product.SubscriptionOffer {

@@ -1,10 +1,28 @@
 # native-purchases
-<a href="https://capgo.app/"><img src="https://capgo.app/readme-banner.svg?repo=Cap-go/capacitor-native-purchases" alt="Capgo - Instant updates for Capacitor" /></a>
+
+Sell in-app purchases and subscriptions in your Capacitor app with StoreKit on iOS and Google Play Billing on Android, without a third-party payments service.
+
+<a href="https://capgo.app/?ref=plugin_native_purchases"><img src="https://capgo.app/readme-banner.svg?repo=Cap-go/capacitor-native-purchases" alt="Capgo - Instant updates for Capacitor" /></a>
 
 <div align="center">
-  <h2><a href="https://capgo.app/?ref=plugin_native_purchases"> ➡️ Get Instant updates for your App with Capgo</a></h2>
-  <h2><a href="https://capgo.app/consulting/?ref=plugin_native_purchases"> Missing a feature? We’ll build the plugin for you 💪</a></h2>
+  <p><b>Capgo</b>: open-source live updates for Ionic and Capacitor apps. Ship OTA fixes and features instantly, without waiting for app store review.</p>
+  <h2><a href="https://capgo.app/register/?ref=plugin_native_purchases">➡️ Get started for free</a></h2>
+  <p>14-day unlimited free trial. No credit card required</p>
+  <p><a href="https://capgo.app/consulting/?ref=plugin_native_purchases">Missing a feature? We'll build the plugin for you 💪</a></p>
 </div>
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/Cap-go/capacitor-native-purchases/main/assets/github-social-preview.png" alt="@capgo/native-purchases for Capacitor apps" width="300" />
+</p>
+
+## Key features
+
+- **Products**: `getProducts()` and `getProduct()` return localized prices and details.
+- **Purchases**: `purchaseProduct()` for consumables, non-consumables and subscriptions, with `acknowledgePurchase()`, plus `consumePurchase()` on Android.
+- **Restore and history**: `restorePurchases()` and `getPurchases()`.
+- **Subscription tools**: `manageSubscriptions()`, `presentOfferCodeRedeemSheet()` and `getStorefront()`.
+- **Server validation**: receipt data and the `transactionUpdated` and `transactionVerificationFailed` events on iOS, purchase tokens on Android.
+- **Platforms**: iOS and Android. Web mocks the purchase calls for development, except `consumePurchase()`, which is Android only.
 
 ## In-app Purchases Made Easy
 
@@ -1318,7 +1336,7 @@ If you're coming from cordova-plugin-purchase, here's the mapping:
 | cordova-plugin-purchase | @capgo/native-purchases | Platform | Notes |
 |-------------------------|-------------------------|----------|-------|
 | `transaction.transactionReceipt` | `transaction.receipt` (base64) | iOS | Legacy StoreKit receipt format (same value as Cordova) |
-| — | `transaction.jwsRepresentation` (JWS) | iOS | StoreKit 2 JWS format (iOS 15+, additional field with no Cordova equivalent; Apple's recommended modern format for new implementations) |
+| - | `transaction.jwsRepresentation` (JWS) | iOS | StoreKit 2 JWS format (iOS 15+, additional field with no Cordova equivalent; Apple's recommended modern format for new implementations) |
 | `transaction.purchaseToken` | `transaction.purchaseToken` | Android | Same field name |
 
 **This plugin already exposes everything you need for backend verification!** The `receipt` and `purchaseToken` fields contain the complete verified receipt data, and `jwsRepresentation` provides an additional StoreKit 2 representation when available.
@@ -2324,6 +2342,7 @@ which is useful for determining if users are entitled to features from earlier b
 | **`pricingTerms`**                | <code>SubscriptionPricingTerms[]</code>                                               | iOS subscriptions only: StoreKit pricing terms by billing plan. For subscriptions with a monthly billing plan and 12-month commitment, this includes both the standard up-front plan and the monthly commitment plan. Display both `billingDisplayPrice` and `commitmentInfo.priceString` before starting a monthly commitment purchase.                                                                                                                                                                                      | 8.3.8 |
 | **`subscriptionPeriod`**          | <code><a href="#subscriptionperiod">SubscriptionPeriod</a></code>                     | The <a href="#product">Product</a> subscription group identifier.                                                                                                                                                                                                                                                                                                                                                                                                                                                             |       |
 | **`introductoryPrice`**           | <code><a href="#skproductdiscount">SKProductDiscount</a> \| null</code>               | The <a href="#product">Product</a> introductory Price.                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |       |
+| **`introEligibility`**            | <code><a href="#intro_eligibility_status">INTRO_ELIGIBILITY_STATUS</a></code>         | Whether the current store account is eligible for an introductory offer on this subscription.                                                                                                                                                                                                                                                                                                                                                                                                                                 | 8.8.3 |
 | **`discounts`**                   | <code>SKProductDiscount[]</code>                                                      | The <a href="#product">Product</a> discounts list.                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |       |
 
 
@@ -2427,6 +2446,15 @@ Android one-time product discount display metadata.
 | ----------- | -------------------- | ---------------------------------- |
 | **`INAPP`** | <code>'inapp'</code> | A type of SKU for in-app products. |
 | **`SUBS`**  | <code>'subs'</code>  | A type of SKU for subscriptions.   |
+
+
+#### INTRO_ELIGIBILITY_STATUS
+
+| Members                                   | Value          | Description                                                                  |
+| ----------------------------------------- | -------------- | ---------------------------------------------------------------------------- |
+| **`INTRO_ELIGIBILITY_STATUS_UNKNOWN`**    | <code>0</code> | doesn't have enough information to determine eligibility.                    |
+| **`INTRO_ELIGIBILITY_STATUS_INELIGIBLE`** | <code>1</code> | The user is not eligible for a free trial or intro pricing for this product. |
+| **`INTRO_ELIGIBILITY_STATUS_ELIGIBLE`**   | <code>2</code> | The user is eligible for a free trial or intro pricing for this product.     |
 
 </docgen-api>
 

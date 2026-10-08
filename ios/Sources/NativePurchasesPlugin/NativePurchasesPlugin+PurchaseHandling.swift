@@ -17,10 +17,10 @@ extension NativePurchasesPlugin {
                     jwsRepresentation: verificationResult.jwsRepresentation
                 )
                 if autoFinish {
-                    print("Auto-finishing verified transaction")
+                    NativePurchasesLog.debug("Auto-finishing verified transaction")
                     await transaction.finish()
                 } else {
-                    print("Manual finish required for verified transaction")
+                    NativePurchasesLog.debug("Manual finish required for verified transaction")
                     response["needsFinish"] = true
                 }
                 call.resolve(response)

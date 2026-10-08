@@ -16,4 +16,9 @@ public class ProductPayloadMapperTest {
     public void currencySymbol_returnsSymbolForKnownCurrency() {
         assertEquals("$", ProductPayloadMapper.currencySymbol("USD"));
     }
+
+    @Test
+    public void introEligibilityUnknown_matchesApiContract() {
+        assertEquals(0, ProductPayloadMapper.INTRO_ELIGIBILITY_UNKNOWN);
+    }
 }
