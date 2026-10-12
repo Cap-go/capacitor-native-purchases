@@ -2,7 +2,7 @@
 
 Sell in-app purchases and subscriptions in your Capacitor app with StoreKit on iOS and Google Play Billing on Android, without a third-party payments service.
 
-<a href="https://capgo.app/?ref=plugin_native_purchases"><img src="https://capgo.app/readme-banner.svg?repo=Cap-go/capacitor-native-purchases" alt="Capgo - Instant updates for Capacitor" /></a>
+<a href="https://capgo.app/?ref=plugin_native_purchases"><img src="https://capgo.app/readme-banner.svg?repo=Cap-go/capacitor-native-purchases" alt="Capgo - Build Capacitor apps with AI, ship updates instantly" /></a>
 
 <div align="center">
   <p><b>Capgo</b>: push fixes to your Capacitor users in minutes, build signed iOS and Android apps without a Mac, and roll back in one click.</p>
@@ -10,6 +10,8 @@ Sell in-app purchases and subscriptions in your Capacitor app with StoreKit on i
   <p>14-day unlimited free trial. No credit card required</p>
   <p><a href="https://capgo.app/consulting/?ref=plugin_native_purchases">Missing a feature? We'll build the plugin for you 💪</a></p>
 </div>
+
+> 🤖 **Building with an AI coding agent?** Install [Capgo skills](https://capgo.app/skills/?ref=plugin_native_purchases) so Claude Code, Codex, Cursor, Copilot, or Gemini CLI know how to install and use `@capgo/native-purchases` in your Capacitor app: `npx skills add Cap-go/capgo-skills`. Then ask your agent: *"Add @capgo/native-purchases to my Capacitor app and wire it up."* [Agent setup guides](https://capgo.app/agents/?ref=plugin_native_purchases) · [Hosted MCP](https://capgo.app/docs/ai/mcp/?ref=plugin_native_purchases)
 
 <p align="center">
   <img src="https://raw.githubusercontent.com/Cap-go/capacitor-native-purchases/main/assets/github-social-preview.png" alt="@capgo/native-purchases for Capacitor apps" width="300" />
