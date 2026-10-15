@@ -26,7 +26,7 @@ public class NativePurchasesPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "finishTransaction", returnType: CAPPluginReturnPromise)
     ]
 
-    private let pluginVersion: String = "8.9.5"
+    private let pluginVersion: String = "8.9.6"
     var autoFinishTransactions: Bool = true
     private var transactionUpdatesTask: Task<Void, Never>?
 
