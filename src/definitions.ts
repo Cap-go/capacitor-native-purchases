@@ -1165,6 +1165,8 @@ export interface NativePurchasesPlugin {
    * @param options.productType - Only Android, the type of product, can be inapp or subs. Will use inapp by default.
    * @param options.planIdentifier - Only Android, the identifier of the base plan you want to purchase from Google Play Console. REQUIRED for Android subscriptions, ignored on iOS.
    * @param options.offerToken - Only Android, the offer token for the selected subscription or one-time product offer. Use the `offerToken` returned by `getProducts()` / `getProduct()`.
+   *                             For subscriptions the offer must belong to the base plan given in `planIdentifier` (for example a free-trial offer of that base plan);
+   *                             if no such offer exists the call rejects instead of purchasing a different one. Without `offerToken`, the first offer of the base plan is purchased.
    * @param options.quantity - Only iOS, the number of items you wish to purchase. Will use 1 by default.
    * @param options.billingPlanType - Only iOS, the StoreKit subscription billing plan to purchase. Use `"monthly"` for a monthly subscription with a 12-month commitment. Requires iOS 26.4+ and Xcode 26.5 SDK support.
    * @param options.appAccountToken - Optional identifier uniquely associated with the user's account in your app.
