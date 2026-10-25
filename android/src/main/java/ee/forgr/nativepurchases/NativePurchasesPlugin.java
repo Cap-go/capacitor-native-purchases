@@ -812,8 +812,9 @@ public class NativePurchasesPlugin extends Plugin {
                                 BillingFlowParams.ProductDetailsParams.newBuilder().setProductDetails(productDetailsItem);
                             if (productType.equals("subs")) {
                                 NativePurchasesLog.d(TAG, "Processing subscription product");
-                                // list the SubscriptionOfferDetails and find the one who match the planIdentifier (and the offerToken,
-                                // when one is passed). Without an offerToken, fall back to the first one if no plan matches
+                                // With an offerToken, select the offer whose token matches: tokens identify one offer of the product, so
+                                // planIdentifier is not needed to find it (and callers pass either the base plan ID or the value from
+                                // getProducts()). Without an offerToken, match the base plan, then fall back to the first offer
                                 ProductDetails.SubscriptionOfferDetails selectedOfferDetails = null;
                                 final boolean hasOfferToken = offerToken != null && !offerToken.isEmpty();
                                 assert productDetailsItem.getSubscriptionOfferDetails() != null;
@@ -824,19 +825,20 @@ public class NativePurchasesPlugin extends Plugin {
                                 for (ProductDetails.SubscriptionOfferDetails offerDetails : productDetailsItem.getSubscriptionOfferDetails()) {
                                     NativePurchasesLog.d(TAG, "Checking offer: " + offerDetails.getBasePlanId());
                                     if (
-                                        offerDetails.getBasePlanId().equals(planIdentifier) &&
-                                        (!hasOfferToken || offerToken.equals(offerDetails.getOfferToken()))
+                                        hasOfferToken
+                                            ? offerToken.equals(offerDetails.getOfferToken())
+                                            : offerDetails.getBasePlanId().equals(planIdentifier)
                                     ) {
                                         selectedOfferDetails = offerDetails;
-                                        NativePurchasesLog.d(TAG, "Found matching plan: " + planIdentifier);
+                                        NativePurchasesLog.d(TAG, "Found matching offer of base plan: " + offerDetails.getBasePlanId());
                                         break;
                                     }
                                 }
                                 if (selectedOfferDetails == null && hasOfferToken) {
                                     // An explicitly requested offer must not be replaced by a different one
-                                    NativePurchasesLog.d(TAG, "Offer token not found for plan: " + planIdentifier);
+                                    NativePurchasesLog.d(TAG, "Offer token not found for product: " + productIdentifier);
                                     closeBillingClient();
-                                    call.reject("Offer token not found for product: " + productIdentifier + ", plan: " + planIdentifier);
+                                    call.reject("Offer token not found for product: " + productIdentifier);
                                     return;
                                 }
                                 if (selectedOfferDetails == null) {
