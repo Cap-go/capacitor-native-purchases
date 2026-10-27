@@ -812,25 +812,39 @@ public class NativePurchasesPlugin extends Plugin {
                                 BillingFlowParams.ProductDetailsParams.newBuilder().setProductDetails(productDetailsItem);
                             if (productType.equals("subs")) {
                                 NativePurchasesLog.d(TAG, "Processing subscription product");
-                                // list the SubscriptionOfferDetails and find the one who match the planIdentifier if not found get the first one
-                                ProductDetails.SubscriptionOfferDetails selectedOfferDetails = null;
-                                assert productDetailsItem.getSubscriptionOfferDetails() != null;
+                                // Prefer an explicit offerToken, then the planIdentifier's base
+                                // plan, then the first offer. See SubscriptionOfferSelector.
+                                List<ProductDetails.SubscriptionOfferDetails> subscriptionOffers =
+                                    productDetailsItem.getSubscriptionOfferDetails();
                                 NativePurchasesLog.d(
                                     TAG,
-                                    "Available offer details count: " + productDetailsItem.getSubscriptionOfferDetails().size()
+                                    "Available offer details count: " + (subscriptionOffers == null ? 0 : subscriptionOffers.size())
                                 );
-                                for (ProductDetails.SubscriptionOfferDetails offerDetails : productDetailsItem.getSubscriptionOfferDetails()) {
-                                    NativePurchasesLog.d(TAG, "Checking offer: " + offerDetails.getBasePlanId());
-                                    if (offerDetails.getBasePlanId().equals(planIdentifier)) {
-                                        selectedOfferDetails = offerDetails;
-                                        NativePurchasesLog.d(TAG, "Found matching plan: " + planIdentifier);
-                                        break;
-                                    }
+
+                                SubscriptionOfferSelector.Selection selection = SubscriptionOfferSelector.select(
+                                    SubscriptionOfferSelector.adapt(subscriptionOffers),
+                                    planIdentifier,
+                                    offerToken
+                                );
+
+                                if (selection.isOfferTokenNotFound()) {
+                                    NativePurchasesLog.d(TAG, "Offer token not found for product: " + productIdentifier);
+                                    closeBillingClient();
+                                    call.reject("Offer token not found for product: " + productIdentifier);
+                                    return;
                                 }
+
+                                ProductDetails.SubscriptionOfferDetails selectedOfferDetails = SubscriptionOfferSelector.unwrap(
+                                    selection.offer()
+                                );
                                 if (selectedOfferDetails == null) {
-                                    selectedOfferDetails = productDetailsItem.getSubscriptionOfferDetails().get(0);
-                                    NativePurchasesLog.d(TAG, "Using first available offer: " + selectedOfferDetails.getBasePlanId());
+                                    NativePurchasesLog.w(TAG, "No subscription offer details found for product: " + productIdentifier);
+                                    closeBillingClient();
+                                    call.reject("No subscription offer details found for product: " + productIdentifier);
+                                    return;
                                 }
+
+                                NativePurchasesLog.d(TAG, "Selected base plan: " + selectedOfferDetails.getBasePlanId());
                                 productDetailsParams.setOfferToken(selectedOfferDetails.getOfferToken());
                                 NativePurchasesLog.d(
                                     TAG,
