@@ -964,6 +964,10 @@ export interface Product {
   readonly planIdentifier?: string;
   /**
    * Android: offer token required when purchasing a specific subscription or one-time offer.
+   *
+   * Pass it to `purchaseProduct({ offerToken })` to buy this exact offer. It belongs to the
+   * query that returned it and goes stale, so read it from the same `getProducts()` /
+   * `getProduct()` call you purchase from.
    */
   readonly offerToken?: string;
   /**
@@ -1159,6 +1163,14 @@ export interface NativePurchasesPlugin {
 
   /**
    * Started purchase process for the given product.
+   *
+   * On Android, which offer is charged is chosen in this order: an explicit
+   * `offerToken`, then the first offer whose base plan matches
+   * `planIdentifier`, then the first offer the store returned. An
+   * `offerToken` that matches no current offer rejects rather than falling
+   * back, since the price charged would not be the one asked for — offer
+   * tokens come from a specific product query and go stale, so read one
+   * from the same `getProducts()` call you purchase from.
    *
    * @param options - The product to purchase
    * @param options.productIdentifier - The product identifier of the product you want to purchase.
