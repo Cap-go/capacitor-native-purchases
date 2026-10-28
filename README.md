@@ -1888,13 +1888,25 @@ purchaseProduct(options: { productIdentifier: string; planIdentifier?: string; o
 
 Started purchase process for the given product.
 
-On Android, which offer is charged is chosen in this order: an explicit
-`offerToken`, then the first offer whose base plan matches
-`planIdentifier`, then the first offer the store returned. An
+On Android, `offerToken` selects which offer is charged, and an
 `offerToken` that matches no current offer rejects rather than falling
-back, since the price charged would not be the one asked for — offer
-tokens come from a specific product query and go stale, so read one
-from the same `getProducts()` call you purchase from.
+back to another — the price charged would not be the one asked for.
+Offer tokens come from a specific product query and go stale, so read
+one from the same `getProducts()` / `getProduct()` call you purchase
+from.
+
+For a **subscription** (`productType: 'subs'`) the order is: an explicit
+`offerToken`, then the first offer whose base plan matches
+`planIdentifier`, then the first offer the store returned.
+`planIdentifier` is the **base plan id**, which `getProducts()` reports
+as <a href="#product">`Product.identifier`</a> — not <a href="#product">`Product.planIdentifier`</a>, which holds the
+Play product id. It is required unless an `offerToken` is given, since
+a token already identifies one offer on its own.
+
+For a **one-time product** (`productType: 'inapp'`) there is no base
+plan, so `planIdentifier` plays no part: an `offerToken` selects one of
+the product's purchase offers, and without one the store's first offer
+is used.
 
 | Param         | Type                                                                                                                                                                                                                                                                                                   | Description               |
 | ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------- |

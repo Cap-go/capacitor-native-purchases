@@ -747,10 +747,13 @@ public class NativePurchasesPlugin extends Plugin {
             call.reject("productType is empty");
             return;
         }
-        if (productType.equals("subs") && (planIdentifier == null || planIdentifier.isEmpty())) {
-            // Handle error: no planIdentifier with productType subs
+        boolean hasOfferToken = offerToken != null && !offerToken.isEmpty();
+        if (productType.equals("subs") && !hasOfferToken && (planIdentifier == null || planIdentifier.isEmpty())) {
+            // A subscription still needs to say which offer to charge, but an
+            // offerToken already identifies one on its own — requiring a base
+            // plan id alongside it would reject a fully specified purchase.
             NativePurchasesLog.d(TAG, "Error: planIdentifier cannot be empty if productType is subs");
-            call.reject("planIdentifier cannot be empty if productType is subs");
+            call.reject("planIdentifier cannot be empty if productType is subs unless offerToken is provided");
             return;
         }
         assert quantity != null;

@@ -71,6 +71,28 @@ public class SubscriptionOfferSelectorTest {
     }
 
     @Test
+    public void selectUsesTheOfferTokenWhenNoPlanIdentifierIsGiven() {
+        List<Offer> offers = offers(offer("monthly", "token-monthly"), offer("yearly", "token-yearly"));
+
+        // A token identifies one offer on its own, which is why the plugin no
+        // longer demands a planIdentifier alongside it for a subscription.
+        Selection selection = SubscriptionOfferSelector.select(offers, null, "token-yearly");
+
+        assertFalse(selection.isOfferTokenNotFound());
+        assertEquals("token-yearly", selection.offer().getOfferToken());
+    }
+
+    @Test
+    public void selectReportsAnUnknownOfferTokenEvenWithNoPlanIdentifier() {
+        List<Offer> offers = offers(offer("monthly", "token-monthly"));
+
+        Selection selection = SubscriptionOfferSelector.select(offers, null, "token-stale");
+
+        assertTrue(selection.isOfferTokenNotFound());
+        assertNull(selection.offer());
+    }
+
+    @Test
     public void selectFallsBackToTheFirstOfferWhenNoPlanIdentifierIsGiven() {
         List<Offer> offers = offers(offer("monthly", "token-monthly"), offer("yearly", "token-yearly"));
 

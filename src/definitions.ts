@@ -1164,19 +1164,31 @@ export interface NativePurchasesPlugin {
   /**
    * Started purchase process for the given product.
    *
-   * On Android, which offer is charged is chosen in this order: an explicit
-   * `offerToken`, then the first offer whose base plan matches
-   * `planIdentifier`, then the first offer the store returned. An
+   * On Android, `offerToken` selects which offer is charged, and an
    * `offerToken` that matches no current offer rejects rather than falling
-   * back, since the price charged would not be the one asked for — offer
-   * tokens come from a specific product query and go stale, so read one
-   * from the same `getProducts()` call you purchase from.
+   * back to another — the price charged would not be the one asked for.
+   * Offer tokens come from a specific product query and go stale, so read
+   * one from the same `getProducts()` / `getProduct()` call you purchase
+   * from.
+   *
+   * For a **subscription** (`productType: 'subs'`) the order is: an explicit
+   * `offerToken`, then the first offer whose base plan matches
+   * `planIdentifier`, then the first offer the store returned.
+   * `planIdentifier` is the **base plan id**, which `getProducts()` reports
+   * as `Product.identifier` — not `Product.planIdentifier`, which holds the
+   * Play product id. It is required unless an `offerToken` is given, since
+   * a token already identifies one offer on its own.
+   *
+   * For a **one-time product** (`productType: 'inapp'`) there is no base
+   * plan, so `planIdentifier` plays no part: an `offerToken` selects one of
+   * the product's purchase offers, and without one the store's first offer
+   * is used.
    *
    * @param options - The product to purchase
    * @param options.productIdentifier - The product identifier of the product you want to purchase.
    * @param options.productType - Only Android, the type of product, can be inapp or subs. Will use inapp by default.
-   * @param options.planIdentifier - Only Android, the identifier of the base plan you want to purchase from Google Play Console. REQUIRED for Android subscriptions, ignored on iOS.
-   * @param options.offerToken - Only Android, the offer token for the selected subscription or one-time product offer. Use the `offerToken` returned by `getProducts()` / `getProduct()`. Takes precedence over `planIdentifier`, since it names one specific offer; when it matches no current offer the purchase is rejected rather than falling back to another, because the price charged would not be the one that was asked for. Offer tokens come from a specific product query and go stale, so read one from the same `getProducts()` call you purchase from. Omit it to keep the previous behaviour: the first offer whose base plan matches `planIdentifier`, else the first offer the store returned.
+   * @param options.planIdentifier - Only Android, the identifier of the base plan you want to purchase from Google Play Console — the value `getProducts()` reports as `Product.identifier` for a subscription, not `Product.planIdentifier`. Required for Android subscriptions unless `offerToken` is given; ignored for one-time products and on iOS.
+   * @param options.offerToken - Only Android, the offer token for the selected subscription or one-time product offer. Use the `offerToken` returned by `getProducts()` / `getProduct()`. For a subscription it takes precedence over `planIdentifier`, since it names one specific offer, and makes `planIdentifier` optional. When it matches no current offer the purchase is rejected rather than falling back to another, because the price charged would not be the one that was asked for. Offer tokens come from a specific product query and go stale, so read one from the same query you purchase from. Omit it to keep the previous behaviour.
    * @param options.quantity - Only iOS, the number of items you wish to purchase. Will use 1 by default.
    * @param options.billingPlanType - Only iOS, the StoreKit subscription billing plan to purchase. Use `"monthly"` for a monthly subscription with a 12-month commitment. Requires iOS 26.4+ and Xcode 26.5 SDK support.
    * @param options.appAccountToken - Optional identifier uniquely associated with the user's account in your app.
