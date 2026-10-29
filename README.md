@@ -302,14 +302,14 @@ class PurchaseManager {
     }
   }
 
-  // Purchase subscription (planIdentifier or offerToken on Android)
+  // Purchase subscription (Android: planIdentifier, or the separate offerToken option)
   async purchaseMonthlySubscription() {
     try {
       console.log('Starting subscription purchase...');
 
       const result = await NativePurchases.purchaseProduct({
         productIdentifier: this.monthlySubId,
-        planIdentifier: this.monthlyPlanId,    // Android base plan id (or offerToken), ignored on iOS
+        planIdentifier: this.monthlyPlanId,    // Android base plan id, not an offerToken; ignored on iOS
         productType: PURCHASE_TYPE.SUBS,       // REQUIRED for subscriptions
         quantity: 1
       });
@@ -323,14 +323,14 @@ class PurchaseManager {
     }
   }
 
-  // Purchase yearly subscription (planIdentifier or offerToken on Android)
+  // Purchase yearly subscription (Android: planIdentifier, or the separate offerToken option)
   async purchaseYearlySubscription() {
     try {
       console.log('Starting yearly subscription purchase...');
 
       const result = await NativePurchases.purchaseProduct({
         productIdentifier: this.yearlySubId,
-        planIdentifier: this.yearlyPlanId,     // Android base plan id (or offerToken), ignored on iOS
+        planIdentifier: this.yearlyPlanId,     // Android base plan id, not an offerToken; ignored on iOS
         productType: PURCHASE_TYPE.SUBS,       // REQUIRED for subscriptions
         quantity: 1
       });
@@ -569,10 +569,10 @@ const buySubscription = async () => {
     const confirmed = confirm(`Subscribe to ${product.title} for ${product.priceString}?`);
     if (!confirmed) return;
 
-    // Make subscription purchase (planIdentifier or offerToken on Android, ignored on iOS)
+    // Make subscription purchase (Android: planIdentifier, or the separate offerToken option)
     const result = await NativePurchases.purchaseProduct({
       productIdentifier: 'com.yourapp.premium.monthly',
-      planIdentifier: 'monthly-plan',           // Android base plan id (or offerToken), ignored on iOS
+      planIdentifier: 'monthly-plan',           // Android base plan id, not an offerToken; ignored on iOS
       productType: PURCHASE_TYPE.SUBS,          // REQUIRED for subscriptions
       quantity: 1,
       appAccountToken: uuidToken                // Optional: User identifier in UUID format
@@ -1414,7 +1414,7 @@ class Store {
     try {
       const transaction = await NativePurchases.purchaseProduct({
         productIdentifier: productId,
-        planIdentifier: planId,              // Android base plan id, or pass offerToken
+        planIdentifier: planId,              // Android base plan id; offerToken is separate
         productType: PURCHASE_TYPE.SUBS      // REQUIRED for subscriptions
       });
       console.log('Subscription purchase successful:', transaction);
@@ -1907,9 +1907,14 @@ Play product id. It is required unless an `offerToken` is given, since
 a token already identifies one offer on its own.
 
 For a **one-time product** (`productType: 'inapp'`) there is no base
-plan, so `planIdentifier` plays no part: an `offerToken` selects one of
-the product's purchase offers, and without one the store's first offer
-is used.
+plan, so `planIdentifier` plays no part, and an `offerToken` selects one
+of the product's purchase offers. Without a token no offer token is set
+at all whenever the product still has a backward-compatible purchase
+option, which leaves the choice to Play: that is the first *created* buy
+purchase option, which need not be the first offer `getProducts()`
+returned. Only for a product with no backward-compatible option does the
+first offer in the list get used. So pass the token whenever a specific
+one-time offer matters.
 
 | Param         | Type                                                                                                                                                                                                                                                                                                   | Description               |
 | ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------- |
