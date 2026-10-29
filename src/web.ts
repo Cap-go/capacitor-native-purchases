@@ -53,6 +53,10 @@ export class NativePurchasesWeb extends WebPlugin implements NativePurchasesPlug
     console.error('isBillingSupported only mocked in web');
     return { isBillingSupported: false };
   }
+  async isSubscriptionReplacementSupported(): Promise<{ supported: boolean }> {
+    console.warn('isSubscriptionReplacementSupported only mocked in web');
+    return { supported: false };
+  }
   async getPluginVersion(): Promise<{ version: string }> {
     console.warn('Cannot get plugin version in web');
     return { version: 'default' };

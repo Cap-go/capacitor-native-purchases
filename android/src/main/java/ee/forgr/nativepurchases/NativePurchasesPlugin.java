@@ -170,6 +170,15 @@ public class NativePurchasesPlugin extends Plugin {
         return purchaseData;
     }
 
+    // Lets JS confirm that this native build understands oldPurchaseToken / replacementMode. Older builds ignore
+    // unknown options, so a replacement sent to them would silently become a second subscription instead.
+    @PluginMethod
+    public void isSubscriptionReplacementSupported(PluginCall call) {
+        JSObject ret = new JSObject();
+        ret.put("supported", true);
+        call.resolve(ret);
+    }
+
     @PluginMethod
     public void isBillingSupported(PluginCall call) {
         NativePurchasesLog.d(TAG, "isBillingSupported() called");
@@ -723,6 +732,14 @@ public class NativePurchasesPlugin extends Plugin {
         final String accountIdentifier = appAccountToken != null && !appAccountToken.isEmpty() ? appAccountToken : null;
         boolean isConsumable = call.getBoolean("isConsumable", false);
         boolean autoAcknowledgePurchases = call.getBoolean("autoAcknowledgePurchases", true);
+        // Subscription replacement (upgrade / downgrade): the purchase being replaced and how to replace it.
+        final String oldPurchaseToken = call.getString("oldPurchaseToken");
+        final String oldProductIdentifier = call.getString("oldProductIdentifier");
+        final String replacementModeName = call.getString("replacementMode");
+        final boolean isReplacement = oldPurchaseToken != null && !oldPurchaseToken.isEmpty();
+        final int replacementMode = isReplacement
+            ? SubscriptionReplacementModes.fromName(replacementModeName)
+            : SubscriptionReplacementModes.UNKNOWN;
 
         NativePurchasesLog.d(TAG, "Product identifier: " + productIdentifier);
         NativePurchasesLog.d(TAG, "Plan identifier: " + planIdentifier);
@@ -763,6 +780,20 @@ public class NativePurchasesPlugin extends Plugin {
         if (isConsumable && productType.equals("subs")) {
             NativePurchasesLog.d(TAG, "isConsumable is not supported for subscriptions, ignoring flag");
             isConsumable = false;
+        }
+        if (isReplacement) {
+            if (!productType.equals("subs")) {
+                call.reject("oldPurchaseToken is only supported for subscriptions");
+                return;
+            }
+            if (oldProductIdentifier == null || oldProductIdentifier.isEmpty()) {
+                call.reject("oldProductIdentifier cannot be empty when oldPurchaseToken is set");
+                return;
+            }
+            if (replacementMode == SubscriptionReplacementModes.UNKNOWN) {
+                call.reject("Unknown replacementMode: " + replacementModeName);
+                return;
+            }
         }
 
         call.getData().put("isConsumable", isConsumable);
@@ -836,6 +867,15 @@ public class NativePurchasesPlugin extends Plugin {
                                     TAG,
                                     "Set offer token: " + NativePurchasesLog.redactSensitive(selectedOfferDetails.getOfferToken())
                                 );
+                                if (isReplacement) {
+                                    // Item-level replacement (preferred since Play Billing 8.1).
+                                    productDetailsParams.setSubscriptionProductReplacementParams(
+                                        BillingFlowParams.ProductDetailsParams.SubscriptionProductReplacementParams.newBuilder()
+                                            .setOldProductId(oldProductIdentifier)
+                                            .setReplacementMode(replacementMode)
+                                            .build()
+                                    );
+                                }
                             } else if (productType.equals("inapp")) {
                                 NativePurchasesLog.d(TAG, "Processing in-app product");
                                 List<ProductDetails.OneTimePurchaseOfferDetails> oneTimeOffers =
@@ -875,6 +915,11 @@ public class NativePurchasesPlugin extends Plugin {
                         );
                         if (accountIdentifier != null && !accountIdentifier.isEmpty()) {
                             billingFlowBuilder.setObfuscatedAccountId(accountIdentifier);
+                        }
+                        if (isReplacement) {
+                            billingFlowBuilder.setSubscriptionUpdateParams(
+                                BillingFlowParams.SubscriptionUpdateParams.newBuilder().setOldPurchaseToken(oldPurchaseToken).build()
+                            );
                         }
                         BillingFlowParams billingFlowParams = billingFlowBuilder.build();
                         // Launch the billing flow

@@ -1751,6 +1751,7 @@ After validation when automatic acknowledgment is off (for example `configure({ 
 * [`getAppTransaction()`](#getapptransaction)
 * [`isEntitledToOldBusinessModel(...)`](#isentitledtooldbusinessmodel)
 * [`purchaseProduct(...)`](#purchaseproduct)
+* [`isSubscriptionReplacementSupported()`](#issubscriptionreplacementsupported)
 * [`getProducts(...)`](#getproducts)
 * [`getProduct(...)`](#getproduct)
 * [`isBillingSupported()`](#isbillingsupported)
@@ -1883,16 +1884,34 @@ to determine if they should be grandfathered into free features.
 ### purchaseProduct(...)
 
 ```typescript
-purchaseProduct(options: { productIdentifier: string; planIdentifier?: string; offerToken?: string; productType?: PURCHASE_TYPE; quantity?: number; billingPlanType?: 'monthly' | 'upFront'; appAccountToken?: string; isConsumable?: boolean; autoAcknowledgePurchases?: boolean; }) => Promise<Transaction>
+purchaseProduct(options: { productIdentifier: string; planIdentifier?: string; offerToken?: string; productType?: PURCHASE_TYPE; quantity?: number; billingPlanType?: 'monthly' | 'upFront'; appAccountToken?: string; isConsumable?: boolean; autoAcknowledgePurchases?: boolean; oldPurchaseToken?: string; oldProductIdentifier?: string; replacementMode?: SubscriptionReplacementMode; }) => Promise<Transaction>
 ```
 
 Started purchase process for the given product.
 
-| Param         | Type                                                                                                                                                                                                                                                                                                   | Description               |
-| ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------- |
-| **`options`** | <code>{ productIdentifier: string; planIdentifier?: string; offerToken?: string; productType?: <a href="#purchase_type">PURCHASE_TYPE</a>; quantity?: number; billingPlanType?: 'upFront' \| 'monthly'; appAccountToken?: string; isConsumable?: boolean; autoAcknowledgePurchases?: boolean; }</code> | - The product to purchase |
+| Param         | Type                                                                                                                                                                                                                                                                                                                                                                                                                                                       | Description               |
+| ------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------- |
+| **`options`** | <code>{ productIdentifier: string; planIdentifier?: string; offerToken?: string; productType?: <a href="#purchase_type">PURCHASE_TYPE</a>; quantity?: number; billingPlanType?: 'upFront' \| 'monthly'; appAccountToken?: string; isConsumable?: boolean; autoAcknowledgePurchases?: boolean; oldPurchaseToken?: string; oldProductIdentifier?: string; replacementMode?: <a href="#subscriptionreplacementmode">SubscriptionReplacementMode</a>; }</code> | - The product to purchase |
 
 **Returns:** <code>Promise&lt;<a href="#transaction">Transaction</a>&gt;</code>
+
+--------------------
+
+
+### isSubscriptionReplacementSupported()
+
+```typescript
+isSubscriptionReplacementSupported() => Promise<{ supported: boolean; }>
+```
+
+Whether this native build can replace a subscription (`oldPurchaseToken` / `replacementMode` in `purchaseProduct()`).
+
+Use it before an upgrade / downgrade: a native build without this feature ignores the replacement options,
+so the purchase would become a second subscription instead of replacing the current one.
+
+**Returns:** <code>Promise&lt;{ supported: boolean; }&gt;</code>
+
+**Since:** 8.10.0
 
 --------------------
 
@@ -2436,6 +2455,22 @@ Android one-time product discount display metadata.
 #### SubscriptionBillingPlanType
 
 <code>'upFront' | 'monthly' | 'unknown'</code>
+
+
+#### SubscriptionReplacementMode
+
+How Google Play replaces an active subscription when `purchaseProduct()` is called with `oldPurchaseToken`
+(Android only). Passed by name and mapped natively to Play Billing's item-level `ReplacementMode` constants
+(the numeric `PRORATION_MODE` values above do not match them).
+
+- `WITH_TIME_PRORATION`: replace now; the remaining time is credited by moving the next billing date.
+- `CHARGE_PRORATED_PRICE`: replace now and charge the price difference for the rest of the current period
+  (upgrades only, where the price per unit of time increases).
+- `WITHOUT_PRORATION`: replace now; the new price is charged at the next renewal.
+- `CHARGE_FULL_PRICE`: replace now and charge the full price of the new plan.
+- `DEFERRED`: replace at the next renewal.
+
+<code>'WITH_TIME_PRORATION' | 'CHARGE_PRORATED_PRICE' | 'WITHOUT_PRORATION' | 'CHARGE_FULL_PRICE' | 'DEFERRED'</code>
 
 
 ### Enums

@@ -23,7 +23,8 @@ public class NativePurchasesPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "getStorefront", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "configure", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "getUnfinishedTransactions", returnType: CAPPluginReturnPromise),
-        CAPPluginMethod(name: "finishTransaction", returnType: CAPPluginReturnPromise)
+        CAPPluginMethod(name: "finishTransaction", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "isSubscriptionReplacementSupported", returnType: CAPPluginReturnPromise)
     ]
 
     private let pluginVersion: String = "8.9.6"
@@ -86,6 +87,12 @@ public class NativePurchasesPlugin: CAPPlugin, CAPBridgedPlugin {
 
     @objc func isBillingSupported(_ call: CAPPluginCall) {
         call.resolve(["isBillingSupported": true])
+    }
+
+    @objc func isSubscriptionReplacementSupported(_ call: CAPPluginCall) {
+        // StoreKit replaces a subscription when another product of the same subscription group is purchased;
+        // oldPurchaseToken / replacementMode are Android-only.
+        call.resolve(["supported": false])
     }
 
     @objc func getStorefront(_ call: CAPPluginCall) {
