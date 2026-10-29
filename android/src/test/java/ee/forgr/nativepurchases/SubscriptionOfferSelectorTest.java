@@ -88,6 +88,27 @@ public class SubscriptionOfferSelectorTest {
         assertEquals(0, SubscriptionOfferSelector.selectIndex(offers, "monthly", null));
     }
 
+    /**
+     * Play's getters are not annotated non-null, and the code this replaced
+     * read {@code offerDetails.getBasePlanId().equals(planIdentifier)} —
+     * which throws on an offer the store returned without a base plan id.
+     * The caller's argument goes on the left for that reason, so both
+     * orders are pinned here: reverse either comparison and these fail.
+     */
+    @Test
+    public void selectSkipsAnOfferWithNoBasePlanId() {
+        List<Offer> offers = offers(offer(null, "token-a"), offer("monthly", "token-b"));
+
+        assertEquals(1, SubscriptionOfferSelector.selectIndex(offers, "monthly", null));
+    }
+
+    @Test
+    public void selectSkipsAnOfferWithNoOfferToken() {
+        List<Offer> offers = offers(offer("monthly", null), offer("monthly", "token-b"));
+
+        assertEquals(1, SubscriptionOfferSelector.selectIndex(offers, "monthly", "token-b"));
+    }
+
     @Test
     public void selectHandlesAnEmptyOfferList() {
         assertEquals(SubscriptionOfferSelector.NOT_FOUND, SubscriptionOfferSelector.selectIndex(new ArrayList<>(), "monthly", null));

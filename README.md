@@ -210,7 +210,7 @@ class PurchaseManager {
   // In-app product (one-time purchase)
   private premiumProductId = 'com.yourapp.premium_features';
   
-  // Subscription products (require planIdentifier on Android)
+  // Subscription products (Android: planIdentifier, or the separate offerToken option)
   private monthlySubId = 'com.yourapp.premium.monthly';
   private monthlyPlanId = 'monthly-plan';  // Base plan ID from Google Play Console (Android only)
 
@@ -549,7 +549,7 @@ const buyInAppProduct = async () => {
   }
 };
 
-// Simple subscription purchase (requires planIdentifier)
+// Simple subscription purchase (Android: planIdentifier, or the separate offerToken option)
 const buySubscription = async () => {
   try {
     // Check billing support
@@ -1409,7 +1409,7 @@ class Store {
     }
   }
 
-  // Purchase subscription (requires planIdentifier)
+  // Purchase subscription (Android: planIdentifier, or the separate offerToken option)
   async purchaseSubscription(productId: string, planId: string) {
     try {
       const transaction = await NativePurchases.purchaseProduct({
@@ -1487,7 +1487,7 @@ try {
   await store.purchaseProduct('premium_features');
   console.log('In-app purchase completed successfully');
   
-  // Purchase subscription (requires planIdentifier)
+  // Purchase subscription (Android: planIdentifier, or the separate offerToken option)
   await store.purchaseSubscription('premium_monthly', 'monthly-plan');
   console.log('Subscription completed successfully');
 } catch (error) {
