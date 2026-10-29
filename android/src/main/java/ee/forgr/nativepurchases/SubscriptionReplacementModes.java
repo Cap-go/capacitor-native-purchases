@@ -18,6 +18,35 @@ final class SubscriptionReplacementModes {
 
     private SubscriptionReplacementModes() {}
 
+    /**
+     * Returns {@code null} when the replacement options are consistent, otherwise the message to reject the call with.
+     *
+     * <p>A partial request ({@code oldProductIdentifier} or {@code replacementMode} without {@code oldPurchaseToken}) is
+     * rejected instead of being treated as a normal purchase, which would create a second subscription.
+     */
+    static String validationError(String productType, String oldPurchaseToken, String oldProductIdentifier, String replacementModeName) {
+        boolean hasToken = isSet(oldPurchaseToken);
+        if (!hasToken) {
+            return isSet(oldProductIdentifier) || isSet(replacementModeName)
+                ? "oldPurchaseToken is required when oldProductIdentifier or replacementMode is set"
+                : null;
+        }
+        if (!"subs".equals(productType)) {
+            return "oldPurchaseToken is only supported for subscriptions";
+        }
+        if (!isSet(oldProductIdentifier)) {
+            return "oldProductIdentifier cannot be empty when oldPurchaseToken is set";
+        }
+        if (fromName(replacementModeName) == UNKNOWN) {
+            return "Unknown replacementMode: " + replacementModeName;
+        }
+        return null;
+    }
+
+    private static boolean isSet(String value) {
+        return value != null && !value.isEmpty();
+    }
+
     static int fromName(String name) {
         if (name == null) {
             return UNKNOWN;

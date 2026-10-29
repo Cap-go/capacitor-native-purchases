@@ -83,8 +83,8 @@ export enum PRORATION_MODE {
 
 /**
  * How Google Play replaces an active subscription when `purchaseProduct()` is called with `oldPurchaseToken`
- * (Android only). Passed by name and mapped natively to Play Billing's item-level `ReplacementMode` constants
- * (the numeric `PRORATION_MODE` values above do not match them).
+ * (Android only). Passed by name and mapped natively to Play Billing's item-level `ReplacementMode` constants.
+ * Do not pass numeric `PRORATION_MODE` values; use these names.
  *
  * - `WITH_TIME_PRORATION`: replace now; the remaining time is credited by moving the next billing date.
  * - `CHARGE_PRORATED_PRICE`: replace now and charge the price difference for the rest of the current period
@@ -1181,6 +1181,10 @@ export interface NativePurchasesPlugin {
   /**
    * Started purchase process for the given product.
    *
+   * **Upgrade / downgrade a subscription (Android):** pass `oldPurchaseToken`, `oldProductIdentifier` and
+   * `replacementMode` together, with `productType: PURCHASE_TYPE.SUBS`. Partial replacement options are rejected.
+   * On iOS, purchase the other product of the same subscription group instead (StoreKit handles the change).
+   *
    * @param options - The product to purchase
    * @param options.productIdentifier - The product identifier of the product you want to purchase.
    * @param options.productType - Only Android, the type of product, can be inapp or subs. Will use inapp by default.
@@ -1230,6 +1234,7 @@ export interface NativePurchasesPlugin {
    *
    * Use it before an upgrade / downgrade: a native build without this feature ignores the replacement options,
    * so the purchase would become a second subscription instead of replacing the current one.
+   * On native builds that predate this method the call rejects (not implemented): treat a rejection as not supported.
    *
    * @returns `supported: true` on Android builds that support replacement; `false` on iOS (StoreKit replaces
    *          within a subscription group automatically) and on web.
@@ -1239,7 +1244,13 @@ export interface NativePurchasesPlugin {
    *
    * @example
    * ```typescript
-   * const { supported } = await NativePurchases.isSubscriptionReplacementSupported();
+   * // Android. On iOS, purchase the other product of the same subscription group instead.
+   * let supported = false;
+   * try {
+   *   ({ supported } = await NativePurchases.isSubscriptionReplacementSupported());
+   * } catch {
+   *   // The native build predates this method: treat it as not supported.
+   * }
    * const { purchases } = await NativePurchases.getPurchases({ productType: PURCHASE_TYPE.SUBS });
    * const current = purchases.find((p) => p.productIdentifier === 'basic');
    * if (supported && current?.purchaseToken) {

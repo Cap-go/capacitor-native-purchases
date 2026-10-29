@@ -1889,6 +1889,10 @@ purchaseProduct(options: { productIdentifier: string; planIdentifier?: string; o
 
 Started purchase process for the given product.
 
+**Upgrade / downgrade a subscription (Android):** pass `oldPurchaseToken`, `oldProductIdentifier` and
+`replacementMode` together, with `productType: <a href="#purchase_type">PURCHASE_TYPE.SUBS`</a>. Partial replacement options are rejected.
+On iOS, purchase the other product of the same subscription group instead (StoreKit handles the change).
+
 | Param         | Type                                                                                                                                                                                                                                                                                                                                                                                                                                                       | Description               |
 | ------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------- |
 | **`options`** | <code>{ productIdentifier: string; planIdentifier?: string; offerToken?: string; productType?: <a href="#purchase_type">PURCHASE_TYPE</a>; quantity?: number; billingPlanType?: 'upFront' \| 'monthly'; appAccountToken?: string; isConsumable?: boolean; autoAcknowledgePurchases?: boolean; oldPurchaseToken?: string; oldProductIdentifier?: string; replacementMode?: <a href="#subscriptionreplacementmode">SubscriptionReplacementMode</a>; }</code> | - The product to purchase |
@@ -1908,6 +1912,7 @@ Whether this native build can replace a subscription (`oldPurchaseToken` / `repl
 
 Use it before an upgrade / downgrade: a native build without this feature ignores the replacement options,
 so the purchase would become a second subscription instead of replacing the current one.
+On native builds that predate this method the call rejects (not implemented): treat a rejection as not supported.
 
 **Returns:** <code>Promise&lt;{ supported: boolean; }&gt;</code>
 
@@ -2460,8 +2465,8 @@ Android one-time product discount display metadata.
 #### SubscriptionReplacementMode
 
 How Google Play replaces an active subscription when `purchaseProduct()` is called with `oldPurchaseToken`
-(Android only). Passed by name and mapped natively to Play Billing's item-level `ReplacementMode` constants
-(the numeric `PRORATION_MODE` values above do not match them).
+(Android only). Passed by name and mapped natively to Play Billing's item-level `ReplacementMode` constants.
+Do not pass numeric `PRORATION_MODE` values; use these names.
 
 - `WITH_TIME_PRORATION`: replace now; the remaining time is credited by moving the next billing date.
 - `CHARGE_PRORATED_PRICE`: replace now and charge the price difference for the rest of the current period

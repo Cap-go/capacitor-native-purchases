@@ -781,19 +781,15 @@ public class NativePurchasesPlugin extends Plugin {
             NativePurchasesLog.d(TAG, "isConsumable is not supported for subscriptions, ignoring flag");
             isConsumable = false;
         }
-        if (isReplacement) {
-            if (!productType.equals("subs")) {
-                call.reject("oldPurchaseToken is only supported for subscriptions");
-                return;
-            }
-            if (oldProductIdentifier == null || oldProductIdentifier.isEmpty()) {
-                call.reject("oldProductIdentifier cannot be empty when oldPurchaseToken is set");
-                return;
-            }
-            if (replacementMode == SubscriptionReplacementModes.UNKNOWN) {
-                call.reject("Unknown replacementMode: " + replacementModeName);
-                return;
-            }
+        String replacementError = SubscriptionReplacementModes.validationError(
+            productType,
+            oldPurchaseToken,
+            oldProductIdentifier,
+            replacementModeName
+        );
+        if (replacementError != null) {
+            call.reject(replacementError);
+            return;
         }
 
         call.getData().put("isConsumable", isConsumable);
@@ -857,6 +853,13 @@ public class NativePurchasesPlugin extends Plugin {
                                         NativePurchasesLog.d(TAG, "Found matching plan: " + planIdentifier);
                                         break;
                                     }
+                                }
+                                if (selectedOfferDetails == null && isReplacement) {
+                                    // Falling back to another base plan would replace the subscription with a plan the
+                                    // caller did not choose, and Play would charge for it.
+                                    closeBillingClient();
+                                    call.reject("planIdentifier not found for subscription replacement: " + planIdentifier);
+                                    return;
                                 }
                                 if (selectedOfferDetails == null) {
                                     selectedOfferDetails = productDetailsItem.getSubscriptionOfferDetails().get(0);
@@ -930,6 +933,14 @@ public class NativePurchasesPlugin extends Plugin {
                             "Billing flow launch result: " + billingResult2.getResponseCode() + " - " + billingResult2.getDebugMessage()
                         );
                         NativePurchasesLog.i(NativePurchasesPlugin.TAG, "onProductDetailsResponse2" + billingResult2);
+                        if (billingResult2.getResponseCode() != BillingClient.BillingResponseCode.OK) {
+                            // The purchase screen was not shown; reject so the call does not stay pending.
+                            closeBillingClient();
+                            call.reject(
+                                "Billing flow could not be launched: " + billingResult2.getDebugMessage(),
+                                billingResponseCodeName(billingResult2.getResponseCode())
+                            );
+                        }
                     }
                 }
             );
