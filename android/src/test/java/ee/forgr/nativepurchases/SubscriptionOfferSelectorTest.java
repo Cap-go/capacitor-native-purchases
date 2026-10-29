@@ -1,6 +1,7 @@
 package ee.forgr.nativepurchases;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 import ee.forgr.nativepurchases.SubscriptionOfferSelector.Offer;
@@ -122,6 +123,26 @@ public class SubscriptionOfferSelectorTest {
     @Test
     public void adaptHandlesANullList() {
         assertTrue(SubscriptionOfferSelector.adapt(null).isEmpty());
+    }
+
+    @Test
+    public void canSelectWithOnlyAnOfferToken() {
+        assertTrue(SubscriptionOfferSelector.canSelect(null, "token-intro"));
+    }
+
+    @Test
+    public void canSelectWithOnlyAPlanIdentifier() {
+        assertTrue(SubscriptionOfferSelector.canSelect("monthly", null));
+    }
+
+    @Test
+    public void cannotSelectWhenNeitherIsGiven() {
+        assertFalse(SubscriptionOfferSelector.canSelect(null, null));
+    }
+
+    @Test
+    public void cannotSelectWhenBothAreEmpty() {
+        assertFalse(SubscriptionOfferSelector.canSelect("", ""));
     }
 
     private static List<Offer> offers(Offer... values) {

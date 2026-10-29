@@ -62,7 +62,7 @@ public final class SubscriptionOfferSelector {
             return NOT_FOUND;
         }
 
-        if (offerToken != null && !offerToken.isEmpty()) {
+        if (isPresent(offerToken)) {
             for (int i = 0; i < offers.size(); i++) {
                 if (offerToken.equals(offers.get(i).getOfferToken())) {
                     return i;
@@ -71,7 +71,7 @@ public final class SubscriptionOfferSelector {
             return NOT_FOUND;
         }
 
-        if (planIdentifier != null && !planIdentifier.isEmpty()) {
+        if (isPresent(planIdentifier)) {
             for (int i = 0; i < offers.size(); i++) {
                 if (planIdentifier.equals(offers.get(i).getBasePlanId())) {
                     return i;
@@ -80,6 +80,27 @@ public final class SubscriptionOfferSelector {
         }
 
         return 0;
+    }
+
+    /**
+     * Whether a subscription purchase named an offer at all.
+     *
+     * Either value is enough on its own: an {@code offerToken} names one
+     * specific offer, and a {@code planIdentifier} names the base plan whose
+     * first offer {@link #selectIndex} then takes. Only when both are absent
+     * has the caller said nothing to go on, and such a purchase is rejected
+     * rather than charged whichever offer the store happened to return first.
+     *
+     * Saying something is not the same as saying something that matches: a
+     * {@code planIdentifier} matching no base plan still falls back to the
+     * first offer, as it did before this was checked.
+     */
+    static boolean canSelect(String planIdentifier, String offerToken) {
+        return isPresent(offerToken) || isPresent(planIdentifier);
+    }
+
+    private static boolean isPresent(String value) {
+        return value != null && !value.isEmpty();
     }
 
     /** Adapt Play's own offer details to {@link Offer}. */

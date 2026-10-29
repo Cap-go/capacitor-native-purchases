@@ -761,13 +761,10 @@ public class NativePurchasesPlugin extends Plugin {
             return;
         }
         boolean hasOfferToken = offerToken != null && !offerToken.isEmpty();
-        if (productType.equals("subs") && !hasOfferToken && (planIdentifier == null || planIdentifier.isEmpty())) {
-            // Neither value was given, so the caller named no offer at all. An
-            // offerToken identifies one on its own, which is why it is accepted
-            // without a planIdentifier: requiring both would reject a fully
-            // specified purchase. This catches only "said nothing" — a
-            // planIdentifier matching no base plan still falls back to the
-            // first offer, as it did before.
+        if (productType.equals("subs") && !SubscriptionOfferSelector.canSelect(planIdentifier, offerToken)) {
+            // The caller named no offer at all. SubscriptionOfferSelector owns
+            // this rule: see canSelect for why either value alone is enough,
+            // and for what it deliberately does not catch.
             NativePurchasesLog.d(TAG, "Error: planIdentifier cannot be empty if productType is subs");
             call.reject("planIdentifier cannot be empty if productType is subs unless offerToken is provided");
             return;

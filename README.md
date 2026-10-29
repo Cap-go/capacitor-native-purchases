@@ -1910,11 +1910,13 @@ For a **one-time product** (`productType: 'inapp'`) there is no base
 plan, so `planIdentifier` plays no part, and an `offerToken` selects one
 of the product's purchase offers. Without a token no offer token is set
 at all whenever the product still has a backward-compatible purchase
-option, which leaves the choice to Play: that is the first *created* buy
-purchase option, which need not be the first offer `getProducts()`
-returned. Only for a product with no backward-compatible option does the
-first offer in the list get used. So pass the token whenever a specific
-one-time offer matters.
+option, which leaves the choice to Play: it charges whichever buy
+purchase option is marked backward-compatible, which is the first
+*created* one by default and another only if one was marked
+`legacyCompatible`. Either way it need not be the first offer
+`getProducts()` returned. Only for a product with no backward-compatible
+option does the first offer in the list get used. So pass the token
+whenever a specific one-time offer matters.
 
 | Param         | Type                                                                                                                                                                                                                                                                                                   | Description               |
 | ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------- |
