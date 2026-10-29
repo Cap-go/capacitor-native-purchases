@@ -1,12 +1,9 @@
 package ee.forgr.nativepurchases;
 
 import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
 import ee.forgr.nativepurchases.SubscriptionOfferSelector.Offer;
-import ee.forgr.nativepurchases.SubscriptionOfferSelector.Selection;
 import java.util.ArrayList;
 import java.util.List;
 import org.junit.Test;
@@ -17,57 +14,42 @@ public class SubscriptionOfferSelectorTest {
     public void selectPrefersAnExplicitOfferToken() {
         List<Offer> offers = offers(offer("monthly", "token-base"), offer("monthly", "token-intro"));
 
-        Selection selection = SubscriptionOfferSelector.select(offers, "monthly", "token-intro");
-
-        assertFalse(selection.isOfferTokenNotFound());
-        assertEquals("token-intro", selection.offer().getOfferToken());
+        assertEquals(1, SubscriptionOfferSelector.selectIndex(offers, "monthly", "token-intro"));
     }
 
     @Test
     public void selectPrefersTheOfferTokenOverThePlanIdentifier() {
         List<Offer> offers = offers(offer("monthly", "token-monthly"), offer("yearly", "token-yearly"));
 
-        Selection selection = SubscriptionOfferSelector.select(offers, "monthly", "token-yearly");
-
-        assertEquals("token-yearly", selection.offer().getOfferToken());
+        assertEquals(1, SubscriptionOfferSelector.selectIndex(offers, "monthly", "token-yearly"));
     }
 
     @Test
     public void selectReportsAnOfferTokenThatMatchesNothing() {
         List<Offer> offers = offers(offer("monthly", "token-base"));
 
-        Selection selection = SubscriptionOfferSelector.select(offers, "monthly", "token-stale");
-
-        assertTrue(selection.isOfferTokenNotFound());
-        assertNull(selection.offer());
+        assertEquals(SubscriptionOfferSelector.NOT_FOUND, SubscriptionOfferSelector.selectIndex(offers, "monthly", "token-stale"));
     }
 
     @Test
     public void selectFallsBackToThePlanIdentifierWhenNoOfferTokenIsGiven() {
         List<Offer> offers = offers(offer("monthly", "token-monthly"), offer("yearly", "token-yearly"));
 
-        Selection selection = SubscriptionOfferSelector.select(offers, "yearly", null);
-
-        assertEquals("token-yearly", selection.offer().getOfferToken());
+        assertEquals(1, SubscriptionOfferSelector.selectIndex(offers, "yearly", null));
     }
 
     @Test
     public void selectTreatsAnEmptyOfferTokenAsAbsent() {
         List<Offer> offers = offers(offer("monthly", "token-monthly"), offer("yearly", "token-yearly"));
 
-        Selection selection = SubscriptionOfferSelector.select(offers, "yearly", "");
-
-        assertFalse(selection.isOfferTokenNotFound());
-        assertEquals("token-yearly", selection.offer().getOfferToken());
+        assertEquals(1, SubscriptionOfferSelector.selectIndex(offers, "yearly", ""));
     }
 
     @Test
     public void selectFallsBackToTheFirstOfferWhenThePlanIdentifierMatchesNothing() {
         List<Offer> offers = offers(offer("monthly", "token-monthly"), offer("yearly", "token-yearly"));
 
-        Selection selection = SubscriptionOfferSelector.select(offers, "quarterly", null);
-
-        assertEquals("token-monthly", selection.offer().getOfferToken());
+        assertEquals(0, SubscriptionOfferSelector.selectIndex(offers, "quarterly", null));
     }
 
     @Test
@@ -76,59 +58,44 @@ public class SubscriptionOfferSelectorTest {
 
         // A token identifies one offer on its own, which is why the plugin no
         // longer demands a planIdentifier alongside it for a subscription.
-        Selection selection = SubscriptionOfferSelector.select(offers, null, "token-yearly");
-
-        assertFalse(selection.isOfferTokenNotFound());
-        assertEquals("token-yearly", selection.offer().getOfferToken());
+        assertEquals(1, SubscriptionOfferSelector.selectIndex(offers, null, "token-yearly"));
     }
 
     @Test
     public void selectReportsAnUnknownOfferTokenEvenWithNoPlanIdentifier() {
         List<Offer> offers = offers(offer("monthly", "token-monthly"));
 
-        Selection selection = SubscriptionOfferSelector.select(offers, null, "token-stale");
-
-        assertTrue(selection.isOfferTokenNotFound());
-        assertNull(selection.offer());
+        // The other half of accepting a token without a planIdentifier: a
+        // stale token must not fall through to the first-offer default.
+        assertEquals(SubscriptionOfferSelector.NOT_FOUND, SubscriptionOfferSelector.selectIndex(offers, null, "token-stale"));
     }
 
     @Test
     public void selectFallsBackToTheFirstOfferWhenNoPlanIdentifierIsGiven() {
         List<Offer> offers = offers(offer("monthly", "token-monthly"), offer("yearly", "token-yearly"));
 
-        Selection selection = SubscriptionOfferSelector.select(offers, null, null);
-
-        assertEquals("token-monthly", selection.offer().getOfferToken());
+        assertEquals(0, SubscriptionOfferSelector.selectIndex(offers, null, null));
     }
 
     @Test
-    public void selectKeepsTheExistingBehaviourForABasePlanWithNoOffer() {
-        List<Offer> offers = offers(offer("monthly", "token-monthly"));
+    public void selectByPlanIdentifierTakesTheFirstOfTwoEntriesOnOnePlan() {
+        // The ambiguity this class exists for: one base plan carrying an offer
+        // is two entries with the same basePlanId, so selecting by plan alone
+        // is decided by the store's order. Pinned, because it is the previous
+        // behaviour and an offerToken is the only way to override it.
+        List<Offer> offers = offers(offer("monthly", "token-base"), offer("monthly", "token-intro"));
 
-        Selection selection = SubscriptionOfferSelector.select(offers, "monthly", null);
-
-        assertEquals("token-monthly", selection.offer().getOfferToken());
+        assertEquals(0, SubscriptionOfferSelector.selectIndex(offers, "monthly", null));
     }
 
     @Test
     public void selectHandlesAnEmptyOfferList() {
-        Selection selection = SubscriptionOfferSelector.select(new ArrayList<>(), "monthly", null);
-
-        assertFalse(selection.isOfferTokenNotFound());
-        assertNull(selection.offer());
+        assertEquals(SubscriptionOfferSelector.NOT_FOUND, SubscriptionOfferSelector.selectIndex(new ArrayList<>(), "monthly", null));
     }
 
     @Test
     public void selectHandlesANullOfferList() {
-        Selection selection = SubscriptionOfferSelector.select(null, "monthly", "token");
-
-        assertFalse(selection.isOfferTokenNotFound());
-        assertNull(selection.offer());
-    }
-
-    @Test
-    public void unwrapReturnsNullForAnOfferItDidNotAdapt() {
-        assertNull(SubscriptionOfferSelector.unwrap(offer("monthly", "token")));
+        assertEquals(SubscriptionOfferSelector.NOT_FOUND, SubscriptionOfferSelector.selectIndex(null, "monthly", "token"));
     }
 
     @Test

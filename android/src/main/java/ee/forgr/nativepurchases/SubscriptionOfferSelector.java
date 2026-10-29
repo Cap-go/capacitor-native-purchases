@@ -29,10 +29,16 @@ import java.util.List;
  * This mirrors how the one-time purchase path already treats an unknown
  * token.
  *
- * Extracted from the plugin so the choice is unit-testable without real
- * Billing objects, the same way {@link PurchaseActionDecider} is.
+ * An index is returned rather than an offer, so the caller indexes back into
+ * Play's own list. The {@link Offer} seam exists only so the choice can be
+ * unit-tested without constructing Billing objects, the same way
+ * {@link PurchaseActionDecider} can be; handing the wrapper back would make
+ * the caller unwrap to reach something it already holds.
  */
 public final class SubscriptionOfferSelector {
+
+    /** No offer to use — see {@link #selectIndex}. */
+    static final int NOT_FOUND = -1;
 
     private SubscriptionOfferSelector() {}
 
@@ -43,79 +49,49 @@ public final class SubscriptionOfferSelector {
         String getOfferToken();
     }
 
-    /** Either the chosen offer, or the reason there is none. */
-    static final class Selection {
-
-        private final Offer offer;
-        private final boolean offerTokenNotFound;
-
-        private Selection(Offer offer, boolean offerTokenNotFound) {
-            this.offer = offer;
-            this.offerTokenNotFound = offerTokenNotFound;
-        }
-
-        static Selection of(Offer offer) {
-            return new Selection(offer, false);
-        }
-
-        static Selection offerTokenNotFound() {
-            return new Selection(null, true);
-        }
-
-        static Selection none() {
-            return new Selection(null, false);
-        }
-
-        Offer offer() {
-            return offer;
-        }
-
-        /** True when an explicit offerToken was given and matched nothing. */
-        boolean isOfferTokenNotFound() {
-            return offerTokenNotFound;
-        }
-    }
-
-    static Selection select(List<Offer> offers, String planIdentifier, String offerToken) {
+    /**
+     * The index of the offer to purchase, or {@link #NOT_FOUND}.
+     *
+     * {@code NOT_FOUND} means either that there was nothing to choose from,
+     * or that an explicit {@code offerToken} matched none of the offers. The
+     * caller tells those apart by checking the list before calling, because
+     * it is the one that can name the product that had no offers.
+     */
+    static int selectIndex(List<Offer> offers, String planIdentifier, String offerToken) {
         if (offers == null || offers.isEmpty()) {
-            return Selection.none();
+            return NOT_FOUND;
         }
 
         if (offerToken != null && !offerToken.isEmpty()) {
-            for (Offer offer : offers) {
-                if (offerToken.equals(offer.getOfferToken())) {
-                    return Selection.of(offer);
+            for (int i = 0; i < offers.size(); i++) {
+                if (offerToken.equals(offers.get(i).getOfferToken())) {
+                    return i;
                 }
             }
-            return Selection.offerTokenNotFound();
+            return NOT_FOUND;
         }
 
         if (planIdentifier != null && !planIdentifier.isEmpty()) {
-            for (Offer offer : offers) {
-                if (planIdentifier.equals(offer.getBasePlanId())) {
-                    return Selection.of(offer);
+            for (int i = 0; i < offers.size(); i++) {
+                if (planIdentifier.equals(offers.get(i).getBasePlanId())) {
+                    return i;
                 }
             }
         }
 
-        return Selection.of(offers.get(0));
+        return 0;
     }
 
     /** Adapt Play's own offer details to {@link Offer}. */
     static List<Offer> adapt(List<ProductDetails.SubscriptionOfferDetails> offerDetailsList) {
-        List<Offer> offers = new ArrayList<>();
         if (offerDetailsList == null) {
-            return offers;
+            return new ArrayList<>();
         }
+        List<Offer> offers = new ArrayList<>(offerDetailsList.size());
         for (ProductDetails.SubscriptionOfferDetails offerDetails : offerDetailsList) {
             offers.add(new SubscriptionOfferDetailsAdapter(offerDetails));
         }
         return offers;
-    }
-
-    /** The chosen {@link Offer} back as Play's own type. */
-    static ProductDetails.SubscriptionOfferDetails unwrap(Offer offer) {
-        return offer instanceof SubscriptionOfferDetailsAdapter ? ((SubscriptionOfferDetailsAdapter) offer).details : null;
     }
 
     private static final class SubscriptionOfferDetailsAdapter implements Offer {
