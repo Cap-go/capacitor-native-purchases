@@ -183,18 +183,21 @@ There are two types of purchases with different requirements:
 | Purchase Type | productType | planIdentifier | Use Case |
 |---------------|-------------|----------------|----------|
 | **In-App Purchase** | `PURCHASE_TYPE.INAPP` | ❌ Not needed | One-time purchases (premium features, remove ads, etc.) |
-| **Subscription** | `PURCHASE_TYPE.SUBS` | ✅ **REQUIRED (Android only)** | Recurring purchases (monthly/yearly subscriptions) |
+| **Subscription** | `PURCHASE_TYPE.SUBS` | ✅ **REQUIRED (Android only, unless you pass `offerToken`)** | Recurring purchases (monthly/yearly subscriptions) |
 
 **Key Rules:**
 - ✅ **In-App Products**: Use `productType: PURCHASE_TYPE.INAPP`, no `planIdentifier` needed on any platform
-- ✅ **Subscriptions on Android**: Must use `productType: PURCHASE_TYPE.SUBS` AND `planIdentifier: "your-plan-id"` (the Base Plan ID from Google Play Console)
+- ✅ **Subscriptions on Android**: Use `productType: PURCHASE_TYPE.SUBS` AND either `planIdentifier: "your-plan-id"` (the Base Plan ID from Google Play Console) or `offerToken` (one exact offer, read from `getProducts()`)
 - ✅ **Subscriptions on iOS**: Use `productType: PURCHASE_TYPE.SUBS`, `planIdentifier` is optional and ignored
-- ❌ **Missing planIdentifier** for Android subscriptions will cause purchase failures
+- ❌ **Missing both `planIdentifier` and `offerToken`** for Android subscriptions will cause purchase failures
 
 **About planIdentifier (Android-specific):**
-The `planIdentifier` parameter is **only required for Android subscriptions**. It should be set to the Base Plan ID that you configure in the Google Play Console when creating your subscription product. For example, if you create a monthly subscription with base plan ID "monthly-plan" in Google Play Console, you would use `planIdentifier: "monthly-plan"` when purchasing that subscription.
+The `planIdentifier` parameter is **only used for Android subscriptions**. It should be set to the Base Plan ID that you configure in the Google Play Console when creating your subscription product. For example, if you create a monthly subscription with base plan ID "monthly-plan" in Google Play Console, you would use `planIdentifier: "monthly-plan"` when purchasing that subscription. `getProducts()` reports that value as `Product.identifier` — not as `Product.planIdentifier`, which holds the Play product id.
 
 iOS does not use this parameter - subscriptions on iOS only require the product identifier.
+
+**About offerToken (Android-specific):**
+A base plan can carry several offers — a free trial, an introductory price — and `planIdentifier` names only the plan, leaving the choice of offer to the store. `offerToken` names one exact offer instead, which is why it makes `planIdentifier` unnecessary; when both are given, the token wins. Read it from the `offerToken` of the same `getProducts()` entry you purchase, because tokens belong to one product query and go stale, and note that a token matching no current offer is **rejected** rather than quietly charging a different price. [`purchaseProduct`](#purchaseproduct) documents the full order of precedence.
 
 ### Complete Example: Get Product Info and Purchase
 
@@ -299,14 +302,14 @@ class PurchaseManager {
     }
   }
 
-  // Purchase subscription (planIdentifier REQUIRED for Android)
+  // Purchase subscription (planIdentifier or offerToken on Android)
   async purchaseMonthlySubscription() {
     try {
       console.log('Starting subscription purchase...');
 
       const result = await NativePurchases.purchaseProduct({
         productIdentifier: this.monthlySubId,
-        planIdentifier: this.monthlyPlanId,    // REQUIRED for Android subscriptions, ignored on iOS
+        planIdentifier: this.monthlyPlanId,    // Android base plan id (or offerToken), ignored on iOS
         productType: PURCHASE_TYPE.SUBS,       // REQUIRED for subscriptions
         quantity: 1
       });
@@ -320,14 +323,14 @@ class PurchaseManager {
     }
   }
 
-  // Purchase yearly subscription (planIdentifier REQUIRED for Android)
+  // Purchase yearly subscription (planIdentifier or offerToken on Android)
   async purchaseYearlySubscription() {
     try {
       console.log('Starting yearly subscription purchase...');
 
       const result = await NativePurchases.purchaseProduct({
         productIdentifier: this.yearlySubId,
-        planIdentifier: this.yearlyPlanId,     // REQUIRED for Android subscriptions, ignored on iOS
+        planIdentifier: this.yearlyPlanId,     // Android base plan id (or offerToken), ignored on iOS
         productType: PURCHASE_TYPE.SUBS,       // REQUIRED for subscriptions
         quantity: 1
       });
@@ -566,10 +569,10 @@ const buySubscription = async () => {
     const confirmed = confirm(`Subscribe to ${product.title} for ${product.priceString}?`);
     if (!confirmed) return;
 
-    // Make subscription purchase (planIdentifier REQUIRED for Android, ignored on iOS)
+    // Make subscription purchase (planIdentifier or offerToken on Android, ignored on iOS)
     const result = await NativePurchases.purchaseProduct({
       productIdentifier: 'com.yourapp.premium.monthly',
-      planIdentifier: 'monthly-plan',           // REQUIRED for Android subscriptions, ignored on iOS
+      planIdentifier: 'monthly-plan',           // Android base plan id (or offerToken), ignored on iOS
       productType: PURCHASE_TYPE.SUBS,          // REQUIRED for subscriptions
       quantity: 1,
       appAccountToken: uuidToken                // Optional: User identifier in UUID format
@@ -1411,7 +1414,7 @@ class Store {
     try {
       const transaction = await NativePurchases.purchaseProduct({
         productIdentifier: productId,
-        planIdentifier: planId,              // REQUIRED for subscriptions
+        planIdentifier: planId,              // Android base plan id, or pass offerToken
         productType: PURCHASE_TYPE.SUBS      // REQUIRED for subscriptions
       });
       console.log('Subscription purchase successful:', transaction);
