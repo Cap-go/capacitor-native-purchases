@@ -1182,7 +1182,7 @@ export interface NativePurchasesPlugin {
    * Started purchase process for the given product.
    *
    * **Upgrade / downgrade a subscription (Android):** pass `oldPurchaseToken`, `oldProductIdentifier` and
-   * `replacementMode` together, with `productType: PURCHASE_TYPE.SUBS`. Partial replacement options are rejected.
+   * `replacementMode` together, with `productType` set to PURCHASE_TYPE.SUBS. Partial replacement options are rejected.
    * On iOS, purchase the other product of the same subscription group instead (StoreKit handles the change).
    *
    * @param options - The product to purchase
