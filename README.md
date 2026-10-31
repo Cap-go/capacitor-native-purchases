@@ -183,18 +183,21 @@ There are two types of purchases with different requirements:
 | Purchase Type | productType | planIdentifier | Use Case |
 |---------------|-------------|----------------|----------|
 | **In-App Purchase** | `PURCHASE_TYPE.INAPP` | ❌ Not needed | One-time purchases (premium features, remove ads, etc.) |
-| **Subscription** | `PURCHASE_TYPE.SUBS` | ✅ **REQUIRED (Android only)** | Recurring purchases (monthly/yearly subscriptions) |
+| **Subscription** | `PURCHASE_TYPE.SUBS` | ✅ **REQUIRED (Android only, unless you pass `offerToken`)** | Recurring purchases (monthly/yearly subscriptions) |
 
 **Key Rules:**
 - ✅ **In-App Products**: Use `productType: PURCHASE_TYPE.INAPP`, no `planIdentifier` needed on any platform
-- ✅ **Subscriptions on Android**: Must use `productType: PURCHASE_TYPE.SUBS` AND `planIdentifier: "your-plan-id"` (the Base Plan ID from Google Play Console)
+- ✅ **Subscriptions on Android**: Use `productType: PURCHASE_TYPE.SUBS` AND either `planIdentifier: "your-plan-id"` (the Base Plan ID from Google Play Console) or `offerToken` (one exact offer, read from `getProducts()`)
 - ✅ **Subscriptions on iOS**: Use `productType: PURCHASE_TYPE.SUBS`, `planIdentifier` is optional and ignored
-- ❌ **Missing planIdentifier** for Android subscriptions will cause purchase failures
+- ❌ **Missing both `planIdentifier` and `offerToken`** for Android subscriptions will cause purchase failures
 
 **About planIdentifier (Android-specific):**
-The `planIdentifier` parameter is **only required for Android subscriptions**. It should be set to the Base Plan ID that you configure in the Google Play Console when creating your subscription product. For example, if you create a monthly subscription with base plan ID "monthly-plan" in Google Play Console, you would use `planIdentifier: "monthly-plan"` when purchasing that subscription.
+The `planIdentifier` parameter is **only used for Android subscriptions**. It should be set to the Base Plan ID that you configure in the Google Play Console when creating your subscription product. For example, if you create a monthly subscription with base plan ID "monthly-plan" in Google Play Console, you would use `planIdentifier: "monthly-plan"` when purchasing that subscription. `getProducts()` reports that value as `Product.identifier`, not as `Product.planIdentifier`, which holds the Play product id.
 
 iOS does not use this parameter - subscriptions on iOS only require the product identifier.
+
+**About offerToken (Android-specific):**
+A base plan can carry several offers (a free trial, an introductory price), and `planIdentifier` names only the plan. The plugin then purchases the **first offer Play returned for that plan** and sets that offer's token, so which offer applies is decided by the order of the list rather than by your app, and the store does not pick one at purchase time. `offerToken` names one exact offer instead, which is why it makes `planIdentifier` unnecessary; when both are given, the token wins. Read it from the `offerToken` of the same `getProducts()` entry you purchase, because tokens belong to one product query and go stale, and note that a token matching no current offer is **rejected** rather than quietly charging a different price. Pass `offerToken` whenever a specific offer you displayed must be the one charged. [`purchaseProduct`](#purchaseproduct) documents the full order of precedence.
 
 ### Complete Example: Get Product Info and Purchase
 
@@ -207,7 +210,7 @@ class PurchaseManager {
   // In-app product (one-time purchase)
   private premiumProductId = 'com.yourapp.premium_features';
   
-  // Subscription products (require planIdentifier on Android)
+  // Subscription products (Android: planIdentifier, or the separate offerToken option)
   private monthlySubId = 'com.yourapp.premium.monthly';
   private monthlyPlanId = 'monthly-plan';  // Base plan ID from Google Play Console (Android only)
 
@@ -299,14 +302,14 @@ class PurchaseManager {
     }
   }
 
-  // Purchase subscription (planIdentifier REQUIRED for Android)
+  // Purchase subscription (Android: planIdentifier, or the separate offerToken option)
   async purchaseMonthlySubscription() {
     try {
       console.log('Starting subscription purchase...');
 
       const result = await NativePurchases.purchaseProduct({
         productIdentifier: this.monthlySubId,
-        planIdentifier: this.monthlyPlanId,    // REQUIRED for Android subscriptions, ignored on iOS
+        planIdentifier: this.monthlyPlanId,    // Android base plan id, not an offerToken; ignored on iOS
         productType: PURCHASE_TYPE.SUBS,       // REQUIRED for subscriptions
         quantity: 1
       });
@@ -320,14 +323,14 @@ class PurchaseManager {
     }
   }
 
-  // Purchase yearly subscription (planIdentifier REQUIRED for Android)
+  // Purchase yearly subscription (Android: planIdentifier, or the separate offerToken option)
   async purchaseYearlySubscription() {
     try {
       console.log('Starting yearly subscription purchase...');
 
       const result = await NativePurchases.purchaseProduct({
         productIdentifier: this.yearlySubId,
-        planIdentifier: this.yearlyPlanId,     // REQUIRED for Android subscriptions, ignored on iOS
+        planIdentifier: this.yearlyPlanId,     // Android base plan id, not an offerToken; ignored on iOS
         productType: PURCHASE_TYPE.SUBS,       // REQUIRED for subscriptions
         quantity: 1
       });
@@ -546,7 +549,7 @@ const buyInAppProduct = async () => {
   }
 };
 
-// Simple subscription purchase (requires planIdentifier)
+// Simple subscription purchase (Android: planIdentifier, or the separate offerToken option)
 const buySubscription = async () => {
   try {
     // Check billing support
@@ -566,10 +569,11 @@ const buySubscription = async () => {
     const confirmed = confirm(`Subscribe to ${product.title} for ${product.priceString}?`);
     if (!confirmed) return;
 
-    // Make subscription purchase (planIdentifier REQUIRED for Android, ignored on iOS)
+    // Purchase the same offer you displayed: reuse identifier and offerToken from getProduct()
     const result = await NativePurchases.purchaseProduct({
       productIdentifier: 'com.yourapp.premium.monthly',
-      planIdentifier: 'monthly-plan',           // REQUIRED for Android subscriptions, ignored on iOS
+      planIdentifier: product.identifier,       // Android base plan id for this offer; ignored on iOS
+      offerToken: product.offerToken,           // Android: same offer as the price above; ignored on iOS
       productType: PURCHASE_TYPE.SUBS,          // REQUIRED for subscriptions
       quantity: 1,
       appAccountToken: uuidToken                // Optional: User identifier in UUID format
@@ -1406,12 +1410,12 @@ class Store {
     }
   }
 
-  // Purchase subscription (requires planIdentifier)
+  // Purchase subscription (Android: planIdentifier, or the separate offerToken option)
   async purchaseSubscription(productId: string, planId: string) {
     try {
       const transaction = await NativePurchases.purchaseProduct({
         productIdentifier: productId,
-        planIdentifier: planId,              // REQUIRED for subscriptions
+        planIdentifier: planId,              // Android base plan id; offerToken is separate
         productType: PURCHASE_TYPE.SUBS      // REQUIRED for subscriptions
       });
       console.log('Subscription purchase successful:', transaction);
@@ -1484,7 +1488,7 @@ try {
   await store.purchaseProduct('premium_features');
   console.log('In-app purchase completed successfully');
   
-  // Purchase subscription (requires planIdentifier)
+  // Purchase subscription (Android: planIdentifier, or the separate offerToken option)
   await store.purchaseSubscription('premium_monthly', 'monthly-plan');
   console.log('Subscription completed successfully');
 } catch (error) {
@@ -1887,6 +1891,33 @@ purchaseProduct(options: { productIdentifier: string; planIdentifier?: string; o
 ```
 
 Started purchase process for the given product.
+
+On Android, `offerToken` selects which offer is charged, and an
+`offerToken` that matches no current offer rejects rather than falling
+back to another, because the price charged would not be the one asked for.
+Offer tokens come from a specific product query and go stale, so read
+one from the same `getProducts()` / `getProduct()` call you purchase
+from.
+
+For a **subscription** (`productType: 'subs'`) the order is: an explicit
+`offerToken`, then the first offer whose base plan matches
+`planIdentifier`, then the first offer the store returned.
+`planIdentifier` is the **base plan id**, which `getProducts()` reports
+as <a href="#product">`Product.identifier`</a>, not <a href="#product">`Product.planIdentifier`</a>, which holds the
+Play product id. It is required unless an `offerToken` is given, since
+a token already identifies one offer on its own.
+
+For a **one-time product** (`productType: 'inapp'`) there is no base
+plan, so `planIdentifier` plays no part, and an `offerToken` selects one
+of the product's purchase offers. Without a token no offer token is set
+at all whenever the product still has a backward-compatible purchase
+option, which leaves the choice to Play: it charges whichever buy
+purchase option is marked backward-compatible, which is the first
+*created* one by default and another only if one was marked
+`legacyCompatible`. Either way it need not be the first offer
+`getProducts()` returned. Only for a product with no backward-compatible
+option does the first offer in the list get used. So pass the token
+whenever a specific one-time offer matters.
 
 | Param         | Type                                                                                                                                                                                                                                                                                                   | Description               |
 | ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------- |
@@ -2335,7 +2366,7 @@ which is useful for determining if users are entitled to features from earlier b
 | **`isFamilyShareable`**           | <code>boolean</code>                                                                  | Boolean indicating if the product is sharable with family                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |       |
 | **`subscriptionGroupIdentifier`** | <code>string</code>                                                                   | Group identifier for the product.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |       |
 | **`planIdentifier`**              | <code>string</code>                                                                   | Android subscriptions only: Google Play product identifier tied to the offer/base plan set.                                                                                                                                                                                                                                                                                                                                                                                                                                   |       |
-| **`offerToken`**                  | <code>string</code>                                                                   | Android: offer token required when purchasing a specific subscription or one-time offer.                                                                                                                                                                                                                                                                                                                                                                                                                                      |       |
+| **`offerToken`**                  | <code>string</code>                                                                   | Android: offer token required when purchasing a specific subscription or one-time offer. Pass it to `purchaseProduct({ offerToken })` to buy this exact offer. It belongs to the query that returned it and goes stale, so read it from the same `getProducts()` / `getProduct()` call you purchase from.                                                                                                                                                                                                                     |       |
 | **`offerId`**                     | <code>string \| null</code>                                                           | Android: offer identifier (null/undefined for base offers).                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |       |
 | **`purchaseOptionId`**            | <code>string</code>                                                                   | Android one-time products only: purchase option identifier (for example `buy-option`).                                                                                                                                                                                                                                                                                                                                                                                                                                        |       |
 | **`fullPrice`**                   | <code>number</code>                                                                   | Android one-time products only: full price before discount, in the local currency.                                                                                                                                                                                                                                                                                                                                                                                                                                            |       |
