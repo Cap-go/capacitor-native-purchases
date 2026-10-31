@@ -569,10 +569,11 @@ const buySubscription = async () => {
     const confirmed = confirm(`Subscribe to ${product.title} for ${product.priceString}?`);
     if (!confirmed) return;
 
-    // Make subscription purchase (Android: planIdentifier, or the separate offerToken option)
+    // Purchase the same offer you displayed: reuse identifier and offerToken from getProduct()
     const result = await NativePurchases.purchaseProduct({
       productIdentifier: 'com.yourapp.premium.monthly',
-      planIdentifier: 'monthly-plan',           // Android base plan id, not an offerToken; ignored on iOS
+      planIdentifier: product.identifier,       // Android base plan id for this offer; ignored on iOS
+      offerToken: product.offerToken,           // Android: same offer as the price above; ignored on iOS
       productType: PURCHASE_TYPE.SUBS,          // REQUIRED for subscriptions
       quantity: 1,
       appAccountToken: uuidToken                // Optional: User identifier in UUID format
