@@ -1892,9 +1892,11 @@ purchaseProduct(options: { productIdentifier: string; planIdentifier?: string; o
 
 Started purchase process for the given product.
 
-On Android, `offerToken` selects which offer is charged, and an
-`offerToken` that matches no current offer rejects rather than falling
-back to another, because the price charged would not be the one asked for.
+On Android, `offerToken` selects which offer is charged. The plugin rejects
+only when the token is missing from the product details returned by its own
+query (same as a stale or mistyped token). Google Play may still show a
+different checkout, for example if the offer stops being eligible after the
+query, so the final price is not guaranteed.
 Offer tokens come from a specific product query and go stale, so read
 one from the same `getProducts()` / `getProduct()` call you purchase
 from.

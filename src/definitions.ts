@@ -1164,9 +1164,11 @@ export interface NativePurchasesPlugin {
   /**
    * Started purchase process for the given product.
    *
-   * On Android, `offerToken` selects which offer is charged, and an
-   * `offerToken` that matches no current offer rejects rather than falling
-   * back to another, because the price charged would not be the one asked for.
+   * On Android, `offerToken` selects which offer is charged. The plugin rejects
+   * only when the token is missing from the product details returned by its own
+   * query (same as a stale or mistyped token). Google Play may still show a
+   * different checkout, for example if the offer stops being eligible after the
+   * query, so the final price is not guaranteed.
    * Offer tokens come from a specific product query and go stale, so read
    * one from the same `getProducts()` / `getProduct()` call you purchase
    * from.
@@ -1195,7 +1197,7 @@ export interface NativePurchasesPlugin {
    * @param options.productIdentifier - The product identifier of the product you want to purchase.
    * @param options.productType - Only Android, the type of product, can be inapp or subs. Will use inapp by default.
    * @param options.planIdentifier - Only Android, the identifier of the base plan you want to purchase from Google Play Console, the value `getProducts()` reports as `Product.identifier` for a subscription, not `Product.planIdentifier`. Required for Android subscriptions unless `offerToken` is given; ignored for one-time products and on iOS.
-   * @param options.offerToken - Only Android, the offer token for the selected subscription or one-time product offer. Use the `offerToken` returned by `getProducts()` / `getProduct()`. For a subscription it takes precedence over `planIdentifier`, since it names one specific offer, and makes `planIdentifier` optional. When it matches no current offer the purchase is rejected rather than falling back to another, because the price charged would not be the one that was asked for. Offer tokens come from a specific product query and go stale, so read one from the same query you purchase from. Omit it to keep the previous behaviour.
+   * @param options.offerToken - Only Android, the offer token for the selected subscription or one-time product offer. Use the `offerToken` returned by `getProducts()` / `getProduct()`. For a subscription it takes precedence over `planIdentifier`, since it names one specific offer, and makes `planIdentifier` optional. When the token is absent from the plugin query result the purchase is rejected instead of falling back to another offer. Google Play may still change what the user can buy after the query. Offer tokens come from a specific product query and go stale, so read one from the same query you purchase from. Omit it to keep the previous behaviour.
    * @param options.quantity - Only iOS, the number of items you wish to purchase. Will use 1 by default.
    * @param options.billingPlanType - Only iOS, the StoreKit subscription billing plan to purchase. Use `"monthly"` for a monthly subscription with a 12-month commitment. Requires iOS 26.4+ and Xcode 26.5 SDK support.
    * @param options.appAccountToken - Optional identifier uniquely associated with the user's account in your app.
