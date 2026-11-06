@@ -940,6 +940,11 @@ export interface Product {
   readonly price: number;
   /**
    * Formatted price of the item, including its currency sign, such as €3.99.
+   *
+   * Android subscriptions: set from the standard recurring pricing phase (see
+   * `ProductPayloadMapper`). When the offer has an introductory phase, `introductoryPrice`
+   * describes that phase, so a pre purchase message should include both or defer confirmation
+   * to the store sheet.
    */
   readonly priceString: string;
   /**
@@ -1013,10 +1018,11 @@ export interface Product {
    */
   readonly subscriptionPeriod: SubscriptionPeriod;
   /**
-   * The Product introductory Price.
-   *
-   * @platform ios Populated from StoreKit introductory offers when available.
-   * @platform android Populated from the first pricing phase on base subscription offers when multiple phases are present.
+   * Introductory price for this product line when the store exposes it. Pair with `priceString`
+   * for full subscription offer wording before purchase. iOS: from StoreKit introductory offers
+   * when available. Android base subscription offers: from the first pricing phase when multiple
+   * phases exist (intro then recurring); promotional offer lines omit this and use `discounts`
+   * instead. Mapping matches `ProductPayloadMapper` pricing phases.
    */
   readonly introductoryPrice: SKProductDiscount | null;
   /**
