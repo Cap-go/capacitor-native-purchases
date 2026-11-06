@@ -43,12 +43,9 @@ import org.json.JSONArray;
 @CapacitorPlugin(name = "NativePurchases")
 public class NativePurchasesPlugin extends Plugin {
 
-    /**
-     * Outcome of choosing a subscription offer token before launching the billing flow.
-     * Package-private for unit tests that assert wiring without Play Billing stubs.
-     */
-    public enum SubscriptionOfferPurchaseOutcome {
-        /** An offer was selected; {@link #offerToken} is set. */
+    /** Outcome of choosing a subscription offer token before launching the billing flow. */
+    enum SubscriptionOfferPurchaseOutcome {
+        /** An offer was selected; {@link SubscriptionOfferPurchaseResult#offerToken} is set. */
         OK,
         /** The product details contained no subscription offers. */
         NO_OFFERS,
@@ -57,11 +54,11 @@ public class NativePurchasesPlugin extends Plugin {
     }
 
     /** Result of {@link #resolveSubscriptionOfferForPurchase}. */
-    public static final class SubscriptionOfferPurchaseResult {
+    static final class SubscriptionOfferPurchaseResult {
 
-        public final SubscriptionOfferPurchaseOutcome outcome;
-        public final String offerToken;
-        public final String basePlanId;
+        final SubscriptionOfferPurchaseOutcome outcome;
+        final String offerToken;
+        final String basePlanId;
 
         private SubscriptionOfferPurchaseResult(SubscriptionOfferPurchaseOutcome outcome, String offerToken, String basePlanId) {
             this.outcome = outcome;
@@ -86,7 +83,7 @@ public class NativePurchasesPlugin extends Plugin {
      * Selects the subscription offer token for {@link #purchaseProduct}, using the same rules
      * as {@link SubscriptionOfferSelector}.
      */
-    public static SubscriptionOfferPurchaseResult resolveSubscriptionOfferForPurchase(
+    static SubscriptionOfferPurchaseResult resolveSubscriptionOfferForPurchase(
         List<ProductDetails.SubscriptionOfferDetails> subscriptionOffers,
         String planIdentifier,
         String offerToken

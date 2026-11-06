@@ -13,9 +13,9 @@ import org.mockito.Mock;
 import org.mockito.junit.MockitoJUnitRunner;
 
 /**
- * Asserts the subscription offer token {@link NativePurchasesPlugin#purchaseProduct} feeds into
- * {@link com.android.billingclient.api.BillingFlowParams}, via
- * {@link NativePurchasesPlugin#resolveSubscriptionOfferForPurchase}.
+ * Unit tests for {@link NativePurchasesPlugin#resolveSubscriptionOfferForPurchase}, which matches
+ * the same selection rules as {@link NativePurchasesPlugin#purchaseProduct} before
+ * {@link com.android.billingclient.api.BillingFlowParams} is built.
  */
 @RunWith(MockitoJUnitRunner.class)
 public class NativePurchasesPluginResolveSubscriptionOfferTest {
