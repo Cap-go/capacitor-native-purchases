@@ -1020,9 +1020,10 @@ export interface Product {
   /**
    * Introductory price for this product line when the store exposes it. Pair with `priceString`
    * for full subscription offer wording before purchase. iOS: from StoreKit introductory offers
-   * when available. Android base subscription offers: from the first pricing phase when multiple
-   * phases exist (intro then recurring); promotional offer lines omit this and use `discounts`
-   * instead. Mapping matches `ProductPayloadMapper` pricing phases.
+   * when available. Android base subscription offers (`offerId` null): from the first pricing
+   * phase when multiple phases exist (intro then recurring). Android promotional offer lines
+   * (`offerId` set): null; phase pricing is not exposed on `Product`, so defer price confirmation
+   * to Play checkout instead of using `priceString` alone. Mapping matches `ProductPayloadMapper`.
    */
   readonly introductoryPrice: SKProductDiscount | null;
   /**
@@ -1037,7 +1038,9 @@ export interface Product {
    * The Product discounts list.
    *
    * @platform ios Populated from StoreKit promotional offers when available.
-   * @platform android Populated from promotional subscription offers that share the same base plan.
+   * @platform android On base subscription offers (`offerId` null), lists promotional offers on
+   * the same base plan. A promotional offer line itself returns an empty array; its pricing
+   * phases are not mapped here or on `introductoryPrice`.
    */
   readonly discounts: SKProductDiscount[];
 }
@@ -1170,11 +1173,12 @@ export interface NativePurchasesPlugin {
   /**
    * Started purchase process for the given product.
    *
-   * On Android, `offerToken` selects which offer is charged. The plugin rejects
-   * only when the token is missing from the product details returned by its own
-   * query (same as a stale or mistyped token). Google Play may still show a
-   * different checkout, for example if the offer stops being eligible after the
-   * query, so the final price is not guaranteed.
+   * On Android, `offerToken` selects which offer is charged. If the token is
+   * missing from the product details returned by the plugin's query, the plugin
+   * rejects the purchase instead of selecting another offer. Other failures can
+   * also reject the purchase. Google Play may still show a different checkout,
+   * for example if the offer stops being eligible after the query, so the final
+   * price is not guaranteed.
    * Offer tokens come from a specific product query and go stale, so read
    * one from the same `getProducts()` / `getProduct()` call you purchase
    * from.
