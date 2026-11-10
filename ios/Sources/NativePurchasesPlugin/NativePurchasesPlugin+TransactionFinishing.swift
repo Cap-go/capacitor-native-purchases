@@ -14,10 +14,14 @@ extension NativePurchasesPlugin {
         call.resolve()
     }
 
+    /// Resolves with the unfinished transactions, including unverified ones when `includeUnverified` is true.
     @objc func getUnfinishedTransactions(_ call: CAPPluginCall) {
+        let includeUnverified = call.getBool("includeUnverified") ?? false
         Task {
             do {
-                let transactions = try await TransactionHelpers.collectUnfinishedTransactions()
+                let transactions = try await TransactionHelpers.collectUnfinishedTransactions(
+                    includeUnverified: includeUnverified
+                )
                 await MainActor.run {
                     call.resolve(["transactions": transactions])
                 }
@@ -29,6 +33,7 @@ extension NativePurchasesPlugin {
         }
     }
 
+    /// Finishes the transaction named by `transactionId`, rejecting unverified ones unless `allowUnverified` is true.
     @objc func finishTransaction(_ call: CAPPluginCall) {
         guard let transactionIdString = call.getString("transactionId"), !transactionIdString.isEmpty else {
             call.reject("transactionId is required")
@@ -40,11 +45,14 @@ extension NativePurchasesPlugin {
             return
         }
 
+        let allowUnverified = call.getBool("allowUnverified") ?? false
+
         Task {
             do {
                 try await finishStoreKitTransaction(
                     transactionId: transactionId,
-                    transactionIdString: transactionIdString
+                    transactionIdString: transactionIdString,
+                    allowUnverified: allowUnverified
                 )
                 await MainActor.run { call.resolve() }
             } catch let error as FinishTransactionError {
@@ -55,7 +63,13 @@ extension NativePurchasesPlugin {
         }
     }
 
-    func finishStoreKitTransaction(transactionId: UInt64, transactionIdString: String) async throws {
+    /// Finishes a StoreKit 2 or legacy transaction, and returns without error if it was already finished.
+    /// Throws `FinishTransactionError` if the transaction is unverified and not allowed, or cannot be found.
+    func finishStoreKitTransaction(
+        transactionId: UInt64,
+        transactionIdString: String,
+        allowUnverified: Bool = false
+    ) async throws {
         for await result in Transaction.unfinished {
             switch result {
             case .verified(let transaction) where transaction.id == transactionId:
@@ -63,16 +77,27 @@ extension NativePurchasesPlugin {
                 await transaction.finish()
                 return
             case .unverified(let transaction, let error) where transaction.id == transactionId:
-                throw FinishTransactionError.verificationFailed(error.localizedDescription)
+                guard allowUnverified else {
+                    throw FinishTransactionError.verificationFailed(error.localizedDescription)
+                }
+                print("Finishing unverified transaction: \(transaction.id)")
+                await transaction.finish()
+                return
             default:
                 continue
             }
         }
 
         for await verificationResult in Transaction.all {
-            if case .verified(let transaction) = verificationResult, transaction.id == transactionId {
+            switch verificationResult {
+            case .verified(let transaction) where transaction.id == transactionId:
                 print("Transaction \(transactionId) already finished")
                 return
+            case .unverified(let transaction, _) where allowUnverified && transaction.id == transactionId:
+                print("Transaction \(transactionId) already finished")
+                return
+            default:
+                continue
             }
         }
 

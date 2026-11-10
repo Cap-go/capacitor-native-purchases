@@ -94,7 +94,16 @@ final class ProductPayloadMapper {
             product.put("priceString", standardPhase.getFormattedPrice());
             product.put("currencyCode", standardPhase.getPriceCurrencyCode());
             product.put("currencySymbol", currencySymbol(standardPhase.getPriceCurrencyCode()));
-            product.put("subscriptionPeriod", subscriptionPeriodFromBillingPeriod(standardPhase.getBillingPeriod()));
+            int recurrenceMode = standardPhase.getRecurrenceMode();
+            if (recurrenceMode == RECURRENCE_MODE_INFINITE_RECURRING) {
+                product.put("subscriptionPeriod", subscriptionPeriodFromBillingPeriod(standardPhase.getBillingPeriod()));
+            } else if (recurrenceMode == RECURRENCE_MODE_FINITE_RECURRING) {
+                int billingCycles = standardPhase.getBillingCycleCount();
+                if (billingCycles > 0) {
+                    product.put("subscriptionPeriod", subscriptionPeriodFromBillingPeriod(standardPhase.getBillingPeriod()));
+                    product.put("subscriptionBillingCycles", billingCycles);
+                }
+            }
         }
 
         String currencyCode = standardPhase != null ? standardPhase.getPriceCurrencyCode() : product.getString("currencyCode", "");
