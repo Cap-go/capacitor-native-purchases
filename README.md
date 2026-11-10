@@ -504,9 +504,36 @@ const formatIntroPhaseDuration = (intro: {
   return `${count} ${label}`;
 };
 
+const formatRecurringInterval = (period?: {
+  numberOfUnits: number;
+  unitString?: string;
+}): string | null => {
+  if (!period?.numberOfUnits || !period.unitString || period.unitString === 'unknown') {
+    return null;
+  }
+  const { numberOfUnits, unitString } = period;
+  if (numberOfUnits === 1) {
+    return `per ${unitString}`;
+  }
+  const label = `${unitString}s`;
+  return `every ${numberOfUnits} ${label}`;
+};
+
+const formatRecurringPrice = (
+  priceString: string,
+  period?: { numberOfUnits: number; unitString?: string },
+): string | null => {
+  const interval = formatRecurringInterval(period);
+  if (!interval) {
+    return null;
+  }
+  return `${priceString} ${interval}`;
+};
+
 const subscriptionOfferPriceSummary = (product: {
   priceString: string;
   offerId?: string | null;
+  subscriptionPeriod?: { numberOfUnits: number; unitString?: string };
   introductoryPrice: {
     priceString: string;
     numberOfPeriods: number;
@@ -515,13 +542,17 @@ const subscriptionOfferPriceSummary = (product: {
 }): string | null => {
   const intro = product.introductoryPrice;
   if (intro?.priceString && intro.priceString !== product.priceString) {
-    return `${intro.priceString} for ${formatIntroPhaseDuration(intro)}, then ${product.priceString}`;
+    const recurring = formatRecurringPrice(product.priceString, product.subscriptionPeriod);
+    if (!recurring) {
+      return null;
+    }
+    return `${intro.priceString} for ${formatIntroPhaseDuration(intro)}, then ${recurring}`;
   }
   // Promotional offer lines omit introductoryPrice; do not show recurring price alone as the full offer.
   if (product.offerId) {
     return null;
   }
-  return product.priceString;
+  return formatRecurringPrice(product.priceString, product.subscriptionPeriod);
 };
 
 // Simple one-time purchase (in-app product)
@@ -2410,7 +2441,7 @@ which is useful for determining if users are entitled to features from earlier b
 | **`fullPrice`**                   | <code>number</code>                                                                   | Android one-time products only: full price before discount, in the local currency.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |       |
 | **`discountDisplayInfo`**         | <code><a href="#onetimepurchaseofferdiscount">OneTimePurchaseOfferDiscount</a></code> | Android one-time products only: discount metadata for discounted offers.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |       |
 | **`pricingTerms`**                | <code>SubscriptionPricingTerms[]</code>                                               | iOS subscriptions only: StoreKit pricing terms by billing plan. For subscriptions with a monthly billing plan and 12-month commitment, this includes both the standard up-front plan and the monthly commitment plan. Display both `billingDisplayPrice` and `commitmentInfo.priceString` before starting a monthly commitment purchase.                                                                                                                                                                                                                                                       | 8.3.8 |
-| **`subscriptionPeriod`**          | <code><a href="#subscriptionperiod">SubscriptionPeriod</a></code>                     | The <a href="#product">Product</a> subscription group identifier.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |       |
+| **`subscriptionPeriod`**          | <code><a href="#subscriptionperiod">SubscriptionPeriod</a></code>                     | Recurring billing period for subscription products.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |       |
 | **`introductoryPrice`**           | <code><a href="#skproductdiscount">SKProductDiscount</a> \| null</code>               | Introductory price for this product line when the store exposes it. Pair with `priceString` for full subscription offer wording before purchase. iOS: from StoreKit introductory offers when available. Android base subscription offers (`offerId` null): from the first pricing phase when multiple phases exist (intro then recurring). Android promotional offer lines (`offerId` set): null; phase pricing is not exposed on <a href="#product">`Product`</a>, so defer price confirmation to Play checkout instead of using `priceString` alone. Mapping matches `ProductPayloadMapper`. |       |
 | **`introEligibility`**            | <code><a href="#intro_eligibility_status">INTRO_ELIGIBILITY_STATUS</a></code>         | Whether the current store account is eligible for an introductory offer on this subscription.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | 8.8.3 |
 | **`discounts`**                   | <code>SKProductDiscount[]</code>                                                      | The <a href="#product">Product</a> discounts list.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |       |

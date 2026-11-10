@@ -94,6 +94,7 @@ final class ProductPayloadMapper {
             product.put("priceString", standardPhase.getFormattedPrice());
             product.put("currencyCode", standardPhase.getPriceCurrencyCode());
             product.put("currencySymbol", currencySymbol(standardPhase.getPriceCurrencyCode()));
+            product.put("subscriptionPeriod", subscriptionPeriodFromBillingPeriod(standardPhase.getBillingPeriod()));
         }
 
         String currencyCode = standardPhase != null ? standardPhase.getPriceCurrencyCode() : product.getString("currencyCode", "");

@@ -1014,7 +1014,10 @@ export interface Product {
    */
   readonly pricingTerms?: SubscriptionPricingTerms[];
   /**
-   * The Product subscription group identifier.
+   * Recurring billing period for subscription products.
+   *
+   * @platform ios From StoreKit `subscription.subscriptionPeriod`.
+   * @platform android From the standard recurring pricing phase billing period (`ProductPayloadMapper.applySubscriptionPricing`).
    */
   readonly subscriptionPeriod: SubscriptionPeriod;
   /**
