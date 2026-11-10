@@ -542,6 +542,11 @@ const subscriptionOfferPriceSummary = (product: {
   } | null;
 }): string | null => {
   const intro = product.introductoryPrice;
+  const cycles = product.subscriptionBillingCycles;
+  // Installment subsequent terms are not on Product, so do not imply charges stop after the commitment.
+  if (cycles !== undefined && cycles > 0) {
+    return null;
+  }
   if (intro?.priceString && intro.priceString !== product.priceString) {
     const recurring = formatRecurringPrice(product.priceString, product.subscriptionPeriod);
     if (!recurring) {
@@ -552,15 +557,6 @@ const subscriptionOfferPriceSummary = (product: {
   // Promotional offer lines omit introductoryPrice; do not show recurring price alone as the full offer.
   if (product.offerId) {
     return null;
-  }
-  const cycles = product.subscriptionBillingCycles;
-  if (cycles !== undefined && cycles > 0) {
-    const recurring = formatRecurringPrice(product.priceString, product.subscriptionPeriod);
-    if (!recurring) {
-      return null;
-    }
-    const paymentLabel = cycles === 1 ? 'payment' : 'payments';
-    return `${recurring} for ${cycles} ${paymentLabel}`;
   }
   return formatRecurringPrice(product.priceString, product.subscriptionPeriod);
 };
