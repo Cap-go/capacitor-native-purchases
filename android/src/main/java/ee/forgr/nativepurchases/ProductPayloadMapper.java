@@ -87,6 +87,14 @@ final class ProductPayloadMapper {
         List<ProductDetails.PricingPhase> phases =
             offerDetails.getPricingPhases() == null ? List.of() : offerDetails.getPricingPhases().getPricingPhaseList();
 
+        ProductDetails.InstallmentPlanDetails installmentPlanDetails = offerDetails.getInstallmentPlanDetails();
+        if (installmentPlanDetails != null) {
+            int commitmentPayments = installmentPlanDetails.getInstallmentPlanCommitmentPaymentsCount();
+            if (commitmentPayments > 0) {
+                product.put("subscriptionBillingCycles", commitmentPayments);
+            }
+        }
+
         ProductDetails.PricingPhase standardPhase = findStandardPricingPhase(phases);
         if (standardPhase != null) {
             double price = standardPhase.getPriceAmountMicros() / 1_000_000.0;
@@ -97,12 +105,8 @@ final class ProductPayloadMapper {
             int recurrenceMode = standardPhase.getRecurrenceMode();
             if (recurrenceMode == RECURRENCE_MODE_INFINITE_RECURRING) {
                 product.put("subscriptionPeriod", subscriptionPeriodFromBillingPeriod(standardPhase.getBillingPeriod()));
-            } else if (recurrenceMode == RECURRENCE_MODE_FINITE_RECURRING) {
-                int billingCycles = standardPhase.getBillingCycleCount();
-                if (billingCycles > 0) {
-                    product.put("subscriptionPeriod", subscriptionPeriodFromBillingPeriod(standardPhase.getBillingPeriod()));
-                    product.put("subscriptionBillingCycles", billingCycles);
-                }
+            } else if (recurrenceMode == RECURRENCE_MODE_FINITE_RECURRING && installmentPlanDetails != null) {
+                product.put("subscriptionPeriod", subscriptionPeriodFromBillingPeriod(standardPhase.getBillingPeriod()));
             }
         }
 

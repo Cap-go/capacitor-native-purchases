@@ -1029,15 +1029,15 @@ export interface Product {
    *
    * @platform ios From StoreKit `subscription.subscriptionPeriod`.
    * @platform android From the standard pricing phase billing period when recurrence is
-   * infinite recurring, or finite recurring with a committed billing cycle count
-   * (`ProductPayloadMapper.applySubscriptionPricing`). Omitted for prepaid (non-recurring) phases.
+   * infinite recurring, or finite recurring on installment offers (`ProductPayloadMapper.applySubscriptionPricing`).
+   * Omitted for prepaid (non-recurring) phases.
    */
-  readonly subscriptionPeriod: SubscriptionPeriod;
+  readonly subscriptionPeriod?: SubscriptionPeriod;
   /**
    * Android subscriptions only: committed payment count for installment base plans when Play
-   * exposes it on the standard pricing phase.
+   * exposes it on the offer.
    *
-   * @platform android From `PricingPhase.getBillingCycleCount()` when recurrence is finite recurring.
+   * @platform android From `InstallmentPlanDetails.getInstallmentPlanCommitmentPaymentsCount()`.
    * @platform ios Not available
    */
   readonly subscriptionBillingCycles?: number;
