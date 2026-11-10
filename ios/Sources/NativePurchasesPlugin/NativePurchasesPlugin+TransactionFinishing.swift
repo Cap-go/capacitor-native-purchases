@@ -14,6 +14,7 @@ extension NativePurchasesPlugin {
         call.resolve()
     }
 
+    /// Resolves with the unfinished transactions, including unverified ones when `includeUnverified` is true.
     @objc func getUnfinishedTransactions(_ call: CAPPluginCall) {
         let includeUnverified = call.getBool("includeUnverified") ?? false
         Task {
@@ -32,6 +33,7 @@ extension NativePurchasesPlugin {
         }
     }
 
+    /// Finishes the transaction named by `transactionId`, rejecting unverified ones unless `allowUnverified` is true.
     @objc func finishTransaction(_ call: CAPPluginCall) {
         guard let transactionIdString = call.getString("transactionId"), !transactionIdString.isEmpty else {
             call.reject("transactionId is required")
@@ -61,6 +63,8 @@ extension NativePurchasesPlugin {
         }
     }
 
+    /// Finishes a StoreKit 2 or legacy transaction, and returns without error if it was already finished.
+    /// Throws `FinishTransactionError` if the transaction is unverified and not allowed, or cannot be found.
     func finishStoreKitTransaction(
         transactionId: UInt64,
         transactionIdString: String,

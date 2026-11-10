@@ -67,6 +67,9 @@ public class NativePurchasesPlugin extends Plugin {
         call.resolve();
     }
 
+    /**
+     * Acknowledges the purchase whose token is passed as {@code transactionId}, matching finishTransaction on iOS.
+     */
     @PluginMethod
     public void finishTransaction(PluginCall call) {
         String transactionId = call.getString("transactionId");

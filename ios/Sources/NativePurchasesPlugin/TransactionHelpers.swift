@@ -146,6 +146,8 @@ internal class TransactionHelpers {
         return dictionary
     }
 
+    /// Builds payloads for `Transaction.unfinished`. Unverified entries are skipped unless
+    /// `includeUnverified` is true, and then carry `verificationError` so callers can avoid trusting them.
     static func collectUnfinishedTransactions(includeUnverified: Bool = false) async throws -> [[String: Any]] {
         var unfinished: [[String: Any]] = []
         for await result in Transaction.unfinished {
