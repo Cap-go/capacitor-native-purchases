@@ -67,11 +67,19 @@ public class NativePurchasesPlugin extends Plugin {
         call.resolve();
     }
 
+    /**
+     * Acknowledges the purchase whose token is passed as {@code transactionId}, matching finishTransaction on iOS.
+     */
     @PluginMethod
     public void finishTransaction(PluginCall call) {
-        call.reject(
-            "finishTransaction is for StoreKit 2 on iOS. On Android, call acknowledgePurchase({ purchaseToken }) to acknowledge Google Play purchases."
-        );
+        String transactionId = call.getString("transactionId");
+        if (transactionId == null || transactionId.isEmpty()) {
+            call.reject("transactionId is required");
+            return;
+        }
+        // Android transaction IDs are purchase tokens, and Play Billing has no client-side unverified state.
+        call.getData().put("purchaseToken", transactionId);
+        acknowledgePurchase(call);
     }
 
     @PluginMethod

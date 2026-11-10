@@ -1738,9 +1738,13 @@ Set `autoFinishTransactions: false` in `capacitor.config` under `plugins.NativeP
 2. Validate on your backend.
 3. Call `finishTransaction({ transactionId })` or `acknowledgePurchase({ purchaseToken: transactionId })`. Repeated calls on an already finished transaction succeed.
 
+**Unverified transactions**
+
+StoreKit re-delivers an unverified transaction on every launch until it is finished. Call `getUnfinishedTransactions({ includeUnverified: true })` to list them (each has `verificationError` set), or use the ID from `transactionVerificationFailed`, then call `finishTransaction({ transactionId, allowUnverified: true })` to clear it. Do not grant entitlements from an unverified transaction. Android accepts the same calls, but Play Billing has no client-side unverified state, so both options have no effect there.
+
 **Android**
 
-After validation when automatic acknowledgment is off (for example `configure({ autoFinishTransactions: false })` or `purchaseProduct({ autoAcknowledgePurchases: false })`), call `consumePurchase({ purchaseToken })` for consumable in-app products (acknowledges and consumes), or `acknowledgePurchase({ purchaseToken })` for non-consumables and subscriptions. `finishTransaction()` is iOS-only and rejects on Android. With `autoFinishTransactions: false`, `restorePurchases()` does not auto-acknowledge; use `getUnfinishedTransactions()` to list unacknowledged purchases in the `PURCHASED` state (`isAcknowledged === false`).
+After validation when automatic acknowledgment is off (for example `configure({ autoFinishTransactions: false })` or `purchaseProduct({ autoAcknowledgePurchases: false })`), call `consumePurchase({ purchaseToken })` for consumable in-app products (acknowledges and consumes), or `acknowledgePurchase({ purchaseToken })` for non-consumables and subscriptions. `finishTransaction({ transactionId })` also acknowledges on Android, where `transactionId` is the purchase token. With `autoFinishTransactions: false`, `restorePurchases()` does not auto-acknowledge; use `getUnfinishedTransactions()` to list unacknowledged purchases in the `PURCHASED` state (`isAcknowledged === false`).
 
 ## API
 
@@ -1760,7 +1764,7 @@ After validation when automatic acknowledgment is off (for example `configure({ 
 * [`presentOfferCodeRedeemSheet()`](#presentoffercoderedeemsheet)
 * [`acknowledgePurchase(...)`](#acknowledgepurchase)
 * [`finishTransaction(...)`](#finishtransaction)
-* [`getUnfinishedTransactions()`](#getunfinishedtransactions)
+* [`getUnfinishedTransactions(...)`](#getunfinishedtransactions)
 * [`consumePurchase(...)`](#consumepurchase)
 * [`getStorefront()`](#getstorefront)
 * [`addListener('transactionUpdated', ...)`](#addlistenertransactionupdated-)
@@ -2065,7 +2069,7 @@ await NativePurchases.acknowledgePurchase({
 ### finishTransaction(...)
 
 ```typescript
-finishTransaction(options: { transactionId: string; }) => Promise<void>
+finishTransaction(options: { transactionId: string; allowUnverified?: boolean; }) => Promise<void>
 ```
 
 Finish a StoreKit 2 transaction on iOS after you validate delivery on your backend.
@@ -2073,22 +2077,26 @@ Finish a StoreKit 2 transaction on iOS after you validate delivery on your backe
 Equivalent to `acknowledgePurchase({ purchaseToken: transactionId })` on iOS. Safe to call more
 than once; finishing an already finished transaction resolves successfully.
 
-**Android**: Google Play uses purchase acknowledgment, not StoreKit finishing. Call
-`acknowledgePurchase({ purchaseToken })` instead. This method rejects on Android.
+A transaction StoreKit could not verify is rejected unless `allowUnverified` is `true`. Finishing
+one only removes it from the queue so StoreKit stops re-delivering it; never grant entitlements from it.
 
-| Param         | Type                                    |
-| ------------- | --------------------------------------- |
-| **`options`** | <code>{ transactionId: string; }</code> |
+**Android**: Acknowledges the purchase, using `transactionId` as the purchase token. Use
+`consumePurchase({ purchaseToken })` instead for consumables that must be purchasable again.
+`allowUnverified` has no effect because Play Billing has no client-side unverified state.
+
+| Param         | Type                                                                |
+| ------------- | ------------------------------------------------------------------- |
+| **`options`** | <code>{ transactionId: string; allowUnverified?: boolean; }</code> |
 
 **Since:** 8.9.0
 
 --------------------
 
 
-### getUnfinishedTransactions()
+### getUnfinishedTransactions(...)
 
 ```typescript
-getUnfinishedTransactions() => Promise<{ transactions: Transaction[]; }>
+getUnfinishedTransactions(options?: { includeUnverified?: boolean | undefined; } | undefined) => Promise<{ transactions: Transaction[]; }>
 ```
 
 Returns transactions that still need finishing on iOS, or unacknowledged purchases on Android.
@@ -2099,6 +2107,15 @@ Use on app launch when `autoFinishTransactions` is `false` to recover work after
 in-app products (acknowledges and consumes). Call `acknowledgePurchase({ purchaseToken })` for
 non-consumables and subscriptions. Includes only purchases in the `PURCHASED` state that are not
 yet acknowledged. Pending purchases are excluded until Google Play marks them purchased.
+
+**Unverified transactions:** With `includeUnverified: true`, iOS also returns transactions StoreKit
+could not verify, each with `verificationError` set. Do not grant entitlements from those; pass them
+to `finishTransaction({ transactionId, allowUnverified: true })` to clear them. Android has no
+client-side unverified state, so the option does not change its results.
+
+| Param         | Type                                          |
+| ------------- | --------------------------------------------- |
+| **`options`** | <code>{ includeUnverified?: boolean; }</code> |
 
 **Returns:** <code>Promise&lt;{ transactions: Transaction[]; }&gt;</code>
 
@@ -2285,6 +2302,7 @@ which is useful for determining if users are entitled to features from earlier b
 | **`isInIntroPricePeriod`** | <code>boolean</code>                                                                                          | Whether the transaction is in an introductory price period. Introductory pricing is a discounted rate, different from a free trial. - `true`: Currently using introductory pricing - `false`: Not in intro period                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |                   | 1.0.0  |
 | **`isInGracePeriod`**      | <code>boolean</code>                                                                                          | Whether the transaction is in a grace period. Grace period allows users to fix payment issues while maintaining access. You typically want to continue providing access during this time. - `true`: Subscription payment failed but user still has access - `false`: Not in grace period                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |                   | 1.0.0  |
 | **`needsFinish`**          | <code>boolean</code>                                                                                          | Whether the StoreKit transaction still needs to be finished with `finishTransaction()`. Present when the transaction is returned from `getUnfinishedTransactions()` or from `transactionUpdated` while `autoFinishTransactions` is `false`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |                   | 8.9.0  |
+| **`verificationError`**    | <code>string</code>                                                                                           | Why StoreKit could not verify this transaction. Treat the transaction as untrusted and do not grant entitlements from it. Present only on unverified entries returned by `getUnfinishedTransactions({ includeUnverified: true })`. |             | 8.10.0  |
 
 
 #### TransactionCommitmentInfo
