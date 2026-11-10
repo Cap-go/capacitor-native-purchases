@@ -1826,6 +1826,10 @@ StoreKit re-delivers an unverified transaction on every launch until it is finis
 
 After validation when automatic acknowledgment is off (for example `configure({ autoFinishTransactions: false })` or `purchaseProduct({ autoAcknowledgePurchases: false })`), call `consumePurchase({ purchaseToken })` for consumable in-app products (acknowledges and consumes), or `acknowledgePurchase({ purchaseToken })` for non-consumables and subscriptions. `finishTransaction({ transactionId })` also acknowledges on Android, where `transactionId` is the purchase token. With `autoFinishTransactions: false`, `restorePurchases()` does not auto-acknowledge; use `getUnfinishedTransactions()` to list unacknowledged purchases in the `PURCHASED` state (`isAcknowledged === false`).
 
+## Breaking (TypeScript typings)
+
+`Product.subscriptionPeriod` is now optional. Android omits it on prepaid (non-recurring) offers, which have price only. The period is present for infinite recurring phases, or for finite recurring phases on installment offers. Reading `product.subscriptionPeriod.unit` without a check is a TypeScript error. Use optional chaining, for example `product.subscriptionPeriod?.unit`. See [`Product`](#product).
+
 ## API
 
 <docgen-index>
