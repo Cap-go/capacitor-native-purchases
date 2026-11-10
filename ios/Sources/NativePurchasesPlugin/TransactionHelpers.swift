@@ -146,16 +146,28 @@ internal class TransactionHelpers {
         return dictionary
     }
 
-    static func collectUnfinishedTransactions() async throws -> [[String: Any]] {
+    static func collectUnfinishedTransactions(includeUnverified: Bool = false) async throws -> [[String: Any]] {
         var unfinished: [[String: Any]] = []
         for await result in Transaction.unfinished {
-            guard case .verified(let transaction) = result else { continue }
+            let transaction: Transaction
+            var verificationError: String?
+            switch result {
+            case .verified(let verified):
+                transaction = verified
+            case .unverified(let unverified, let error):
+                guard includeUnverified else { continue }
+                transaction = unverified
+                verificationError = error.localizedDescription
+            }
             var payload = await buildTransactionResponse(
                 from: transaction,
                 jwsRepresentation: result.jwsRepresentation,
                 alwaysIncludeWillCancel: true
             )
             payload["needsFinish"] = true
+            if let verificationError = verificationError {
+                payload["verificationError"] = verificationError
+            }
             unfinished.append(payload)
         }
         return unfinished

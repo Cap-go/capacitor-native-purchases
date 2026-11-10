@@ -591,6 +591,17 @@ export interface Transaction {
    * @platform android Not available (use `isAcknowledged === false` instead)
    */
   readonly needsFinish?: boolean;
+  /**
+   * Why StoreKit could not verify this transaction. Treat the transaction as untrusted and do not
+   * grant entitlements from it.
+   *
+   * Present only on unverified entries returned by `getUnfinishedTransactions({ includeUnverified: true })`.
+   *
+   * @since 8.10.0
+   * @platform ios Present when StoreKit reports the transaction as unverified
+   * @platform android Not available (Play Billing has no client-side unverified state)
+   */
+  readonly verificationError?: string;
 }
 
 export interface TransactionVerificationFailedEvent {
@@ -1368,15 +1379,20 @@ export interface NativePurchasesPlugin {
    * Equivalent to `acknowledgePurchase({ purchaseToken: transactionId })` on iOS. Safe to call more
    * than once; finishing an already finished transaction resolves successfully.
    *
-   * **Android**: Google Play uses purchase acknowledgment, not StoreKit finishing. Call
-   * `acknowledgePurchase({ purchaseToken })` instead. This method rejects on Android.
+   * A transaction StoreKit could not verify is rejected unless `allowUnverified` is `true`. Finishing
+   * one only removes it from the queue so StoreKit stops re-delivering it; never grant entitlements from it.
    *
-   * @param options.transactionId StoreKit transaction ID from the `Transaction` object (numeric string).
+   * **Android**: Acknowledges the purchase, using `transactionId` as the purchase token. Use
+   * `consumePurchase({ purchaseToken })` instead for consumables that must be purchasable again.
+   * `allowUnverified` has no effect because Play Billing has no client-side unverified state.
+   *
+   * @param options.transactionId Transaction ID from the `Transaction` object (numeric string on iOS, purchase token on Android).
+   * @param options.allowUnverified Finish the transaction even if StoreKit could not verify it. Defaults to `false`.
    * @since 8.9.0
    * @platform ios Finishes the transaction with StoreKit 2
-   * @platform android Rejects; use `acknowledgePurchase()`
+   * @platform android Acknowledges the purchase with Google Play
    */
-  finishTransaction(options: { transactionId: string }): Promise<void>;
+  finishTransaction(options: { transactionId: string; allowUnverified?: boolean }): Promise<void>;
 
   /**
    * Returns transactions that still need finishing on iOS, or unacknowledged purchases on Android.
@@ -1388,9 +1404,15 @@ export interface NativePurchasesPlugin {
    * non-consumables and subscriptions. Includes only purchases in the `PURCHASED` state that are not
    * yet acknowledged. Pending purchases are excluded until Google Play marks them purchased.
    *
+   * **Unverified transactions:** With `includeUnverified: true`, iOS also returns transactions StoreKit
+   * could not verify, each with `verificationError` set. Do not grant entitlements from those; pass them
+   * to `finishTransaction({ transactionId, allowUnverified: true })` to clear them. Android has no
+   * client-side unverified state, so the option does not change its results.
+   *
+   * @param options.includeUnverified Also return unfinished transactions StoreKit could not verify. Defaults to `false`.
    * @since 8.9.0
    */
-  getUnfinishedTransactions(): Promise<{ transactions: Transaction[] }>;
+  getUnfinishedTransactions(options?: { includeUnverified?: boolean }): Promise<{ transactions: Transaction[] }>;
 
   /**
    * Consume an in-app purchase on Android.

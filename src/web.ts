@@ -7,12 +7,13 @@ export class NativePurchasesWeb extends WebPlugin implements NativePurchasesPlug
     void options;
   }
 
-  async getUnfinishedTransactions(): Promise<{ transactions: Transaction[] }> {
+  async getUnfinishedTransactions(options?: { includeUnverified?: boolean }): Promise<{ transactions: Transaction[] }> {
+    void options;
     console.error('getUnfinishedTransactions only mocked in web');
     return { transactions: [] };
   }
 
-  async finishTransaction(options: { transactionId: string }): Promise<void> {
+  async finishTransaction(options: { transactionId: string; allowUnverified?: boolean }): Promise<void> {
     void options;
     console.error('finishTransaction only mocked in web');
   }
