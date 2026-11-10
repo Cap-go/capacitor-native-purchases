@@ -87,6 +87,14 @@ final class ProductPayloadMapper {
         List<ProductDetails.PricingPhase> phases =
             offerDetails.getPricingPhases() == null ? List.of() : offerDetails.getPricingPhases().getPricingPhaseList();
 
+        ProductDetails.InstallmentPlanDetails installmentPlanDetails = offerDetails.getInstallmentPlanDetails();
+        if (installmentPlanDetails != null) {
+            int commitmentPayments = installmentPlanDetails.getInstallmentPlanCommitmentPaymentsCount();
+            if (commitmentPayments > 0) {
+                product.put("subscriptionBillingCycles", commitmentPayments);
+            }
+        }
+
         ProductDetails.PricingPhase standardPhase = findStandardPricingPhase(phases);
         if (standardPhase != null) {
             double price = standardPhase.getPriceAmountMicros() / 1_000_000.0;
@@ -94,6 +102,12 @@ final class ProductPayloadMapper {
             product.put("priceString", standardPhase.getFormattedPrice());
             product.put("currencyCode", standardPhase.getPriceCurrencyCode());
             product.put("currencySymbol", currencySymbol(standardPhase.getPriceCurrencyCode()));
+            int recurrenceMode = standardPhase.getRecurrenceMode();
+            if (recurrenceMode == RECURRENCE_MODE_INFINITE_RECURRING) {
+                product.put("subscriptionPeriod", subscriptionPeriodFromBillingPeriod(standardPhase.getBillingPeriod()));
+            } else if (recurrenceMode == RECURRENCE_MODE_FINITE_RECURRING && installmentPlanDetails != null) {
+                product.put("subscriptionPeriod", subscriptionPeriodFromBillingPeriod(standardPhase.getBillingPeriod()));
+            }
         }
 
         String currencyCode = standardPhase != null ? standardPhase.getPriceCurrencyCode() : product.getString("currencyCode", "");

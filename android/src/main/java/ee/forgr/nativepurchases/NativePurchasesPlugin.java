@@ -43,6 +43,66 @@ import org.json.JSONArray;
 @CapacitorPlugin(name = "NativePurchases")
 public class NativePurchasesPlugin extends Plugin {
 
+    /** Outcome of choosing a subscription offer token before launching the billing flow. */
+    enum SubscriptionOfferPurchaseOutcome {
+        /** An offer was selected; {@link SubscriptionOfferPurchaseResult#offerToken} is set. */
+        OK,
+        /** The product details contained no subscription offers. */
+        NO_OFFERS,
+        /** An explicit offer token matched nothing in the query result. */
+        OFFER_TOKEN_NOT_FOUND
+    }
+
+    /** Result of {@link #resolveSubscriptionOfferForPurchase}. */
+    static final class SubscriptionOfferPurchaseResult {
+
+        final SubscriptionOfferPurchaseOutcome outcome;
+        final String offerToken;
+        final String basePlanId;
+
+        private SubscriptionOfferPurchaseResult(SubscriptionOfferPurchaseOutcome outcome, String offerToken, String basePlanId) {
+            this.outcome = outcome;
+            this.offerToken = offerToken;
+            this.basePlanId = basePlanId;
+        }
+
+        static SubscriptionOfferPurchaseResult ok(String offerToken, String basePlanId) {
+            return new SubscriptionOfferPurchaseResult(SubscriptionOfferPurchaseOutcome.OK, offerToken, basePlanId);
+        }
+
+        static SubscriptionOfferPurchaseResult noOffers() {
+            return new SubscriptionOfferPurchaseResult(SubscriptionOfferPurchaseOutcome.NO_OFFERS, null, null);
+        }
+
+        static SubscriptionOfferPurchaseResult offerTokenNotFound() {
+            return new SubscriptionOfferPurchaseResult(SubscriptionOfferPurchaseOutcome.OFFER_TOKEN_NOT_FOUND, null, null);
+        }
+    }
+
+    /**
+     * Selects the subscription offer token for {@link #purchaseProduct}, using the same rules
+     * as {@link SubscriptionOfferSelector}.
+     */
+    static SubscriptionOfferPurchaseResult resolveSubscriptionOfferForPurchase(
+        List<ProductDetails.SubscriptionOfferDetails> subscriptionOffers,
+        String planIdentifier,
+        String offerToken
+    ) {
+        if (subscriptionOffers == null || subscriptionOffers.isEmpty()) {
+            return SubscriptionOfferPurchaseResult.noOffers();
+        }
+        int selectedIndex = SubscriptionOfferSelector.selectIndex(
+            SubscriptionOfferSelector.adapt(subscriptionOffers),
+            planIdentifier,
+            offerToken
+        );
+        if (selectedIndex == SubscriptionOfferSelector.NOT_FOUND) {
+            return SubscriptionOfferPurchaseResult.offerTokenNotFound();
+        }
+        ProductDetails.SubscriptionOfferDetails selected = subscriptionOffers.get(selectedIndex);
+        return SubscriptionOfferPurchaseResult.ok(selected.getOfferToken(), selected.getBasePlanId());
+    }
+
     private final String pluginVersion = "8.9.7";
     public static final String TAG = "NativePurchases";
     private static final int BILLING_CONNECTION_MAX_ATTEMPTS = 2;
@@ -305,6 +365,19 @@ public class NativePurchasesPlugin extends Plugin {
         synchronized (billingClientLock) {
             closeBillingClientLocked();
         }
+    }
+
+    /**
+     * Reject a purchase whose {@code offerToken} matched no current offer.
+     *
+     * Shared by the subscription and one-time paths because `definitions.ts`
+     * documents that rejection as one rule covering both product types, so
+     * the two must not drift apart in wording.
+     */
+    private void rejectOfferTokenNotFound(PluginCall call, String productIdentifier) {
+        NativePurchasesLog.d(TAG, "Offer token not found for product: " + productIdentifier);
+        closeBillingClient();
+        call.reject("Offer token not found for product: " + productIdentifier);
     }
 
     private void closeBillingClientLocked() {
@@ -755,10 +828,13 @@ public class NativePurchasesPlugin extends Plugin {
             call.reject("productType is empty");
             return;
         }
-        if (productType.equals("subs") && (planIdentifier == null || planIdentifier.isEmpty())) {
-            // Handle error: no planIdentifier with productType subs
+        boolean hasOfferToken = offerToken != null && !offerToken.isEmpty();
+        if (productType.equals("subs") && !SubscriptionOfferSelector.canSelect(planIdentifier, offerToken)) {
+            // The caller named no offer at all. SubscriptionOfferSelector owns
+            // this rule: see canSelect for why either value alone is enough,
+            // and for what it deliberately does not catch.
             NativePurchasesLog.d(TAG, "Error: planIdentifier cannot be empty if productType is subs");
-            call.reject("planIdentifier cannot be empty if productType is subs");
+            call.reject("planIdentifier cannot be empty if productType is subs unless offerToken is provided");
             return;
         }
         assert quantity != null;
@@ -820,35 +896,42 @@ public class NativePurchasesPlugin extends Plugin {
                                 BillingFlowParams.ProductDetailsParams.newBuilder().setProductDetails(productDetailsItem);
                             if (productType.equals("subs")) {
                                 NativePurchasesLog.d(TAG, "Processing subscription product");
-                                // list the SubscriptionOfferDetails and find the one who match the planIdentifier if not found get the first one
-                                ProductDetails.SubscriptionOfferDetails selectedOfferDetails = null;
-                                assert productDetailsItem.getSubscriptionOfferDetails() != null;
+                                // Prefer an explicit offerToken, then the planIdentifier's base
+                                // plan, then the first offer. See SubscriptionOfferSelector.
+                                List<ProductDetails.SubscriptionOfferDetails> subscriptionOffers =
+                                    productDetailsItem.getSubscriptionOfferDetails();
                                 NativePurchasesLog.d(
                                     TAG,
-                                    "Available offer details count: " + productDetailsItem.getSubscriptionOfferDetails().size()
+                                    "Available offer details count: " + (subscriptionOffers == null ? 0 : subscriptionOffers.size())
                                 );
-                                for (ProductDetails.SubscriptionOfferDetails offerDetails : productDetailsItem.getSubscriptionOfferDetails()) {
-                                    NativePurchasesLog.d(TAG, "Checking offer: " + offerDetails.getBasePlanId());
-                                    if (offerDetails.getBasePlanId().equals(planIdentifier)) {
-                                        selectedOfferDetails = offerDetails;
-                                        NativePurchasesLog.d(TAG, "Found matching plan: " + planIdentifier);
-                                        break;
-                                    }
+
+                                SubscriptionOfferPurchaseResult subscriptionSelection = resolveSubscriptionOfferForPurchase(
+                                    subscriptionOffers,
+                                    planIdentifier,
+                                    offerToken
+                                );
+                                if (subscriptionSelection.outcome == SubscriptionOfferPurchaseOutcome.NO_OFFERS) {
+                                    NativePurchasesLog.w(TAG, "No subscription offer details found for product: " + productIdentifier);
+                                    closeBillingClient();
+                                    call.reject("No subscription offer details found for product: " + productIdentifier);
+                                    return;
                                 }
-                                if (selectedOfferDetails == null) {
-                                    selectedOfferDetails = productDetailsItem.getSubscriptionOfferDetails().get(0);
-                                    NativePurchasesLog.d(TAG, "Using first available offer: " + selectedOfferDetails.getBasePlanId());
+                                if (subscriptionSelection.outcome == SubscriptionOfferPurchaseOutcome.OFFER_TOKEN_NOT_FOUND) {
+                                    rejectOfferTokenNotFound(call, productIdentifier);
+                                    return;
                                 }
-                                productDetailsParams.setOfferToken(selectedOfferDetails.getOfferToken());
+
+                                NativePurchasesLog.d(TAG, "Selected base plan: " + subscriptionSelection.basePlanId);
+                                productDetailsParams.setOfferToken(subscriptionSelection.offerToken);
                                 NativePurchasesLog.d(
                                     TAG,
-                                    "Set offer token: " + NativePurchasesLog.redactSensitive(selectedOfferDetails.getOfferToken())
+                                    "Set offer token: " + NativePurchasesLog.redactSensitive(subscriptionSelection.offerToken)
                                 );
                             } else if (productType.equals("inapp")) {
                                 NativePurchasesLog.d(TAG, "Processing in-app product");
                                 List<ProductDetails.OneTimePurchaseOfferDetails> oneTimeOffers =
                                     ProductPayloadMapper.resolveOneTimePurchaseOffers(productDetailsItem);
-                                if (offerToken != null && !offerToken.isEmpty()) {
+                                if (hasOfferToken) {
                                     ProductDetails.OneTimePurchaseOfferDetails selectedOffer = null;
                                     for (ProductDetails.OneTimePurchaseOfferDetails offerDetails : oneTimeOffers) {
                                         if (offerToken.equals(offerDetails.getOfferToken())) {
@@ -857,9 +940,7 @@ public class NativePurchasesPlugin extends Plugin {
                                         }
                                     }
                                     if (selectedOffer == null) {
-                                        NativePurchasesLog.d(TAG, "Offer token not found for product: " + productIdentifier);
-                                        closeBillingClient();
-                                        call.reject("Offer token not found for product: " + productIdentifier);
+                                        rejectOfferTokenNotFound(call, productIdentifier);
                                         return;
                                     }
                                     productDetailsParams.setOfferToken(selectedOffer.getOfferToken());

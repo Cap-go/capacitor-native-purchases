@@ -951,6 +951,11 @@ export interface Product {
   readonly price: number;
   /**
    * Formatted price of the item, including its currency sign, such as €3.99.
+   *
+   * Android subscriptions: set from the standard recurring pricing phase (see
+   * `ProductPayloadMapper`). When the offer has an introductory phase, `introductoryPrice`
+   * describes that phase, so a pre purchase message should include both or defer confirmation
+   * to the store sheet.
    */
   readonly priceString: string;
   /**
@@ -975,6 +980,10 @@ export interface Product {
   readonly planIdentifier?: string;
   /**
    * Android: offer token required when purchasing a specific subscription or one-time offer.
+   *
+   * Pass it to `purchaseProduct({ offerToken })` to buy this exact offer. It belongs to the
+   * query that returned it and goes stale, so read it from the same `getProducts()` /
+   * `getProduct()` call you purchase from.
    */
   readonly offerToken?: string;
   /**
@@ -1016,14 +1025,29 @@ export interface Product {
    */
   readonly pricingTerms?: SubscriptionPricingTerms[];
   /**
-   * The Product subscription group identifier.
-   */
-  readonly subscriptionPeriod: SubscriptionPeriod;
-  /**
-   * The Product introductory Price.
+   * Recurring billing period for subscription products.
    *
-   * @platform ios Populated from StoreKit introductory offers when available.
-   * @platform android Populated from the first pricing phase on base subscription offers when multiple phases are present.
+   * @platform ios From StoreKit `subscription.subscriptionPeriod`.
+   * @platform android From the standard pricing phase billing period when recurrence is
+   * infinite recurring, or finite recurring on installment offers (`ProductPayloadMapper.applySubscriptionPricing`).
+   * Omitted for prepaid (non-recurring) phases.
+   */
+  readonly subscriptionPeriod?: SubscriptionPeriod;
+  /**
+   * Android subscriptions only: committed payment count for installment base plans when Play
+   * exposes it on the offer.
+   *
+   * @platform android From `InstallmentPlanDetails.getInstallmentPlanCommitmentPaymentsCount()`.
+   * @platform ios Not available
+   */
+  readonly subscriptionBillingCycles?: number;
+  /**
+   * Introductory price for this product line when the store exposes it. Pair with `priceString`
+   * for full subscription offer wording before purchase. iOS: from StoreKit introductory offers
+   * when available. Android base subscription offers (`offerId` null): from the first pricing
+   * phase when multiple phases exist (intro then recurring). Android promotional offer lines
+   * (`offerId` set): null; phase pricing is not exposed on `Product`, so defer price confirmation
+   * to Play checkout instead of using `priceString` alone. Mapping matches `ProductPayloadMapper`.
    */
   readonly introductoryPrice: SKProductDiscount | null;
   /**
@@ -1038,7 +1062,9 @@ export interface Product {
    * The Product discounts list.
    *
    * @platform ios Populated from StoreKit promotional offers when available.
-   * @platform android Populated from promotional subscription offers that share the same base plan.
+   * @platform android On base subscription offers (`offerId` null), lists promotional offers on
+   * the same base plan. A promotional offer line itself returns an empty array; its pricing
+   * phases are not mapped here or on `introductoryPrice`.
    */
   readonly discounts: SKProductDiscount[];
 }
@@ -1171,11 +1197,41 @@ export interface NativePurchasesPlugin {
   /**
    * Started purchase process for the given product.
    *
+   * On Android, `offerToken` selects which offer is charged. If the token is
+   * missing from the product details returned by the plugin's query, the plugin
+   * rejects the purchase instead of selecting another offer. Other failures can
+   * also reject the purchase. Google Play may still show a different checkout,
+   * for example if the offer stops being eligible after the query, so the final
+   * price is not guaranteed.
+   * Offer tokens come from a specific product query and go stale, so read
+   * one from the same `getProducts()` / `getProduct()` call you purchase
+   * from.
+   *
+   * For a **subscription** (`productType: 'subs'`) the order is: an explicit
+   * `offerToken`, then the first offer whose base plan matches
+   * `planIdentifier`, then the first offer the store returned.
+   * `planIdentifier` is the **base plan id**, which `getProducts()` reports
+   * as `Product.identifier`, not `Product.planIdentifier`, which holds the
+   * Play product id. It is required unless an `offerToken` is given, since
+   * a token already identifies one offer on its own.
+   *
+   * For a **one-time product** (`productType: 'inapp'`) there is no base
+   * plan, so `planIdentifier` plays no part, and an `offerToken` selects one
+   * of the product's purchase offers. Without a token no offer token is set
+   * at all whenever the product still has a backward-compatible purchase
+   * option, which leaves the choice to Play: it charges whichever buy
+   * purchase option is marked backward-compatible, which is the first
+   * *created* one by default and another only if one was marked
+   * `legacyCompatible`. Either way it need not be the first offer
+   * `getProducts()` returned. Only for a product with no backward-compatible
+   * option does the first offer in the list get used. So pass the token
+   * whenever a specific one-time offer matters.
+   *
    * @param options - The product to purchase
    * @param options.productIdentifier - The product identifier of the product you want to purchase.
    * @param options.productType - Only Android, the type of product, can be inapp or subs. Will use inapp by default.
-   * @param options.planIdentifier - Only Android, the identifier of the base plan you want to purchase from Google Play Console. REQUIRED for Android subscriptions, ignored on iOS.
-   * @param options.offerToken - Only Android, the offer token for the selected subscription or one-time product offer. Use the `offerToken` returned by `getProducts()` / `getProduct()`.
+   * @param options.planIdentifier - Only Android, the identifier of the base plan you want to purchase from Google Play Console, the value `getProducts()` reports as `Product.identifier` for a subscription, not `Product.planIdentifier`. Required for Android subscriptions unless `offerToken` is given; ignored for one-time products and on iOS.
+   * @param options.offerToken - Only Android, the offer token for the selected subscription or one-time product offer. Use the `offerToken` returned by `getProducts()` / `getProduct()`. For a subscription it takes precedence over `planIdentifier`, since it names one specific offer, and makes `planIdentifier` optional. When the token is absent from the plugin query result the purchase is rejected instead of falling back to another offer. Google Play may still change what the user can buy after the query. Offer tokens come from a specific product query and go stale, so read one from the same query you purchase from. Omit it to keep the previous behaviour.
    * @param options.quantity - Only iOS, the number of items you wish to purchase. Will use 1 by default.
    * @param options.billingPlanType - Only iOS, the StoreKit subscription billing plan to purchase. Use `"monthly"` for a monthly subscription with a 12-month commitment. Requires iOS 26.4+ and Xcode 26.5 SDK support.
    * @param options.appAccountToken - Optional identifier uniquely associated with the user's account in your app.

@@ -183,18 +183,21 @@ There are two types of purchases with different requirements:
 | Purchase Type | productType | planIdentifier | Use Case |
 |---------------|-------------|----------------|----------|
 | **In-App Purchase** | `PURCHASE_TYPE.INAPP` | ❌ Not needed | One-time purchases (premium features, remove ads, etc.) |
-| **Subscription** | `PURCHASE_TYPE.SUBS` | ✅ **REQUIRED (Android only)** | Recurring purchases (monthly/yearly subscriptions) |
+| **Subscription** | `PURCHASE_TYPE.SUBS` | ✅ **REQUIRED (Android only, unless you pass `offerToken`)** | Recurring purchases (monthly/yearly subscriptions) |
 
 **Key Rules:**
 - ✅ **In-App Products**: Use `productType: PURCHASE_TYPE.INAPP`, no `planIdentifier` needed on any platform
-- ✅ **Subscriptions on Android**: Must use `productType: PURCHASE_TYPE.SUBS` AND `planIdentifier: "your-plan-id"` (the Base Plan ID from Google Play Console)
+- ✅ **Subscriptions on Android**: Use `productType: PURCHASE_TYPE.SUBS` AND either `planIdentifier: "your-plan-id"` (the Base Plan ID from Google Play Console) or `offerToken` (one exact offer, read from `getProducts()`)
 - ✅ **Subscriptions on iOS**: Use `productType: PURCHASE_TYPE.SUBS`, `planIdentifier` is optional and ignored
-- ❌ **Missing planIdentifier** for Android subscriptions will cause purchase failures
+- ❌ **Missing both `planIdentifier` and `offerToken`** for Android subscriptions will cause purchase failures
 
 **About planIdentifier (Android-specific):**
-The `planIdentifier` parameter is **only required for Android subscriptions**. It should be set to the Base Plan ID that you configure in the Google Play Console when creating your subscription product. For example, if you create a monthly subscription with base plan ID "monthly-plan" in Google Play Console, you would use `planIdentifier: "monthly-plan"` when purchasing that subscription.
+The `planIdentifier` parameter is **only used for Android subscriptions**. It should be set to the Base Plan ID that you configure in the Google Play Console when creating your subscription product. For example, if you create a monthly subscription with base plan ID "monthly-plan" in Google Play Console, you would use `planIdentifier: "monthly-plan"` when purchasing that subscription. `getProducts()` reports that value as `Product.identifier`, not as `Product.planIdentifier`, which holds the Play product id.
 
 iOS does not use this parameter - subscriptions on iOS only require the product identifier.
+
+**About offerToken (Android-specific):**
+A base plan can carry several offers (a free trial, an introductory price), and `planIdentifier` names only the plan. The plugin then purchases the **first offer Play returned for that plan** and sets that offer's token, so which offer applies is decided by the order of the list rather than by your app, and the store does not pick one at purchase time. `offerToken` names one exact offer instead, which is why it makes `planIdentifier` unnecessary; when both are given, the token wins. Read it from the `offerToken` of the same `getProducts()` entry you purchase, because tokens belong to one product query and go stale, and note that a token matching no current offer is **rejected** rather than quietly charging a different price. Pass `offerToken` whenever a specific offer you displayed must be the one charged. [`purchaseProduct`](#purchaseproduct) documents the full order of precedence.
 
 ### Complete Example: Get Product Info and Purchase
 
@@ -207,7 +210,7 @@ class PurchaseManager {
   // In-app product (one-time purchase)
   private premiumProductId = 'com.yourapp.premium_features';
   
-  // Subscription products (require planIdentifier on Android)
+  // Subscription products (Android: planIdentifier, or the separate offerToken option)
   private monthlySubId = 'com.yourapp.premium.monthly';
   private monthlyPlanId = 'monthly-plan';  // Base plan ID from Google Play Console (Android only)
 
@@ -299,14 +302,14 @@ class PurchaseManager {
     }
   }
 
-  // Purchase subscription (planIdentifier REQUIRED for Android)
+  // Purchase subscription (Android: planIdentifier, or the separate offerToken option)
   async purchaseMonthlySubscription() {
     try {
       console.log('Starting subscription purchase...');
 
       const result = await NativePurchases.purchaseProduct({
         productIdentifier: this.monthlySubId,
-        planIdentifier: this.monthlyPlanId,    // REQUIRED for Android subscriptions, ignored on iOS
+        planIdentifier: this.monthlyPlanId,    // Android base plan id, not an offerToken; ignored on iOS
         productType: PURCHASE_TYPE.SUBS,       // REQUIRED for subscriptions
         quantity: 1
       });
@@ -320,14 +323,14 @@ class PurchaseManager {
     }
   }
 
-  // Purchase yearly subscription (planIdentifier REQUIRED for Android)
+  // Purchase yearly subscription (Android: planIdentifier, or the separate offerToken option)
   async purchaseYearlySubscription() {
     try {
       console.log('Starting yearly subscription purchase...');
 
       const result = await NativePurchases.purchaseProduct({
         productIdentifier: this.yearlySubId,
-        planIdentifier: this.yearlyPlanId,     // REQUIRED for Android subscriptions, ignored on iOS
+        planIdentifier: this.yearlyPlanId,     // Android base plan id, not an offerToken; ignored on iOS
         productType: PURCHASE_TYPE.SUBS,       // REQUIRED for subscriptions
         quantity: 1
       });
@@ -489,6 +492,75 @@ const getSubscriptions = async () => {
 ```typescript
 import { NativePurchases, PURCHASE_TYPE } from '@capgo/native-purchases';
 
+// Android subscription offers: priceString is the recurring phase; introductoryPrice is the first phase on base offers.
+const formatIntroPhaseDuration = (intro: {
+  numberOfPeriods: number;
+  subscriptionPeriod?: { numberOfUnits: number; unitString?: string };
+}) => {
+  const units = intro.subscriptionPeriod?.numberOfUnits ?? 1;
+  const count = intro.numberOfPeriods * units;
+  const unit = intro.subscriptionPeriod?.unitString ?? 'period';
+  const label = count === 1 ? unit : `${unit}s`;
+  return `${count} ${label}`;
+};
+
+const formatRecurringInterval = (period?: {
+  numberOfUnits: number;
+  unitString?: string;
+}): string | null => {
+  if (!period?.numberOfUnits || !period.unitString || period.unitString === 'unknown') {
+    return null;
+  }
+  const { numberOfUnits, unitString } = period;
+  if (numberOfUnits === 1) {
+    return `per ${unitString}`;
+  }
+  const label = `${unitString}s`;
+  return `every ${numberOfUnits} ${label}`;
+};
+
+const formatRecurringPrice = (
+  priceString: string,
+  period?: { numberOfUnits: number; unitString?: string },
+): string | null => {
+  const interval = formatRecurringInterval(period);
+  if (!interval) {
+    return null;
+  }
+  return `${priceString} ${interval}`;
+};
+
+const subscriptionOfferPriceSummary = (product: {
+  priceString: string;
+  offerId?: string | null;
+  subscriptionPeriod?: { numberOfUnits: number; unitString?: string };
+  subscriptionBillingCycles?: number;
+  introductoryPrice: {
+    priceString: string;
+    numberOfPeriods: number;
+    subscriptionPeriod?: { numberOfUnits: number; unitString?: string };
+  } | null;
+}): string | null => {
+  const intro = product.introductoryPrice;
+  const cycles = product.subscriptionBillingCycles;
+  // Installment subsequent terms are not on Product, so do not imply charges stop after the commitment.
+  if (cycles !== undefined && cycles > 0) {
+    return null;
+  }
+  if (intro?.priceString && intro.priceString !== product.priceString) {
+    const recurring = formatRecurringPrice(product.priceString, product.subscriptionPeriod);
+    if (!recurring) {
+      return null;
+    }
+    return `${intro.priceString} for ${formatIntroPhaseDuration(intro)}, then ${recurring}`;
+  }
+  // Promotional offer lines omit introductoryPrice; do not show recurring price alone as the full offer.
+  if (product.offerId) {
+    return null;
+  }
+  return formatRecurringPrice(product.priceString, product.subscriptionPeriod);
+};
+
 // Simple one-time purchase (in-app product)
 const buyInAppProduct = async () => {
   try {
@@ -546,7 +618,7 @@ const buyInAppProduct = async () => {
   }
 };
 
-// Simple subscription purchase (requires planIdentifier)
+// Simple subscription purchase (Android: planIdentifier, or the separate offerToken option)
 const buySubscription = async () => {
   try {
     // Check billing support
@@ -562,14 +634,18 @@ const buySubscription = async () => {
       productType: PURCHASE_TYPE.SUBS
     });
 
-    // Confirm with user (showing real price from store)
-    const confirmed = confirm(`Subscribe to ${product.title} for ${product.priceString}?`);
+    // Confirm with user: show intro and recurring terms when mapped; otherwise Play checkout shows the price.
+    const offerSummary = subscriptionOfferPriceSummary(product);
+    const confirmed = offerSummary
+      ? confirm(`Subscribe to ${product.title} for ${offerSummary}?`)
+      : confirm(`Subscribe to ${product.title}? Google Play will show the offer price at checkout.`);
     if (!confirmed) return;
 
-    // Make subscription purchase (planIdentifier REQUIRED for Android, ignored on iOS)
+    // Purchase the same offer you displayed: reuse identifier and offerToken from getProduct()
     const result = await NativePurchases.purchaseProduct({
       productIdentifier: 'com.yourapp.premium.monthly',
-      planIdentifier: 'monthly-plan',           // REQUIRED for Android subscriptions, ignored on iOS
+      planIdentifier: product.identifier,       // Android base plan id for this offer; ignored on iOS
+      offerToken: product.offerToken,           // Android: same offer as the price above; ignored on iOS
       productType: PURCHASE_TYPE.SUBS,          // REQUIRED for subscriptions
       quantity: 1,
       appAccountToken: uuidToken                // Optional: User identifier in UUID format
@@ -1406,12 +1482,12 @@ class Store {
     }
   }
 
-  // Purchase subscription (requires planIdentifier)
+  // Purchase subscription (Android: planIdentifier, or the separate offerToken option)
   async purchaseSubscription(productId: string, planId: string) {
     try {
       const transaction = await NativePurchases.purchaseProduct({
         productIdentifier: productId,
-        planIdentifier: planId,              // REQUIRED for subscriptions
+        planIdentifier: planId,              // Android base plan id; offerToken is separate
         productType: PURCHASE_TYPE.SUBS      // REQUIRED for subscriptions
       });
       console.log('Subscription purchase successful:', transaction);
@@ -1484,7 +1560,7 @@ try {
   await store.purchaseProduct('premium_features');
   console.log('In-app purchase completed successfully');
   
-  // Purchase subscription (requires planIdentifier)
+  // Purchase subscription (Android: planIdentifier, or the separate offerToken option)
   await store.purchaseSubscription('premium_monthly', 'monthly-plan');
   console.log('Subscription completed successfully');
 } catch (error) {
@@ -1746,6 +1822,10 @@ StoreKit re-delivers an unverified transaction on every launch until it is finis
 
 After validation when automatic acknowledgment is off (for example `configure({ autoFinishTransactions: false })` or `purchaseProduct({ autoAcknowledgePurchases: false })`), call `consumePurchase({ purchaseToken })` for consumable in-app products (acknowledges and consumes), or `acknowledgePurchase({ purchaseToken })` for non-consumables and subscriptions. `finishTransaction({ transactionId })` also acknowledges on Android, where `transactionId` is the purchase token. With `autoFinishTransactions: false`, `restorePurchases()` does not auto-acknowledge; use `getUnfinishedTransactions()` to list unacknowledged purchases in the `PURCHASED` state (`isAcknowledged === false`).
 
+## Breaking (TypeScript typings)
+
+`Product.subscriptionPeriod` is now optional. Android omits it on prepaid (non-recurring) offers, which have price only. The period is present for infinite recurring phases, or for finite recurring phases on installment offers. Reading `product.subscriptionPeriod.unit` without a check is a TypeScript error. Use optional chaining, for example `product.subscriptionPeriod?.unit`. See [`Product`](#product).
+
 ## API
 
 <docgen-index>
@@ -1891,6 +1971,36 @@ purchaseProduct(options: { productIdentifier: string; planIdentifier?: string; o
 ```
 
 Started purchase process for the given product.
+
+On Android, `offerToken` selects which offer is charged. If the token is
+missing from the product details returned by the plugin's query, the plugin
+rejects the purchase instead of selecting another offer. Other failures can
+also reject the purchase. Google Play may still show a different checkout,
+for example if the offer stops being eligible after the query, so the final
+price is not guaranteed.
+Offer tokens come from a specific product query and go stale, so read
+one from the same `getProducts()` / `getProduct()` call you purchase
+from.
+
+For a **subscription** (`productType: 'subs'`) the order is: an explicit
+`offerToken`, then the first offer whose base plan matches
+`planIdentifier`, then the first offer the store returned.
+`planIdentifier` is the **base plan id**, which `getProducts()` reports
+as <a href="#product">`Product.identifier`</a>, not <a href="#product">`Product.planIdentifier`</a>, which holds the
+Play product id. It is required unless an `offerToken` is given, since
+a token already identifies one offer on its own.
+
+For a **one-time product** (`productType: 'inapp'`) there is no base
+plan, so `planIdentifier` plays no part, and an `offerToken` selects one
+of the product's purchase offers. Without a token no offer token is set
+at all whenever the product still has a backward-compatible purchase
+option, which leaves the choice to Play: it charges whichever buy
+purchase option is marked backward-compatible, which is the first
+*created* one by default and another only if one was marked
+`legacyCompatible`. Either way it need not be the first offer
+`getProducts()` returned. Only for a product with no backward-compatible
+option does the first offer in the list get used. So pass the token
+whenever a specific one-time offer matters.
 
 | Param         | Type                                                                                                                                                                                                                                                                                                   | Description               |
 | ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------- |
@@ -2341,28 +2451,29 @@ which is useful for determining if users are entitled to features from earlier b
 
 #### Product
 
-| Prop                              | Type                                                                                  | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | Since |
-| --------------------------------- | ------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----- |
-| **`identifier`**                  | <code>string</code>                                                                   | <a href="#product">Product</a> Id. Android subscriptions note: - `identifier` is the base plan ID (`offerDetails.getBasePlanId()`). - `planIdentifier` is the subscription product ID (`productDetails.getProductId()`). Android one-time products note: - `identifier` is the Google Play product ID (`productDetails.getProductId()`). - When multiple offers exist, `getProducts()` returns one entry per eligible offer. If you group/filter Android subscription results by `identifier`, you are grouping by base plan. |       |
-| **`description`**                 | <code>string</code>                                                                   | Description of the product.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |       |
-| **`title`**                       | <code>string</code>                                                                   | Title of the product.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |       |
-| **`price`**                       | <code>number</code>                                                                   | Price of the product in the local currency.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |       |
-| **`priceString`**                 | <code>string</code>                                                                   | Formatted price of the item, including its currency sign, such as €3.99.                                                                                                                                                                                                                                                                                                                                                                                                                                                      |       |
-| **`currencyCode`**                | <code>string</code>                                                                   | Currency code for price and original price.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |       |
-| **`currencySymbol`**              | <code>string</code>                                                                   | Currency symbol for price and original price.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |       |
-| **`isFamilyShareable`**           | <code>boolean</code>                                                                  | Boolean indicating if the product is sharable with family                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |       |
-| **`subscriptionGroupIdentifier`** | <code>string</code>                                                                   | Group identifier for the product.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |       |
-| **`planIdentifier`**              | <code>string</code>                                                                   | Android subscriptions only: Google Play product identifier tied to the offer/base plan set.                                                                                                                                                                                                                                                                                                                                                                                                                                   |       |
-| **`offerToken`**                  | <code>string</code>                                                                   | Android: offer token required when purchasing a specific subscription or one-time offer.                                                                                                                                                                                                                                                                                                                                                                                                                                      |       |
-| **`offerId`**                     | <code>string \| null</code>                                                           | Android: offer identifier (null/undefined for base offers).                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |       |
-| **`purchaseOptionId`**            | <code>string</code>                                                                   | Android one-time products only: purchase option identifier (for example `buy-option`).                                                                                                                                                                                                                                                                                                                                                                                                                                        |       |
-| **`fullPrice`**                   | <code>number</code>                                                                   | Android one-time products only: full price before discount, in the local currency.                                                                                                                                                                                                                                                                                                                                                                                                                                            |       |
-| **`discountDisplayInfo`**         | <code><a href="#onetimepurchaseofferdiscount">OneTimePurchaseOfferDiscount</a></code> | Android one-time products only: discount metadata for discounted offers.                                                                                                                                                                                                                                                                                                                                                                                                                                                      |       |
-| **`pricingTerms`**                | <code>SubscriptionPricingTerms[]</code>                                               | iOS subscriptions only: StoreKit pricing terms by billing plan. For subscriptions with a monthly billing plan and 12-month commitment, this includes both the standard up-front plan and the monthly commitment plan. Display both `billingDisplayPrice` and `commitmentInfo.priceString` before starting a monthly commitment purchase.                                                                                                                                                                                      | 8.3.8 |
-| **`subscriptionPeriod`**          | <code><a href="#subscriptionperiod">SubscriptionPeriod</a></code>                     | The <a href="#product">Product</a> subscription group identifier.                                                                                                                                                                                                                                                                                                                                                                                                                                                             |       |
-| **`introductoryPrice`**           | <code><a href="#skproductdiscount">SKProductDiscount</a> \| null</code>               | The <a href="#product">Product</a> introductory Price.                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |       |
-| **`introEligibility`**            | <code><a href="#intro_eligibility_status">INTRO_ELIGIBILITY_STATUS</a></code>         | Whether the current store account is eligible for an introductory offer on this subscription.                                                                                                                                                                                                                                                                                                                                                                                                                                 | 8.8.3 |
-| **`discounts`**                   | <code>SKProductDiscount[]</code>                                                      | The <a href="#product">Product</a> discounts list.                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |       |
+| Prop                              | Type                                                                                  | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | Since |
+| --------------------------------- | ------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----- |
+| **`identifier`**                  | <code>string</code>                                                                   | <a href="#product">Product</a> Id. Android subscriptions note: - `identifier` is the base plan ID (`offerDetails.getBasePlanId()`). - `planIdentifier` is the subscription product ID (`productDetails.getProductId()`). Android one-time products note: - `identifier` is the Google Play product ID (`productDetails.getProductId()`). - When multiple offers exist, `getProducts()` returns one entry per eligible offer. If you group/filter Android subscription results by `identifier`, you are grouping by base plan.                                                                  |       |
+| **`description`**                 | <code>string</code>                                                                   | Description of the product.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |       |
+| **`title`**                       | <code>string</code>                                                                   | Title of the product.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |       |
+| **`price`**                       | <code>number</code>                                                                   | Price of the product in the local currency.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |       |
+| **`priceString`**                 | <code>string</code>                                                                   | Formatted price of the item, including its currency sign, such as €3.99. Android subscriptions: set from the standard recurring pricing phase (see `ProductPayloadMapper`). When the offer has an introductory phase, `introductoryPrice` describes that phase, so a pre purchase message should include both or defer confirmation to the store sheet.                                                                                                                                                                                                                                        |       |
+| **`currencyCode`**                | <code>string</code>                                                                   | Currency code for price and original price.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |       |
+| **`currencySymbol`**              | <code>string</code>                                                                   | Currency symbol for price and original price.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |       |
+| **`isFamilyShareable`**           | <code>boolean</code>                                                                  | Boolean indicating if the product is sharable with family                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |       |
+| **`subscriptionGroupIdentifier`** | <code>string</code>                                                                   | Group identifier for the product.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |       |
+| **`planIdentifier`**              | <code>string</code>                                                                   | Android subscriptions only: Google Play product identifier tied to the offer/base plan set.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |       |
+| **`offerToken`**                  | <code>string</code>                                                                   | Android: offer token required when purchasing a specific subscription or one-time offer. Pass it to `purchaseProduct({ offerToken })` to buy this exact offer. It belongs to the query that returned it and goes stale, so read it from the same `getProducts()` / `getProduct()` call you purchase from.                                                                                                                                                                                                                                                                                      |       |
+| **`offerId`**                     | <code>string \| null</code>                                                           | Android: offer identifier (null/undefined for base offers).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |       |
+| **`purchaseOptionId`**            | <code>string</code>                                                                   | Android one-time products only: purchase option identifier (for example `buy-option`).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |       |
+| **`fullPrice`**                   | <code>number</code>                                                                   | Android one-time products only: full price before discount, in the local currency.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |       |
+| **`discountDisplayInfo`**         | <code><a href="#onetimepurchaseofferdiscount">OneTimePurchaseOfferDiscount</a></code> | Android one-time products only: discount metadata for discounted offers.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |       |
+| **`pricingTerms`**                | <code>SubscriptionPricingTerms[]</code>                                               | iOS subscriptions only: StoreKit pricing terms by billing plan. For subscriptions with a monthly billing plan and 12-month commitment, this includes both the standard up-front plan and the monthly commitment plan. Display both `billingDisplayPrice` and `commitmentInfo.priceString` before starting a monthly commitment purchase.                                                                                                                                                                                                                                                       | 8.3.8 |
+| **`subscriptionPeriod`**          | <code><a href="#subscriptionperiod">SubscriptionPeriod</a></code>                     | Recurring billing period for subscription products.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |       |
+| **`subscriptionBillingCycles`**   | <code>number</code>                                                                   | Android subscriptions only: committed payment count for installment base plans when Play exposes it on the offer.                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |       |
+| **`introductoryPrice`**           | <code><a href="#skproductdiscount">SKProductDiscount</a> \| null</code>               | Introductory price for this product line when the store exposes it. Pair with `priceString` for full subscription offer wording before purchase. iOS: from StoreKit introductory offers when available. Android base subscription offers (`offerId` null): from the first pricing phase when multiple phases exist (intro then recurring). Android promotional offer lines (`offerId` set): null; phase pricing is not exposed on <a href="#product">`Product`</a>, so defer price confirmation to Play checkout instead of using `priceString` alone. Mapping matches `ProductPayloadMapper`. |       |
+| **`introEligibility`**            | <code><a href="#intro_eligibility_status">INTRO_ELIGIBILITY_STATUS</a></code>         | Whether the current store account is eligible for an introductory offer on this subscription.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | 8.8.3 |
+| **`discounts`**                   | <code>SKProductDiscount[]</code>                                                      | The <a href="#product">Product</a> discounts list.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |       |
 
 
 #### OneTimePurchaseOfferDiscount
