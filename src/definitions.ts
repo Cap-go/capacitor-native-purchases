@@ -149,7 +149,7 @@ export interface Transaction {
    *
    * @since 1.0.0
    * @platform ios Numeric string (e.g., "2000001043762129")
-   * @platform android Alphanumeric string (e.g., "GPA.1234-5678-9012-34567")
+   * @platform android The Google Play purchase token (same value as `purchaseToken`), not the `GPA.` order ID in `orderId`
    */
   readonly transactionId: string;
   /**
@@ -597,7 +597,7 @@ export interface Transaction {
    *
    * Present only on unverified entries returned by `getUnfinishedTransactions({ includeUnverified: true })`.
    *
-   * @since 8.10.0
+   * @since 8.9.7
    * @platform ios Present when StoreKit reports the transaction as unverified
    * @platform android Not available (Play Billing has no client-side unverified state)
    */
@@ -1443,7 +1443,7 @@ export interface NativePurchasesPlugin {
    * `allowUnverified` has no effect because Play Billing has no client-side unverified state.
    *
    * @param options.transactionId Transaction ID from the `Transaction` object (numeric string on iOS, purchase token on Android).
-   * @param options.allowUnverified Finish the transaction even if StoreKit could not verify it. Defaults to `false`.
+   * @param options.allowUnverified Finish the transaction even if StoreKit could not verify it. Defaults to `false`. Since 8.9.7.
    * @since 8.9.0
    * @platform ios Finishes the transaction with StoreKit 2
    * @platform android Acknowledges the purchase with Google Play
@@ -1465,7 +1465,7 @@ export interface NativePurchasesPlugin {
    * to `finishTransaction({ transactionId, allowUnverified: true })` to clear them. Android has no
    * client-side unverified state, so the option does not change its results.
    *
-   * @param options.includeUnverified Also return unfinished transactions StoreKit could not verify. Defaults to `false`.
+   * @param options.includeUnverified Also return unfinished transactions StoreKit could not verify. Defaults to `false`. Since 8.9.7.
    * @since 8.9.0
    */
   getUnfinishedTransactions(options?: { includeUnverified?: boolean }): Promise<{ transactions: Transaction[] }>;
