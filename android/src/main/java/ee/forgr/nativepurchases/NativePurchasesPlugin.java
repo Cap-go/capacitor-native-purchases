@@ -214,6 +214,14 @@ public class NativePurchasesPlugin extends Plugin {
         }
     }
 
+    /**
+     * Maps the {@code productType} passed to purchaseProduct to the value it was bought as.
+     * Matches purchaseProduct, which defaults to inapp and treats anything else as a subscription.
+     */
+    static String responseProductType(String requestedProductType) {
+        return requestedProductType == null || requestedProductType.equals("inapp") ? "inapp" : "subs";
+    }
+
     private static String formatUtcIso8601(long timeMillis) {
         java.text.SimpleDateFormat purchaseDateFormat = new java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", java.util.Locale.US);
         purchaseDateFormat.setTimeZone(java.util.TimeZone.getTimeZone("UTC"));
@@ -511,7 +519,7 @@ public class NativePurchasesPlugin extends Plugin {
             ret.put("productIdentifier", purchase.getProducts().get(0));
             ret.put("purchaseDate", formatUtcIso8601(purchase.getPurchaseTime()));
             ret.put("quantity", purchase.getQuantity());
-            ret.put("productType", purchase.getPurchaseState() == Purchase.PurchaseState.PURCHASED ? "inapp" : "subs");
+            ret.put("productType", responseProductType(purchaseCall != null ? purchaseCall.getString("productType") : null));
             ret.put("orderId", purchase.getOrderId());
             ret.put("purchaseToken", purchase.getPurchaseToken());
             ret.put("isAcknowledged", purchase.isAcknowledged());
@@ -522,15 +530,6 @@ public class NativePurchasesPlugin extends Plugin {
             // Note: Android doesn't provide direct cancellation information in the Purchase object
             // This would require additional Google Play API calls to get detailed subscription status
             ret.put("willCancel", null); // Default to null, would need API call to determine actual cancellation date
-
-            // For subscriptions, try to get additional information
-            if (purchase.getPurchaseState() == Purchase.PurchaseState.PURCHASED && purchase.getProducts().get(0).contains("sub")) {
-                // Note: Android doesn't provide direct expiration date in Purchase object
-                // This would need to be calculated based on subscription period or fetched from Google Play API
-                ret.put("productType", "subs");
-                // For subscriptions, we can't get expiration date directly from Purchase object
-                // This would require additional Google Play API calls to get subscription details
-            }
 
             NativePurchasesLog.d(TAG, "Resolving purchase call for product: " + purchase.getProducts().get(0));
             if (purchaseCall != null) {
