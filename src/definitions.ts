@@ -355,12 +355,7 @@ export interface Transaction {
    * @platform android Not available
    */
   readonly subscriptionState?:
-    | 'subscribed'
-    | 'expired'
-    | 'revoked'
-    | 'inGracePeriod'
-    | 'inBillingRetryPeriod'
-    | 'unknown';
+    'subscribed' | 'expired' | 'revoked' | 'inGracePeriod' | 'inBillingRetryPeriod' | 'unknown';
   /**
    * StoreKit billing plan type for auto-renewable subscriptions.
    *
