@@ -63,7 +63,7 @@ extension NativePurchasesPlugin {
         }
     }
 
-    /// Finishes a StoreKit 2 or legacy transaction, and returns without error if it was already finished.
+    /// Finishes a StoreKit 2 or legacy transaction. Already-finished StoreKit 2 transactions return without error.
     /// Throws `FinishTransactionError` if the transaction is unverified and not allowed, or cannot be found.
     func finishStoreKitTransaction(
         transactionId: UInt64,
