@@ -48,7 +48,7 @@ public class NativePurchasesPluginPurchaseCompletionTest {
 
     @Test
     public void autoAcknowledge_keepsClientOpenUntilPlayAnswers() {
-        assertTrue(plugin.handlePurchase(purchase, call));
+        assertTrue(plugin.handlePurchase(purchase, call, client));
 
         ArgumentCaptor<AcknowledgePurchaseResponseListener> listener = ArgumentCaptor.forClass(AcknowledgePurchaseResponseListener.class);
         verify(client).acknowledgePurchase(any(AcknowledgePurchaseParams.class), listener.capture());
@@ -65,7 +65,7 @@ public class NativePurchasesPluginPurchaseCompletionTest {
     public void autoConsume_keepsClientOpenUntilPlayAnswers() {
         when(call.getBoolean("isConsumable", false)).thenReturn(true);
 
-        assertTrue(plugin.handlePurchase(purchase, call));
+        assertTrue(plugin.handlePurchase(purchase, call, client));
 
         ArgumentCaptor<ConsumeResponseListener> listener = ArgumentCaptor.forClass(ConsumeResponseListener.class);
         verify(client).consumeAsync(any(ConsumeParams.class), listener.capture());
@@ -79,13 +79,15 @@ public class NativePurchasesPluginPurchaseCompletionTest {
     }
 
     @Test
-    public void lateCallback_doesNotCloseAClientStartedByAnotherCall() {
-        assertTrue(plugin.handlePurchase(purchase, call));
+    public void replacedClient_purchaseFinishesOnItsOwnClientAndLeavesTheNewOneAlone() {
+        BillingClient newer = mock(BillingClient.class);
+        plugin.billingClient = newer;
+
+        assertTrue(plugin.handlePurchase(purchase, call, client));
 
         ArgumentCaptor<AcknowledgePurchaseResponseListener> listener = ArgumentCaptor.forClass(AcknowledgePurchaseResponseListener.class);
         verify(client).acknowledgePurchase(any(AcknowledgePurchaseParams.class), listener.capture());
-        BillingClient newer = mock(BillingClient.class);
-        plugin.billingClient = newer;
+        verify(newer, never()).acknowledgePurchase(any(), any());
 
         listener.getValue().onAcknowledgePurchaseResponse(ok);
 
@@ -98,7 +100,7 @@ public class NativePurchasesPluginPurchaseCompletionTest {
     public void manualAcknowledge_resolvesAndLeavesClosingToTheCaller() {
         when(call.getBoolean("autoAcknowledgePurchases", true)).thenReturn(false);
 
-        assertFalse(plugin.handlePurchase(purchase, call));
+        assertFalse(plugin.handlePurchase(purchase, call, client));
 
         verify(client, never()).acknowledgePurchase(any(), any());
         verify(call).resolve(any(JSObject.class));

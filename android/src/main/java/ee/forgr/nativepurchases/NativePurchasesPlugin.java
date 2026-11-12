@@ -472,8 +472,10 @@ public class NativePurchasesPlugin extends Plugin {
     /**
      * @return true when an acknowledge or consume is in flight. Its callback then closes the billing
      *     client and resolves the call, because endConnection() cancels work still queued on the client.
+     * @param purchaseClient the client whose listener delivered the purchase; another call may have
+     *     replaced {@code billingClient} by the time this runs.
      */
-    boolean handlePurchase(Purchase purchase, PluginCall purchaseCall) {
+    boolean handlePurchase(Purchase purchase, PluginCall purchaseCall, BillingClient purchaseClient) {
         NativePurchasesLog.d(TAG, "handlePurchase() called");
         NativePurchasesLog.d(TAG, NativePurchasesLog.purchaseDebugSummary(purchase));
         NativePurchasesLog.d(TAG, "Purchase state: " + purchase.getPurchaseState());
@@ -519,7 +521,6 @@ public class NativePurchasesPlugin extends Plugin {
             }
 
             NativePurchasesLog.d(TAG, "Resolving purchase call for product: " + purchase.getProducts().get(0));
-            BillingClient purchaseClient = billingClient;
             Runnable completePurchase = () -> {
                 closeBillingClientIfCurrent(purchaseClient);
                 if (purchaseCall != null) {
@@ -535,7 +536,7 @@ public class NativePurchasesPlugin extends Plugin {
                     }
                     NativePurchasesLog.d(TAG, "Purchase flagged as consumable, consuming...");
                     ConsumeParams consumeParams = ConsumeParams.newBuilder().setPurchaseToken(purchase.getPurchaseToken()).build();
-                    billingClient.consumeAsync(consumeParams, (billingResult, purchaseToken) -> {
+                    purchaseClient.consumeAsync(consumeParams, (billingResult, purchaseToken) -> {
                         onConsumeResponse(billingResult, purchaseToken);
                         completePurchase.run();
                     });
@@ -543,7 +544,7 @@ public class NativePurchasesPlugin extends Plugin {
                 case ACKNOWLEDGE:
                     if (shouldAutoAcknowledge) {
                         NativePurchasesLog.d(TAG, "Purchase not acknowledged, auto-acknowledging...");
-                        acknowledgePurchase(purchase.getPurchaseToken(), completePurchase);
+                        acknowledgePurchase(purchaseClient, purchase.getPurchaseToken(), completePurchase);
                         return true;
                     } else {
                         NativePurchasesLog.d(
@@ -586,12 +587,12 @@ public class NativePurchasesPlugin extends Plugin {
         return false;
     }
 
-    private void acknowledgePurchase(String purchaseToken, Runnable onComplete) {
+    private void acknowledgePurchase(BillingClient client, String purchaseToken, Runnable onComplete) {
         NativePurchasesLog.d(TAG, "acknowledgePurchase() called");
         AcknowledgePurchaseParams acknowledgePurchaseParams = AcknowledgePurchaseParams.newBuilder()
             .setPurchaseToken(purchaseToken)
             .build();
-        billingClient.acknowledgePurchase(
+        client.acknowledgePurchase(
             acknowledgePurchaseParams,
             new AcknowledgePurchaseResponseListener() {
                 @Override
@@ -685,6 +686,8 @@ public class NativePurchasesPlugin extends Plugin {
 
         NativePurchasesLog.d(TAG, "Creating new BillingClient (attempt " + attempt + "/" + BILLING_CONNECTION_MAX_ATTEMPTS + ")");
         final BillingClient client;
+        // The listener is built before the client exists, so it reads its owner from here.
+        final BillingClient[] listenerOwner = new BillingClient[1];
         synchronized (billingClientLock) {
             client = BillingClient.newBuilder(getContext())
                 .setListener(
@@ -700,7 +703,7 @@ public class NativePurchasesPlugin extends Plugin {
                             NativePurchasesLog.i(NativePurchasesPlugin.TAG, "onPurchasesUpdated" + billingResult);
                             if (billingResult.getResponseCode() == BillingClient.BillingResponseCode.OK && purchases != null) {
                                 NativePurchasesLog.d(TAG, "Purchase update successful, processing first purchase");
-                                if (handlePurchase(purchases.get(0), purchaseCall)) {
+                                if (handlePurchase(purchases.get(0), purchaseCall, listenerOwner[0])) {
                                     return;
                                 }
                             } else {
@@ -713,12 +716,13 @@ public class NativePurchasesPlugin extends Plugin {
                                     );
                                 }
                             }
-                            closeBillingClient();
+                            closeBillingClientIfCurrent(listenerOwner[0]);
                         }
                     }
                 )
                 .enablePendingPurchases(PendingPurchasesParams.newBuilder().enableOneTimeProducts().build())
                 .build();
+            listenerOwner[0] = client;
             billingClient = client;
         }
 
@@ -1042,7 +1046,7 @@ public class NativePurchasesPlugin extends Plugin {
                     PurchaseAction action = PurchaseActionDecider.decide(false, purchase);
                     if (action == PurchaseAction.ACKNOWLEDGE) {
                         NativePurchasesLog.d(TAG, "Purchase not acknowledged, acknowledging");
-                        acknowledgePurchase(purchase.getPurchaseToken(), () -> {});
+                        acknowledgePurchase(billingClient, purchase.getPurchaseToken(), () -> {});
                     } else {
                         NativePurchasesLog.d(TAG, "Purchase already acknowledged, skipping consume");
                     }
