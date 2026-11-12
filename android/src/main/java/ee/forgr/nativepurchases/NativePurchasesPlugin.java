@@ -367,6 +367,15 @@ public class NativePurchasesPlugin extends Plugin {
         }
     }
 
+    /** Closes {@code client} only if no later call has replaced it, so a late callback cannot end another call's connection. */
+    private void closeBillingClientIfCurrent(BillingClient client) {
+        synchronized (billingClientLock) {
+            if (billingClient == client) {
+                closeBillingClientLocked();
+            }
+        }
+    }
+
     /**
      * Reject a purchase whose {@code offerToken} matched no current offer.
      *
@@ -510,8 +519,9 @@ public class NativePurchasesPlugin extends Plugin {
             }
 
             NativePurchasesLog.d(TAG, "Resolving purchase call for product: " + purchase.getProducts().get(0));
+            BillingClient purchaseClient = billingClient;
             Runnable completePurchase = () -> {
-                closeBillingClient();
+                closeBillingClientIfCurrent(purchaseClient);
                 if (purchaseCall != null) {
                     purchaseCall.resolve(ret);
                 }

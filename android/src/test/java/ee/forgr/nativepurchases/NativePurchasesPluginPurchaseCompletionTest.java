@@ -1,6 +1,7 @@
 package ee.forgr.nativepurchases;
 
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
@@ -74,6 +75,22 @@ public class NativePurchasesPluginPurchaseCompletionTest {
         listener.getValue().onConsumeResponse(ok, "token");
 
         verify(client).endConnection();
+        verify(call).resolve(any(JSObject.class));
+    }
+
+    @Test
+    public void lateCallback_doesNotCloseAClientStartedByAnotherCall() {
+        assertTrue(plugin.handlePurchase(purchase, call));
+
+        ArgumentCaptor<AcknowledgePurchaseResponseListener> listener = ArgumentCaptor.forClass(AcknowledgePurchaseResponseListener.class);
+        verify(client).acknowledgePurchase(any(AcknowledgePurchaseParams.class), listener.capture());
+        BillingClient newer = mock(BillingClient.class);
+        plugin.billingClient = newer;
+
+        listener.getValue().onAcknowledgePurchaseResponse(ok);
+
+        verify(newer, never()).endConnection();
+        assertSame(newer, plugin.billingClient);
         verify(call).resolve(any(JSObject.class));
     }
 
