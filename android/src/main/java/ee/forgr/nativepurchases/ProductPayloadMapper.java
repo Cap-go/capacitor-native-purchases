@@ -120,16 +120,81 @@ final class ProductPayloadMapper {
             if (introPhase != null) {
                 product.put("introductoryPrice", pricingPhaseToDiscount(introPhase, "", 0, currencyCode, currencySymbol));
             } else {
-                product.put("introductoryPrice", JSONObject.NULL);
+                // A base plan's own offer details carry a single recurring phase, so the lookup
+                // above can only ever return null for this entry: on Google Play a free trial or
+                // intro price is a separate offer ON the base plan, not a phase OF it. Fall back to
+                // those offers, so a base plan with a trial reports it here rather than nowhere.
+                product.put(
+                    "introductoryPrice",
+                    introductoryPriceFromOffers(offerDetails.getBasePlanId(), allOffers, currencyCode, currencySymbol)
+                );
             }
             product.put(
                 "discounts",
                 promotionalDiscountsForBasePlan(offerDetails.getBasePlanId(), allOffers, currencyCode, currencySymbol)
             );
         } else {
-            product.put("introductoryPrice", JSONObject.NULL);
+            // This entry IS an offer, so its own leading phase is its introductory pricing.
+            ProductDetails.PricingPhase introPhase = findLeadingIntroductoryPhase(phases);
+            product.put(
+                "introductoryPrice",
+                introPhase != null
+                    ? pricingPhaseToDiscount(introPhase, offerDetails.getOfferId(), 0, currencyCode, currencySymbol)
+                    : JSONObject.NULL
+            );
             product.put("discounts", new JSONArray());
         }
+    }
+
+    /**
+     * The introductory pricing of the first offer on {@code basePlanId} that has one.
+     *
+     * <p>Used only when the base plan's own phases carry none, which is the usual case: Play models
+     * a free trial or intro price as an offer attached to the base plan, and the base plan entry
+     * itself lists just its recurring phase.
+     */
+    private static Object introductoryPriceFromOffers(
+        String basePlanId,
+        List<ProductDetails.SubscriptionOfferDetails> allOffers,
+        String currencyCode,
+        String currencySymbol
+    ) {
+        if (allOffers == null || basePlanId == null) {
+            return JSONObject.NULL;
+        }
+
+        for (ProductDetails.SubscriptionOfferDetails offer : allOffers) {
+            if (offer.getOfferId() == null || !basePlanId.equals(offer.getBasePlanId())) {
+                continue;
+            }
+
+            List<ProductDetails.PricingPhase> offerPhases =
+                offer.getPricingPhases() == null ? List.of() : offer.getPricingPhases().getPricingPhaseList();
+            ProductDetails.PricingPhase introPhase = findLeadingIntroductoryPhase(offerPhases);
+            if (introPhase != null) {
+                return pricingPhaseToDiscount(introPhase, offer.getOfferId(), 0, currencyCode, currencySymbol);
+            }
+        }
+
+        return JSONObject.NULL;
+    }
+
+    /**
+     * An offer's leading phase when it is introductory — a free trial or a reduced first period —
+     * rather than the ongoing price.
+     *
+     * <p>Unlike {@link #findIntroductoryPricingPhase} this does not require a second phase: a
+     * trial-only offer is a single non-recurring phase, and it is still introductory pricing.
+     *
+     * <p>Package-private so {@code ProductPayloadMapperIntroPhaseTest} can cover it without JSON.
+     */
+    static ProductDetails.PricingPhase findLeadingIntroductoryPhase(List<ProductDetails.PricingPhase> phases) {
+        if (phases == null || phases.isEmpty()) {
+            return null;
+        }
+
+        ProductDetails.PricingPhase firstPhase = phases.get(0);
+        return firstPhase.getRecurrenceMode() == RECURRENCE_MODE_INFINITE_RECURRING ? null : firstPhase;
     }
 
     static JSObject subscriptionPeriodFromBillingPeriod(String billingPeriod) {
