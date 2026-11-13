@@ -11,6 +11,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import android.util.Log;
+import com.android.billingclient.api.AcknowledgePurchaseParams;
 import com.android.billingclient.api.BillingClient;
 import com.android.billingclient.api.BillingResult;
 import com.android.billingclient.api.Purchase;
@@ -90,6 +91,19 @@ public class NativePurchasesPluginBillingFlowTest {
 
         verify(client).endConnection();
         verify(replacement, never()).endConnection();
+        verify(call).resolve(any(JSObject.class));
+    }
+
+    @Test
+    public void detachedClient_unacknowledgedPurchase_usesOwnerForAutoAcknowledge() {
+        when(purchase.isAcknowledged()).thenReturn(false);
+        assertTrue(plugin.beginPendingBillingFlow(client));
+        plugin.billingClient = replacement;
+
+        plugin.handlePurchasesUpdated(ok, List.of(purchase), call, client);
+
+        verify(client).acknowledgePurchase(any(AcknowledgePurchaseParams.class), any());
+        verify(replacement, never()).acknowledgePurchase(any(), any());
         verify(call).resolve(any(JSObject.class));
     }
 

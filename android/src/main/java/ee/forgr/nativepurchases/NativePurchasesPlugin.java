@@ -533,7 +533,7 @@ public class NativePurchasesPlugin extends Plugin {
         }
     }
 
-    private void handlePurchase(Purchase purchase, PluginCall purchaseCall) {
+    private void handlePurchase(Purchase purchase, PluginCall purchaseCall, BillingClient purchaseClient) {
         NativePurchasesLog.d(TAG, "handlePurchase() called");
         NativePurchasesLog.d(TAG, NativePurchasesLog.purchaseDebugSummary(purchase));
         NativePurchasesLog.d(TAG, "Purchase state: " + purchase.getPurchaseState());
@@ -560,12 +560,16 @@ public class NativePurchasesPlugin extends Plugin {
                     }
                     NativePurchasesLog.d(TAG, "Purchase flagged as consumable, consuming...");
                     ConsumeParams consumeParams = ConsumeParams.newBuilder().setPurchaseToken(purchase.getPurchaseToken()).build();
-                    billingClient.consumeAsync(consumeParams, this::onConsumeResponse);
+                    if (purchaseClient == null) {
+                        NativePurchasesLog.w(TAG, "Billing client unavailable, skipping auto consume");
+                        break;
+                    }
+                    purchaseClient.consumeAsync(consumeParams, this::onConsumeResponse);
                     break;
                 case ACKNOWLEDGE:
                     if (shouldAutoAcknowledge) {
                         NativePurchasesLog.d(TAG, "Purchase not acknowledged, auto-acknowledging...");
-                        acknowledgePurchase(purchase.getPurchaseToken());
+                        acknowledgePurchase(purchaseClient, purchase.getPurchaseToken());
                     } else {
                         NativePurchasesLog.d(
                             TAG,
@@ -625,11 +629,19 @@ public class NativePurchasesPlugin extends Plugin {
     }
 
     private void acknowledgePurchase(String purchaseToken) {
+        acknowledgePurchase(billingClient, purchaseToken);
+    }
+
+    private void acknowledgePurchase(BillingClient client, String purchaseToken) {
         NativePurchasesLog.d(TAG, "acknowledgePurchase() called");
+        if (client == null) {
+            NativePurchasesLog.w(TAG, "Billing client unavailable, skipping acknowledge");
+            return;
+        }
         AcknowledgePurchaseParams acknowledgePurchaseParams = AcknowledgePurchaseParams.newBuilder()
             .setPurchaseToken(purchaseToken)
             .build();
-        billingClient.acknowledgePurchase(
+        client.acknowledgePurchase(
             acknowledgePurchaseParams,
             new AcknowledgePurchaseResponseListener() {
                 @Override
@@ -716,7 +728,7 @@ public class NativePurchasesPlugin extends Plugin {
         try {
             if (billingResult.getResponseCode() == BillingClient.BillingResponseCode.OK && purchases != null) {
                 NativePurchasesLog.d(TAG, "Purchase update successful, processing first purchase");
-                handlePurchase(purchases.get(0), purchaseCall);
+                handlePurchase(purchases.get(0), purchaseCall, owner);
             } else {
                 NativePurchasesLog.d(TAG, "Purchase update failed or purchases is null");
                 NativePurchasesLog.i(NativePurchasesPlugin.TAG, "onPurchasesUpdated" + billingResult);
