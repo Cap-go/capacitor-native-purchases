@@ -30,7 +30,9 @@ import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.IdentityHashMap;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -115,6 +117,12 @@ public class NativePurchasesPlugin extends Plugin {
         return thread;
     });
     BillingClient billingClient;
+    /**
+     * Clients with an auto acknowledge or consume in flight. Guarded by {@link #billingClientLock}.
+     * A later call may replace such a client but must not end it, because endConnection() drops the
+     * queued acknowledge or consume; the purchase completion ends it instead.
+     */
+    private final Set<BillingClient> clientsFinishingPurchase = Collections.newSetFromMap(new IdentityHashMap<>());
     private volatile boolean autoFinishTransactions = true;
 
     @PluginMethod
@@ -361,7 +369,8 @@ public class NativePurchasesPlugin extends Plugin {
         super.handleOnDestroy();
     }
 
-    private void closeBillingClient() {
+    /** Package-private so tests can stand in for a later call that replaces the client. */
+    void closeBillingClient() {
         synchronized (billingClientLock) {
             closeBillingClientLocked();
         }
@@ -374,6 +383,32 @@ public class NativePurchasesPlugin extends Plugin {
                 closeBillingClientLocked();
             }
         }
+    }
+
+    /**
+     * Marks {@code client} as finishing a purchase so later calls replace it without ending it.
+     *
+     * @return false when the client is already closed, in which case nothing can run on it.
+     */
+    private boolean beginFinishingPurchase(BillingClient client) {
+        synchronized (billingClientLock) {
+            if (client == null || !client.isReady()) {
+                return false;
+            }
+            clientsFinishingPurchase.add(client);
+            return true;
+        }
+    }
+
+    /** Ends the client that finished a purchase, whether or not a later call has replaced it. */
+    private void endFinishingPurchase(BillingClient client) {
+        synchronized (billingClientLock) {
+            clientsFinishingPurchase.remove(client);
+            if (billingClient == client) {
+                billingClient = null;
+            }
+        }
+        client.endConnection();
     }
 
     /**
@@ -391,7 +426,11 @@ public class NativePurchasesPlugin extends Plugin {
 
     private void closeBillingClientLocked() {
         NativePurchasesLog.d(TAG, "closeBillingClient() called");
-        if (billingClient != null) {
+        if (billingClient != null && clientsFinishingPurchase.contains(billingClient)) {
+            // Its acknowledge or consume callback ends it; ending it here would drop that work.
+            NativePurchasesLog.d(TAG, "Detaching billing client that is still finishing a purchase");
+            billingClient = null;
+        } else if (billingClient != null) {
             NativePurchasesLog.d(TAG, "Ending billing client connection");
             billingClient.endConnection();
             billingClient = null;
@@ -521,8 +560,16 @@ public class NativePurchasesPlugin extends Plugin {
             }
 
             NativePurchasesLog.d(TAG, "Resolving purchase call for product: " + purchase.getProducts().get(0));
+            boolean canFinish = shouldAutoAcknowledge && action != PurchaseAction.NONE;
+            if (canFinish && !beginFinishingPurchase(purchaseClient)) {
+                // Another call already ended this client, so an acknowledge or consume would never
+                // be answered. Resolve now; the payload shows isAcknowledged false and the app can
+                // acknowledge or consume the purchase itself.
+                NativePurchasesLog.w(TAG, "Billing client already closed, skipping auto acknowledge or consume");
+                shouldAutoAcknowledge = false;
+            }
             Runnable completePurchase = () -> {
-                closeBillingClientIfCurrent(purchaseClient);
+                endFinishingPurchase(purchaseClient);
                 if (purchaseCall != null) {
                     purchaseCall.resolve(ret);
                 }

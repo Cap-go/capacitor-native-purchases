@@ -1,6 +1,7 @@
 package ee.forgr.nativepurchases;
 
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -38,6 +39,7 @@ public class NativePurchasesPluginPurchaseCompletionTest {
     @Before
     public void setUp() {
         plugin.billingClient = client;
+        when(client.isReady()).thenReturn(true);
         when(purchase.getPurchaseState()).thenReturn(Purchase.PurchaseState.PURCHASED);
         when(purchase.getPurchaseToken()).thenReturn("token");
         when(purchase.getProducts()).thenReturn(List.of("premium"));
@@ -91,9 +93,57 @@ public class NativePurchasesPluginPurchaseCompletionTest {
 
         listener.getValue().onAcknowledgePurchaseResponse(ok);
 
+        verify(client).endConnection();
         verify(newer, never()).endConnection();
         assertSame(newer, plugin.billingClient);
         verify(call).resolve(any(JSObject.class));
+    }
+
+    @Test
+    public void laterCallDuringAcknowledge_detachesTheClientWithoutEndingIt() {
+        assertTrue(plugin.handlePurchase(purchase, call, client));
+
+        ArgumentCaptor<AcknowledgePurchaseResponseListener> listener = ArgumentCaptor.forClass(AcknowledgePurchaseResponseListener.class);
+        verify(client).acknowledgePurchase(any(AcknowledgePurchaseParams.class), listener.capture());
+
+        // Every new billing operation closes the current client before creating its own.
+        plugin.closeBillingClient();
+
+        assertNull(plugin.billingClient);
+        verify(client, never()).endConnection();
+        verify(call, never()).resolve(any(JSObject.class));
+
+        listener.getValue().onAcknowledgePurchaseResponse(ok);
+
+        verify(client).endConnection();
+        verify(call).resolve(any(JSObject.class));
+    }
+
+    @Test
+    public void clientAlreadyClosed_resolvesWithoutWaitingForAnAcknowledgeThatCannotRun() {
+        when(client.isReady()).thenReturn(false);
+
+        assertFalse(plugin.handlePurchase(purchase, call, client));
+
+        verify(client, never()).acknowledgePurchase(any(), any());
+        verify(call).resolve(any(JSObject.class));
+    }
+
+    @Test
+    public void finishedClient_isEndedByTheNextCloseAgain() {
+        assertTrue(plugin.handlePurchase(purchase, call, client));
+
+        ArgumentCaptor<AcknowledgePurchaseResponseListener> listener = ArgumentCaptor.forClass(AcknowledgePurchaseResponseListener.class);
+        verify(client).acknowledgePurchase(any(AcknowledgePurchaseParams.class), listener.capture());
+        listener.getValue().onAcknowledgePurchaseResponse(ok);
+        verify(client).endConnection();
+        assertNull(plugin.billingClient);
+
+        BillingClient next = mock(BillingClient.class);
+        plugin.billingClient = next;
+        plugin.closeBillingClient();
+
+        verify(next).endConnection();
     }
 
     @Test
