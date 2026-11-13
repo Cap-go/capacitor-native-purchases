@@ -110,7 +110,7 @@ public class NativePurchasesPlugin extends Plugin {
         return SubscriptionOfferPurchaseResult.ok(selected.getOfferToken(), selected.getBasePlanId());
     }
 
-    private final String pluginVersion = "8.9.13";
+    private final String pluginVersion = "8.9.15";
     public static final String TAG = "NativePurchases";
     private static final int BILLING_CONNECTION_MAX_ATTEMPTS = 2;
     private static final long BILLING_SETUP_TIMEOUT_SECONDS = 5;
