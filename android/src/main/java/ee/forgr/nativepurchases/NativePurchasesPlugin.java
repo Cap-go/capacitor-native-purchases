@@ -30,7 +30,9 @@ import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.IdentityHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -114,7 +116,13 @@ public class NativePurchasesPlugin extends Plugin {
         thread.setDaemon(true);
         return thread;
     });
-    private BillingClient billingClient;
+    BillingClient billingClient;
+    /**
+     * Open Play billing sheets per client. Guarded by {@link #billingClientLock}. A client with an open
+     * flow must not be ended until Play calls {@code onPurchasesUpdated}; later calls detach it instead.
+     * Complements {@code pendingFinishes} from PR #248 when that merges.
+     */
+    private final Map<BillingClient, Integer> pendingBillingFlows = new IdentityHashMap<>();
     private volatile boolean autoFinishTransactions = true;
 
     @PluginMethod
@@ -365,13 +373,67 @@ public class NativePurchasesPlugin extends Plugin {
     @Override
     protected void handleOnDestroy() {
         billingExecutor.shutdownNow();
-        closeBillingClient();
+        List<BillingClient> clientsToEnd = new ArrayList<>();
+        synchronized (billingClientLock) {
+            if (billingClient != null) {
+                clientsToEnd.add(billingClient);
+            }
+            for (BillingClient client : pendingBillingFlows.keySet()) {
+                if (!clientsToEnd.contains(client)) {
+                    clientsToEnd.add(client);
+                }
+            }
+            billingClient = null;
+            pendingBillingFlows.clear();
+        }
+        for (BillingClient client : clientsToEnd) {
+            client.endConnection();
+        }
         super.handleOnDestroy();
     }
 
-    private void closeBillingClient() {
+    /** Package-private so tests can stand in for a later call that replaces the client. */
+    void closeBillingClient() {
         synchronized (billingClientLock) {
             closeBillingClientLocked();
+        }
+    }
+
+    /**
+     * Records an open billing flow on {@code client}. The flow ends in {@link #endPendingBillingFlow}.
+     *
+     * @return false when the client is already closed.
+     */
+    boolean beginPendingBillingFlow(BillingClient client) {
+        synchronized (billingClientLock) {
+            if (client == null || !client.isReady()) {
+                return false;
+            }
+            pendingBillingFlows.merge(client, 1, Integer::sum);
+            return true;
+        }
+    }
+
+    /**
+     * Records that Play answered the billing flow for {@code client}. The last one ends the client.
+     */
+    void endPendingBillingFlow(BillingClient client) {
+        boolean last;
+        synchronized (billingClientLock) {
+            Integer pending = pendingBillingFlows.get(client);
+            last = pending == null || pending <= 1;
+            if (last) {
+                pendingBillingFlows.remove(client);
+                if (billingClient == client) {
+                    billingClient = null;
+                }
+            } else {
+                pendingBillingFlows.put(client, pending - 1);
+            }
+            billingClientLock.notifyAll();
+        }
+        if (last) {
+            client.endConnection();
         }
     }
 
@@ -390,7 +452,10 @@ public class NativePurchasesPlugin extends Plugin {
 
     private void closeBillingClientLocked() {
         NativePurchasesLog.d(TAG, "closeBillingClient() called");
-        if (billingClient != null) {
+        if (billingClient != null && pendingBillingFlows.containsKey(billingClient)) {
+            NativePurchasesLog.d(TAG, "Detaching billing client that has an open purchase flow");
+            billingClient = null;
+        } else if (billingClient != null) {
             NativePurchasesLog.d(TAG, "Ending billing client connection");
             billingClient.endConnection();
             billingClient = null;
@@ -639,6 +704,31 @@ public class NativePurchasesPlugin extends Plugin {
         throw lastFailure != null ? lastFailure : new RuntimeException("Billing setup failed");
     }
 
+    /**
+     * Body of each client's PurchasesUpdatedListener. {@code owner} is the client the listener belongs
+     * to; it stays open while a billing flow is open and ends when Play answers here.
+     */
+    void handlePurchasesUpdated(BillingResult billingResult, List<Purchase> purchases, PluginCall purchaseCall, BillingClient owner) {
+        NativePurchasesLog.d(TAG, "onPurchasesUpdated() called");
+        NativePurchasesLog.d(TAG, "Billing result: " + billingResult.getResponseCode() + " - " + billingResult.getDebugMessage());
+        NativePurchasesLog.d(TAG, "Purchases count: " + (purchases != null ? purchases.size() : 0));
+        NativePurchasesLog.i(NativePurchasesPlugin.TAG, "onPurchasesUpdated" + billingResult);
+        try {
+            if (billingResult.getResponseCode() == BillingClient.BillingResponseCode.OK && purchases != null) {
+                NativePurchasesLog.d(TAG, "Purchase update successful, processing first purchase");
+                handlePurchase(purchases.get(0), purchaseCall);
+            } else {
+                NativePurchasesLog.d(TAG, "Purchase update failed or purchases is null");
+                NativePurchasesLog.i(NativePurchasesPlugin.TAG, "onPurchasesUpdated" + billingResult);
+                if (purchaseCall != null) {
+                    purchaseCall.reject("Purchase is not purchased", billingResponseCodeName(billingResult.getResponseCode()));
+                }
+            }
+        } finally {
+            endPendingBillingFlow(owner);
+        }
+    }
+
     private boolean isRetriableBillingSetupFailure(RuntimeException failure) {
         String message = failure.getMessage();
         if (message == null) {
@@ -656,6 +746,7 @@ public class NativePurchasesPlugin extends Plugin {
         final AtomicBoolean setupSettled = new AtomicBoolean(false);
 
         NativePurchasesLog.d(TAG, "Creating new BillingClient (attempt " + attempt + "/" + BILLING_CONNECTION_MAX_ATTEMPTS + ")");
+        final BillingClient[] listenerOwner = new BillingClient[1];
         final BillingClient client;
         synchronized (billingClientLock) {
             client = BillingClient.newBuilder(getContext())
@@ -663,32 +754,13 @@ public class NativePurchasesPlugin extends Plugin {
                     new PurchasesUpdatedListener() {
                         @Override
                         public void onPurchasesUpdated(@NonNull BillingResult billingResult, List<Purchase> purchases) {
-                            NativePurchasesLog.d(TAG, "onPurchasesUpdated() called");
-                            NativePurchasesLog.d(
-                                TAG,
-                                "Billing result: " + billingResult.getResponseCode() + " - " + billingResult.getDebugMessage()
-                            );
-                            NativePurchasesLog.d(TAG, "Purchases count: " + (purchases != null ? purchases.size() : 0));
-                            NativePurchasesLog.i(NativePurchasesPlugin.TAG, "onPurchasesUpdated" + billingResult);
-                            if (billingResult.getResponseCode() == BillingClient.BillingResponseCode.OK && purchases != null) {
-                                NativePurchasesLog.d(TAG, "Purchase update successful, processing first purchase");
-                                handlePurchase(purchases.get(0), purchaseCall);
-                            } else {
-                                NativePurchasesLog.d(TAG, "Purchase update failed or purchases is null");
-                                NativePurchasesLog.i(NativePurchasesPlugin.TAG, "onPurchasesUpdated" + billingResult);
-                                if (purchaseCall != null) {
-                                    purchaseCall.reject(
-                                        "Purchase is not purchased",
-                                        billingResponseCodeName(billingResult.getResponseCode())
-                                    );
-                                }
-                            }
-                            closeBillingClient();
+                            handlePurchasesUpdated(billingResult, purchases, purchaseCall, listenerOwner[0]);
                         }
                     }
                 )
                 .enablePendingPurchases(PendingPurchasesParams.newBuilder().enableOneTimeProducts().build())
                 .build();
+            listenerOwner[0] = client;
             billingClient = client;
         }
 
@@ -967,12 +1039,25 @@ public class NativePurchasesPlugin extends Plugin {
                         BillingFlowParams billingFlowParams = billingFlowBuilder.build();
                         // Launch the billing flow
                         NativePurchasesLog.d(TAG, "Launching billing flow");
-                        BillingResult billingResult2 = billingClient.launchBillingFlow(getActivity(), billingFlowParams);
+                        final BillingClient flowClient = billingClient;
+                        BillingResult billingResult2 = flowClient.launchBillingFlow(getActivity(), billingFlowParams);
                         NativePurchasesLog.d(
                             TAG,
                             "Billing flow launch result: " + billingResult2.getResponseCode() + " - " + billingResult2.getDebugMessage()
                         );
                         NativePurchasesLog.i(NativePurchasesPlugin.TAG, "onProductDetailsResponse2" + billingResult2);
+                        if (billingResult2.getResponseCode() == BillingClient.BillingResponseCode.OK) {
+                            if (!beginPendingBillingFlow(flowClient)) {
+                                NativePurchasesLog.w(TAG, "Billing client closed before purchase flow could be tracked");
+                                call.reject(
+                                    "Purchase is not purchased",
+                                    billingResponseCodeName(BillingClient.BillingResponseCode.SERVICE_DISCONNECTED)
+                                );
+                            }
+                        } else {
+                            call.reject("Purchase is not purchased", billingResponseCodeName(billingResult2.getResponseCode()));
+                            closeBillingClient();
+                        }
                     }
                 }
             );
