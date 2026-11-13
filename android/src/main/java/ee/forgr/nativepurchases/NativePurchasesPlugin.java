@@ -655,13 +655,13 @@ public class NativePurchasesPlugin extends Plugin {
 
     private void abortPurchaseClientFlow(BillingClient purchaseClient, PluginCall call, String message) {
         endPendingBillingFlow(purchaseClient);
-        closeBillingClient();
+        closeBillingClientIfCurrent(purchaseClient);
         rejectPurchaseCallOnce(call, message);
     }
 
     private void abortPurchaseClientFlow(BillingClient purchaseClient, PluginCall call, String message, String code) {
         endPendingBillingFlow(purchaseClient);
-        closeBillingClient();
+        closeBillingClientIfCurrent(purchaseClient);
         rejectPurchaseCallOnce(call, message, code);
     }
 
@@ -695,7 +695,7 @@ public class NativePurchasesPlugin extends Plugin {
         if (billingResult2.getResponseCode() != BillingClient.BillingResponseCode.OK) {
             endPendingBillingFlow(flowClient);
             rejectPurchaseCallOnce(call, "Purchase is not purchased", billingResponseCodeName(billingResult2.getResponseCode()));
-            closeBillingClient();
+            closeBillingClientIfCurrent(flowClient);
         }
     }
 
@@ -1050,6 +1050,7 @@ public class NativePurchasesPlugin extends Plugin {
         if (billingResult.getResponseCode() == BillingClient.BillingResponseCode.OK && purchases != null) {
             NativePurchasesLog.d(TAG, "Purchase update successful, processing first purchase");
             if (handlePurchase(purchases.get(0), purchaseCall, owner)) {
+                endPendingBillingFlow(owner);
                 return;
             }
         } else {
