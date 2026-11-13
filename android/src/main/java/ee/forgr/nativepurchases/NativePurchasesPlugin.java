@@ -736,7 +736,8 @@ public class NativePurchasesPlugin extends Plugin {
         );
     }
 
-    private void initBillingClient(PluginCall purchaseCall) {
+    /** Package-private so tests can drive a new billing call. */
+    void initBillingClient(PluginCall purchaseCall) {
         NativePurchasesLog.d(TAG, "initBillingClient() called");
         NativePurchasesLog.d(TAG, "purchaseCall is null: " + (purchaseCall == null));
 

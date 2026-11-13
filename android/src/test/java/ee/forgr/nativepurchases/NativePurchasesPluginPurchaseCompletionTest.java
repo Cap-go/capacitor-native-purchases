@@ -222,23 +222,39 @@ public class NativePurchasesPluginPurchaseCompletionTest {
     }
 
     @Test
-    public void nextBillingCall_waitsForTheFinishBeforeCreatingAClient() throws InterruptedException {
+    public void nextBillingCall_waitsForTheFinishBeforeReplacingTheClient() throws InterruptedException {
         assertTrue(plugin.handlePurchase(purchase, call, client));
         ArgumentCaptor<AcknowledgePurchaseResponseListener> listener = ArgumentCaptor.forClass(AcknowledgePurchaseResponseListener.class);
         verify(client).acknowledgePurchase(any(AcknowledgePurchaseParams.class), listener.capture());
 
-        AtomicBoolean released = new AtomicBoolean(false);
+        AtomicBoolean returned = new AtomicBoolean(false);
         Thread nextCall = new Thread(() -> {
-            plugin.awaitPendingFinishes();
-            released.set(true);
+            try {
+                // Runs the real entry point. Without a bridge, creating the new client fails after
+                // the wait, which is fine: the test only checks what happens before that.
+                plugin.initBillingClient(null);
+            } catch (RuntimeException expected) {
+                // No Android context in a JVM test.
+            }
+            returned.set(true);
         });
         nextCall.start();
-        nextCall.join(200);
-        assertFalse(released.get());
+
+        // Deterministic: the call is parked in wait() on the pending finish, not just slow to start.
+        long deadline = System.currentTimeMillis() + 5000;
+        while (nextCall.getState() != Thread.State.TIMED_WAITING && System.currentTimeMillis() < deadline) {
+            Thread.sleep(5);
+        }
+        assertSame(Thread.State.TIMED_WAITING, nextCall.getState());
+        assertFalse(returned.get());
+        assertSame(client, plugin.billingClient);
+        verify(client, never()).endConnection();
 
         listener.getValue().onAcknowledgePurchaseResponse(ok);
-        nextCall.join(2000);
+        nextCall.join(30000);
 
-        assertTrue(released.get());
+        assertTrue(returned.get());
+        verify(client, times(1)).endConnection();
+        verify(call).resolve(any(JSObject.class));
     }
 }
