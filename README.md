@@ -1834,6 +1834,12 @@ StoreKit re-delivers an unverified transaction on every launch until it is finis
 
 After validation when automatic acknowledgment is off (for example `configure({ autoFinishTransactions: false })` or `purchaseProduct({ autoAcknowledgePurchases: false })`), call `consumePurchase({ purchaseToken })` for consumable in-app products (acknowledges and consumes), or `acknowledgePurchase({ purchaseToken })` for non-consumables and subscriptions. `finishTransaction({ transactionId })` also acknowledges on Android, where `transactionId` is the purchase token. With `autoFinishTransactions: false`, `restorePurchases()` does not auto-acknowledge; use `getUnfinishedTransactions()` to list unacknowledged purchases in the `PURCHASED` state (`isAcknowledged === false`).
 
+**Android: recovering an interrupted finish**
+
+An acknowledge or consume can be lost before Google Play answers, for example when the app is killed mid-finish. Plugin teardown (when Capacitor destroys the plugin with its activity) also closes the current billing client even while a finish is still in flight, and Play drops any work that client had queued. The purchase then stays unacknowledged, and Google Play refunds purchases that are not acknowledged within three days.
+
+With `autoFinishTransactions: true` (the default), call `restorePurchases()` at app launch. It acknowledges any `PURCHASED` purchase that is still unacknowledged, so a purchase interrupted by a lost finish is completed on the next start. With `autoFinishTransactions: false`, use `getUnfinishedTransactions()` at launch instead and finish each purchase after validation.
+
 ## Breaking (TypeScript typings)
 
 `Product.subscriptionPeriod` is now optional. Android omits it on prepaid (non-recurring) offers, which have price only. The period is present for infinite recurring phases, or for finite recurring phases on installment offers. Reading `product.subscriptionPeriod.unit` without a check is a TypeScript error. Use optional chaining, for example `product.subscriptionPeriod?.unit`. See [`Product`](#product).
