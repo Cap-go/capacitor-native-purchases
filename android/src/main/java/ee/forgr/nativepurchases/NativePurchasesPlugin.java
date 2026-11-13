@@ -1119,47 +1119,69 @@ public class NativePurchasesPlugin extends Plugin {
         });
     }
 
-    private void processUnfinishedPurchases() {
-        NativePurchasesLog.d(TAG, "processUnfinishedPurchases() called");
-        QueryPurchasesParams queryInAppPurchasesParams = QueryPurchasesParams.newBuilder()
-            .setProductType(BillingClient.ProductType.INAPP)
-            .build();
-        NativePurchasesLog.d(TAG, "Querying unfinished in-app purchases");
-        billingClient.queryPurchasesAsync(queryInAppPurchasesParams, this::handlePurchases);
-
-        QueryPurchasesParams querySubscriptionsParams = QueryPurchasesParams.newBuilder()
-            .setProductType(BillingClient.ProductType.SUBS)
-            .build();
-        NativePurchasesLog.d(TAG, "Querying unfinished subscription purchases");
-        billingClient.queryPurchasesAsync(querySubscriptionsParams, this::handlePurchases);
+    /** The current client, read under the lock. May be null if another call already closed it. */
+    private BillingClient currentBillingClient() {
+        synchronized (billingClientLock) {
+            return billingClient;
+        }
     }
 
-    private void handlePurchases(BillingResult billingResult, List<Purchase> purchases) {
+    /**
+     * Queries unfinished purchases on {@code client} and acknowledges them. Each query and each
+     * acknowledge counts as a pending finish on that client, so a later call waits for them or
+     * detaches the client instead of ending it, and the last one ends it. Package-private for tests.
+     */
+    void processUnfinishedPurchases(BillingClient client) {
+        NativePurchasesLog.d(TAG, "processUnfinishedPurchases() called");
+        String[] productTypes = { BillingClient.ProductType.INAPP, BillingClient.ProductType.SUBS };
+        for (String productType : productTypes) {
+            if (!beginFinishingPurchase(client)) {
+                NativePurchasesLog.w(TAG, "Billing client already closed, skipping unfinished purchase recovery");
+                return;
+            }
+            QueryPurchasesParams params = QueryPurchasesParams.newBuilder().setProductType(productType).build();
+            NativePurchasesLog.d(TAG, "Querying unfinished purchases of type " + productType);
+            client.queryPurchasesAsync(params, (billingResult, purchases) -> {
+                try {
+                    handlePurchases(billingResult, purchases, client);
+                } finally {
+                    endFinishingPurchase(client);
+                }
+            });
+        }
+    }
+
+    private void handlePurchases(BillingResult billingResult, List<Purchase> purchases, BillingClient client) {
         NativePurchasesLog.d(TAG, "handlePurchases() called");
         NativePurchasesLog.d(TAG, "Query purchases result: " + billingResult.getResponseCode() + " - " + billingResult.getDebugMessage());
         NativePurchasesLog.d(TAG, "Purchases count: " + (purchases != null ? purchases.size() : 0));
 
-        if (billingResult.getResponseCode() == BillingClient.BillingResponseCode.OK) {
-            assert purchases != null;
-            if (!autoFinishTransactions) {
-                NativePurchasesLog.d(TAG, "autoFinishTransactions disabled, skipping recovery acknowledgment");
-                return;
-            }
-            for (Purchase purchase : purchases) {
-                NativePurchasesLog.d(TAG, "Processing purchase for products: " + purchase.getProducts());
-                NativePurchasesLog.d(TAG, "Purchase state: " + purchase.getPurchaseState());
-                if (purchase.getPurchaseState() == Purchase.PurchaseState.PURCHASED) {
-                    PurchaseAction action = PurchaseActionDecider.decide(false, purchase);
-                    if (action == PurchaseAction.ACKNOWLEDGE) {
-                        NativePurchasesLog.d(TAG, "Purchase not acknowledged, acknowledging");
-                        acknowledgePurchase(billingClient, purchase.getPurchaseToken(), (result) -> {});
-                    } else {
-                        NativePurchasesLog.d(TAG, "Purchase already acknowledged, skipping consume");
-                    }
-                }
-            }
-        } else {
+        if (billingResult.getResponseCode() != BillingClient.BillingResponseCode.OK || purchases == null) {
             NativePurchasesLog.d(TAG, "Query purchases failed");
+            return;
+        }
+        if (!autoFinishTransactions) {
+            NativePurchasesLog.d(TAG, "autoFinishTransactions disabled, skipping recovery acknowledgment");
+            return;
+        }
+        for (Purchase purchase : purchases) {
+            NativePurchasesLog.d(TAG, "Processing purchase for products: " + purchase.getProducts());
+            NativePurchasesLog.d(TAG, "Purchase state: " + purchase.getPurchaseState());
+            if (purchase.getPurchaseState() != Purchase.PurchaseState.PURCHASED) {
+                continue;
+            }
+            PurchaseAction action = PurchaseActionDecider.decide(false, purchase);
+            if (action != PurchaseAction.ACKNOWLEDGE) {
+                NativePurchasesLog.d(TAG, "Purchase already acknowledged, skipping consume");
+                continue;
+            }
+            // Registered before the query's own finish ends, so the client cannot close in between.
+            if (!beginFinishingPurchase(client)) {
+                NativePurchasesLog.w(TAG, "Billing client already closed, skipping recovery acknowledgment");
+                continue;
+            }
+            NativePurchasesLog.d(TAG, "Purchase not acknowledged, acknowledging");
+            acknowledgePurchase(client, purchase.getPurchaseToken(), (result) -> endFinishingPurchase(client));
         }
     }
 
@@ -1183,7 +1205,7 @@ public class NativePurchasesPlugin extends Plugin {
         NativePurchasesLog.d(TAG, "restorePurchases() called");
         NativePurchasesLog.d(NativePurchasesPlugin.TAG, "restorePurchases");
         withBillingClient(call, () -> {
-            this.processUnfinishedPurchases();
+            this.processUnfinishedPurchases(currentBillingClient());
             call.resolve();
             NativePurchasesLog.d(TAG, "restorePurchases() completed");
         });

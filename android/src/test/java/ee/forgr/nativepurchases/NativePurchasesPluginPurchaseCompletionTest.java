@@ -6,11 +6,13 @@ import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.mockStatic;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import android.util.Log;
 import com.android.billingclient.api.AcknowledgePurchaseParams;
 import com.android.billingclient.api.AcknowledgePurchaseResponseListener;
 import com.android.billingclient.api.BillingClient;
@@ -18,13 +20,17 @@ import com.android.billingclient.api.BillingResult;
 import com.android.billingclient.api.ConsumeParams;
 import com.android.billingclient.api.ConsumeResponseListener;
 import com.android.billingclient.api.Purchase;
+import com.android.billingclient.api.PurchasesResponseListener;
+import com.android.billingclient.api.QueryPurchasesParams;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.PluginCall;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
+import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 import org.mockito.ArgumentCaptor;
+import org.mockito.MockedStatic;
 
 /**
  * BillingClient.endConnection() shuts down the executor that runs acknowledge and consume, so the
@@ -37,9 +43,13 @@ public class NativePurchasesPluginPurchaseCompletionTest {
     private final PluginCall call = mock(PluginCall.class);
     private final Purchase purchase = mock(Purchase.class);
     private final NativePurchasesPlugin plugin = new NativePurchasesPlugin();
+    // Debug unit tests log through android.util.Log, which is a stub on the JVM. Mock just that
+    // instead of turning on returnDefaultValues for every unit test. Static mocks are per thread.
+    private MockedStatic<Log> log;
 
     @Before
     public void setUp() {
+        log = mockStatic(Log.class);
         plugin.billingClient = client;
         when(client.isReady()).thenReturn(true);
         when(purchase.getPurchaseState()).thenReturn(Purchase.PurchaseState.PURCHASED);
@@ -48,6 +58,11 @@ public class NativePurchasesPluginPurchaseCompletionTest {
         when(purchase.isAcknowledged()).thenReturn(false);
         when(call.getBoolean("isConsumable", false)).thenReturn(false);
         when(call.getBoolean("autoAcknowledgePurchases", true)).thenReturn(true);
+    }
+
+    @After
+    public void tearDown() {
+        log.close();
     }
 
     @Test
@@ -229,7 +244,7 @@ public class NativePurchasesPluginPurchaseCompletionTest {
 
         AtomicBoolean returned = new AtomicBoolean(false);
         Thread nextCall = new Thread(() -> {
-            try {
+            try (MockedStatic<Log> threadLog = mockStatic(Log.class)) {
                 // Runs the real entry point. Without a bridge, creating the new client fails after
                 // the wait, which is fine: the test only checks what happens before that.
                 plugin.initBillingClient(null);
@@ -256,5 +271,38 @@ public class NativePurchasesPluginPurchaseCompletionTest {
         assertTrue(returned.get());
         verify(client, times(1)).endConnection();
         verify(call).resolve(any(JSObject.class));
+    }
+
+    @Test
+    public void restorePurchases_recoveryAcknowledgeKeepsTheClientUntilPlayAnswers() {
+        plugin.processUnfinishedPurchases(client);
+
+        ArgumentCaptor<PurchasesResponseListener> queries = ArgumentCaptor.forClass(PurchasesResponseListener.class);
+        verify(client, times(2)).queryPurchasesAsync(any(QueryPurchasesParams.class), queries.capture());
+
+        queries.getAllValues().get(0).onQueryPurchasesResponse(ok, List.of(purchase));
+        ArgumentCaptor<AcknowledgePurchaseResponseListener> ack = ArgumentCaptor.forClass(AcknowledgePurchaseResponseListener.class);
+        verify(client).acknowledgePurchase(any(AcknowledgePurchaseParams.class), ack.capture());
+
+        // A later billing call closes the current client; the recovery acknowledge must survive it.
+        plugin.closeBillingClient();
+        assertNull(plugin.billingClient);
+        verify(client, never()).endConnection();
+
+        queries.getAllValues().get(1).onQueryPurchasesResponse(ok, List.of());
+        verify(client, never()).endConnection();
+
+        ack.getValue().onAcknowledgePurchaseResponse(ok);
+        verify(client, times(1)).endConnection();
+    }
+
+    @Test
+    public void restorePurchases_withAClosedClient_doesNotCrash() {
+        plugin.processUnfinishedPurchases(null);
+
+        when(client.isReady()).thenReturn(false);
+        plugin.processUnfinishedPurchases(client);
+
+        verify(client, never()).queryPurchasesAsync(any(QueryPurchasesParams.class), any());
     }
 }
