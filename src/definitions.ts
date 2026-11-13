@@ -1045,9 +1045,11 @@ export interface Product {
    * base plan rather than a phase OF it, so a base plan's own phases carry only its recurring
    * price. In that fallback case the value describes another offer, not this entry's `offerToken`:
    * purchasing with this entry's `offerToken` buys the base offer at its regular price, without the
-   * trial. To sell the trial, purchase with the `offerToken` of the entry whose `offerId` equals
-   * `introductoryPrice.identifier`. Android promotional offer lines (`offerId` set): that offer's
-   * own leading phase when it is introductory, else null; this entry's `offerToken` buys it.
+   * trial. To sell the trial, purchase with the `offerToken` of the entry that has the same
+   * `planIdentifier` (subscription product ID) and `identifier` (base plan ID) as this entry and
+   * whose `offerId` equals `introductoryPrice.identifier`. Offer IDs are unique only within a base
+   * plan, so do not match on `offerId` alone. Android promotional offer lines (`offerId` set): that
+   * offer's own leading phase when it is introductory, else null; this entry's `offerToken` buys it.
    * Mapping matches `ProductPayloadMapper`.
    */
   readonly introductoryPrice: SKProductDiscount | null;
