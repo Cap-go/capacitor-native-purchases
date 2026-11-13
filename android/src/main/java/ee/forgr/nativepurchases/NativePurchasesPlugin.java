@@ -441,7 +441,10 @@ public class NativePurchasesPlugin extends Plugin {
         synchronized (billingClientLock) {
             asyncInFlight = pendingAsyncBillingFinishes.getOrDefault(client, 0) > 0;
             Integer pending = pendingBillingFlows.get(client);
-            last = pending == null || pending <= 1;
+            if (pending == null) {
+                return;
+            }
+            last = pending <= 1;
             if (last) {
                 pendingBillingFlows.remove(client);
                 if (billingClient == client) {

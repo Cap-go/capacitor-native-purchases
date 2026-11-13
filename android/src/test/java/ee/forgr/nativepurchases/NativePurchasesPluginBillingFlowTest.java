@@ -102,8 +102,12 @@ public class NativePurchasesPluginBillingFlowTest {
         verify(call).resolve(any(JSObject.class));
     }
 
+    /**
+     * Models purchaseProduct: beginPending before queryProductDetailsAsync, another call replaces
+     * {@link NativePurchasesPlugin#getBillingClientForTest()}, then the details callback launches on the captured client.
+     */
     @Test
-    public void launchPurchaseBillingFlow_usesCapturedClientAfterFieldReplaced() {
+    public void queryToLaunchInterval_replacedBillingClient_launchesOnCapturedClient() {
         NativePurchasesPlugin pluginSpy = spy(plugin);
         AppCompatActivity activity = mock(AppCompatActivity.class);
         doReturn(activity).when(pluginSpy).getActivity();
@@ -194,6 +198,14 @@ public class NativePurchasesPluginBillingFlowTest {
         verify(client, never()).endConnection();
         listenerHolder[0].onAcknowledgePurchaseResponse(ok);
         verify(client).endConnection();
+    }
+
+    @Test
+    public void launchFailure_repeatedEndPendingBillingFlow_endsConnectionOnce() {
+        assertTrue(plugin.beginPendingBillingFlow(client));
+        plugin.endPendingBillingFlow(client);
+        plugin.endPendingBillingFlow(client);
+        verify(client, times(1)).endConnection();
     }
 
     @Test
