@@ -4,6 +4,7 @@ import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.mockStatic;
 import static org.mockito.Mockito.never;
@@ -12,6 +13,7 @@ import static org.mockito.Mockito.when;
 
 import android.util.Log;
 import com.android.billingclient.api.AcknowledgePurchaseParams;
+import com.android.billingclient.api.AcknowledgePurchaseResponseListener;
 import com.android.billingclient.api.BillingClient;
 import com.android.billingclient.api.BillingResult;
 import com.android.billingclient.api.Purchase;
@@ -100,11 +102,41 @@ public class NativePurchasesPluginBillingFlowTest {
         assertTrue(plugin.beginPendingBillingFlow(client));
         plugin.billingClient = replacement;
 
+        doAnswer((invocation) -> {
+            AcknowledgePurchaseResponseListener listener = invocation.getArgument(1);
+            listener.onAcknowledgePurchaseResponse(ok);
+            return null;
+        })
+            .when(client)
+            .acknowledgePurchase(any(AcknowledgePurchaseParams.class), any());
+
         plugin.handlePurchasesUpdated(ok, List.of(purchase), call, client);
 
         verify(client).acknowledgePurchase(any(AcknowledgePurchaseParams.class), any());
         verify(replacement, never()).acknowledgePurchase(any(), any());
         verify(call).resolve(any(JSObject.class));
+        verify(client).endConnection();
+        verify(replacement, never()).endConnection();
+    }
+
+    @Test
+    public void unacknowledgedPurchase_defersClientEndUntilAcknowledgeCompletes() {
+        when(purchase.isAcknowledged()).thenReturn(false);
+        assertTrue(plugin.beginPendingBillingFlow(client));
+
+        final AcknowledgePurchaseResponseListener[] listenerHolder = new AcknowledgePurchaseResponseListener[1];
+        doAnswer((invocation) -> {
+            listenerHolder[0] = invocation.getArgument(1);
+            return null;
+        })
+            .when(client)
+            .acknowledgePurchase(any(AcknowledgePurchaseParams.class), any());
+
+        plugin.handlePurchasesUpdated(ok, List.of(purchase), call, client);
+
+        verify(client, never()).endConnection();
+        listenerHolder[0].onAcknowledgePurchaseResponse(ok);
+        verify(client).endConnection();
     }
 
     @Test
