@@ -416,6 +416,9 @@ public class NativePurchasesPluginPurchaseCompletionTest {
 
         verify(client, times(1)).endConnection();
         verify(call, never()).resolve();
+        // The late answer neither resolves nor rejects again.
+        verify(call, times(1)).reject(any(String.class), org.mockito.ArgumentMatchers.eq("FINISH_TIMEOUT"));
+        verify(call, never()).reject(any(String.class));
     }
 
     @Test
@@ -463,5 +466,8 @@ public class NativePurchasesPluginPurchaseCompletionTest {
 
         verify(client, times(1)).endConnection();
         verify(call, never()).resolve();
+        // The late answer neither resolves nor rejects again.
+        verify(call, times(1)).reject(any(String.class), org.mockito.ArgumentMatchers.eq("FINISH_TIMEOUT"));
+        verify(call, never()).reject(any(String.class));
     }
 }
