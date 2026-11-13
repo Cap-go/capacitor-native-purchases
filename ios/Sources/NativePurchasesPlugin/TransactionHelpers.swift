@@ -146,6 +146,24 @@ internal class TransactionHelpers {
         return dictionary
     }
 
+    /// Compares dotted build numbers part by part, matching `compareVersions` on Android.
+    /// `CFBundleVersion` may hold up to three integers, and `Int(_:)` alone reads "1.2.3" as nil.
+    static func isBuildNumber(_ original: String, olderThan target: String) -> Bool {
+        func parts(_ value: String) -> [Int] {
+            value.split(separator: ".", omittingEmptySubsequences: false).map { Int($0.prefix { $0.isNumber }) ?? 0 }
+        }
+        let originalParts = parts(original)
+        let targetParts = parts(target)
+        for index in 0..<max(originalParts.count, targetParts.count) {
+            let originalPart = index < originalParts.count ? originalParts[index] : 0
+            let targetPart = index < targetParts.count ? targetParts[index] : 0
+            if originalPart != targetPart {
+                return originalPart < targetPart
+            }
+        }
+        return false
+    }
+
     /// Builds payloads for `Transaction.unfinished`. Unverified entries are skipped unless
     /// `includeUnverified` is true, and then carry `verificationError` so callers can avoid trusting them.
     static func collectUnfinishedTransactions(includeUnverified: Bool = false) async throws -> [[String: Any]] {

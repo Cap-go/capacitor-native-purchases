@@ -428,10 +428,8 @@ extension NativePurchasesPlugin {
             switch verificationResult {
             case .verified(let appTransaction):
                 let originalBuildNumber = appTransaction.originalAppVersion
-                let originalInt = Int(originalBuildNumber) ?? 0
-                let targetInt = Int(targetBuildNumber) ?? 0
                 call.resolve([
-                    "isOlderVersion": originalInt < targetInt,
+                    "isOlderVersion": TransactionHelpers.isBuildNumber(originalBuildNumber, olderThan: targetBuildNumber),
                     "originalAppVersion": originalBuildNumber
                 ])
             case .unverified(_, let error):
