@@ -59,7 +59,7 @@ dependencies {
     implementation "androidx.appcompat:appcompat:$androidxAppCompatVersion"
     testImplementation "junit:junit:$junitVersion"
     testImplementation 'org.mockito:mockito-core:5.14.2'
-    // Real org.json for JVM unit tests, so tests can read the JSObject payloads the mapper builds.
+    // Real org.json for JVM unit tests, so tests can build and read JSObject payloads.
     testImplementation 'org.json:json:20240303'
     androidTestImplementation "androidx.test.ext:junit:$androidxJunitVersion"
     androidTestImplementation "androidx.test.espresso:espresso-core:$androidxEspressoCoreVersion"
