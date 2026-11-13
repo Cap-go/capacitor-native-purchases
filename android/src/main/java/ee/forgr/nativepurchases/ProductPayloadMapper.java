@@ -120,6 +120,9 @@ final class ProductPayloadMapper {
             if (introPhase != null) {
                 product.put("introductoryPrice", pricingPhaseToDiscount(introPhase, "", 0, currencyCode, currencySymbol));
             } else {
+                // Stays null even when a sibling offer on this base plan has a trial: this entry's
+                // offerToken buys the base offer at full price. The trial is reported on the offer's
+                // own entry, whose offerToken actually buys it.
                 product.put("introductoryPrice", JSONObject.NULL);
             }
             product.put(
@@ -127,9 +130,34 @@ final class ProductPayloadMapper {
                 promotionalDiscountsForBasePlan(offerDetails.getBasePlanId(), allOffers, currencyCode, currencySymbol)
             );
         } else {
-            product.put("introductoryPrice", JSONObject.NULL);
+            // This entry IS an offer, so its own leading phase is its introductory pricing.
+            ProductDetails.PricingPhase introPhase = findLeadingIntroductoryPhase(phases);
+            product.put(
+                "introductoryPrice",
+                introPhase != null
+                    ? pricingPhaseToDiscount(introPhase, offerDetails.getOfferId(), 0, currencyCode, currencySymbol)
+                    : JSONObject.NULL
+            );
             product.put("discounts", new JSONArray());
         }
+    }
+
+    /**
+     * An offer's leading phase when it is introductory (a free trial or a reduced first period)
+     * rather than the ongoing price.
+     *
+     * <p>Unlike {@link #findIntroductoryPricingPhase} this does not require a second phase: a
+     * trial-only offer is a single non-recurring phase, and it is still introductory pricing.
+     *
+     * <p>Package-private so {@code ProductPayloadMapperIntroPhaseTest} can cover it without JSON.
+     */
+    static ProductDetails.PricingPhase findLeadingIntroductoryPhase(List<ProductDetails.PricingPhase> phases) {
+        if (phases == null || phases.isEmpty()) {
+            return null;
+        }
+
+        ProductDetails.PricingPhase firstPhase = phases.get(0);
+        return firstPhase.getRecurrenceMode() == RECURRENCE_MODE_INFINITE_RECURRING ? null : firstPhase;
     }
 
     static JSObject subscriptionPeriodFromBillingPeriod(String billingPeriod) {

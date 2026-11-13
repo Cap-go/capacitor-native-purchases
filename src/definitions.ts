@@ -1038,11 +1038,14 @@ export interface Product {
   readonly subscriptionBillingCycles?: number;
   /**
    * Introductory price for this product line when the store exposes it. Pair with `priceString`
-   * for full subscription offer wording before purchase. iOS: from StoreKit introductory offers
-   * when available. Android base subscription offers (`offerId` null): from the first pricing
-   * phase when multiple phases exist (intro then recurring). Android promotional offer lines
-   * (`offerId` set): null; phase pricing is not exposed on `Product`, so defer price confirmation
-   * to Play checkout instead of using `priceString` alone. Mapping matches `ProductPayloadMapper`.
+   * for full subscription offer wording before purchase. It always describes what buying this
+   * entry gives. iOS: from StoreKit introductory offers when available. Android base subscription
+   * offers (`offerId` null): from the first pricing phase when multiple phases exist (intro then
+   * recurring), else null. On Google Play a free trial or intro price is a separate offer on the
+   * base plan, so a base plan entry is usually null even when the plan has a trial; that trial is
+   * reported on the offer's own entry. Android promotional offer lines (`offerId` set): that
+   * offer's own leading phase when it is introductory, else null; buy it with that entry's
+   * `offerToken`. Mapping matches `ProductPayloadMapper`.
    */
   readonly introductoryPrice: SKProductDiscount | null;
   /**
@@ -1058,8 +1061,9 @@ export interface Product {
    *
    * @platform ios Populated from StoreKit promotional offers when available.
    * @platform android On base subscription offers (`offerId` null), lists promotional offers on
-   * the same base plan. A promotional offer line itself returns an empty array; its pricing
-   * phases are not mapped here or on `introductoryPrice`.
+   * the same base plan, each quoting its recurring phase (a trial only offer quotes its free
+   * phase). A promotional offer line itself returns an empty array; its introductory phase is on
+   * `introductoryPrice`.
    */
   readonly discounts: SKProductDiscount[];
 }
