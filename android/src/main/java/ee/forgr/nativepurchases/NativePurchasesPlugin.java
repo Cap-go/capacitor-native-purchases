@@ -36,6 +36,7 @@ import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.WeakHashMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -122,6 +123,11 @@ public class NativePurchasesPlugin extends Plugin {
     });
     BillingClient billingClient;
     /**
+     * Open Play billing sheets per client. Guarded by {@link #billingClientLock}. A client with an open
+     * flow must not be ended until Play calls {@code onPurchasesUpdated}; later calls detach it instead.
+     */
+    private final Map<BillingClient, Integer> pendingBillingFlows = new IdentityHashMap<>();
+    /**
      * Number of auto acknowledge or consume operations in flight per client. Guarded by
      * {@link #billingClientLock}. endConnection() drops queued work, so such a client is ended only
      * by its last completion. A later call first waits for these to finish (see
@@ -143,6 +149,8 @@ public class NativePurchasesPlugin extends Plugin {
     private static final long PENDING_FINISH_WAIT_MS = 10_000;
     /** Package-private so tests can shorten the wait. */
     long pendingFinishWaitMs = PENDING_FINISH_WAIT_MS;
+    /** Ensures purchaseProduct settles its promise once even if Play reports the failure twice. */
+    private final Map<PluginCall, AtomicBoolean> purchaseCallSettlement = new WeakHashMap<>();
     private volatile boolean autoFinishTransactions = true;
 
     @PluginMethod
@@ -393,23 +401,40 @@ public class NativePurchasesPlugin extends Plugin {
     @Override
     protected void handleOnDestroy() {
         billingExecutor.shutdownNow();
-        List<BillingClient> detached = new ArrayList<>();
+        List<BillingClient> clientsToEnd = new ArrayList<>();
         synchronized (billingClientLock) {
-            // Clients still finishing work, including set aside ones, would otherwise never be ended.
-            for (BillingClient client : pendingFinishes.keySet()) {
-                if (client != billingClient) {
-                    detached.add(client);
+            if (billingClient != null) {
+                clientsToEnd.add(billingClient);
+            }
+            for (BillingClient client : pendingBillingFlows.keySet()) {
+                if (!clientsToEnd.contains(client)) {
+                    clientsToEnd.add(client);
                 }
             }
+            for (BillingClient client : pendingFinishes.keySet()) {
+                if (!clientsToEnd.contains(client)) {
+                    clientsToEnd.add(client);
+                }
+            }
+            billingClient = null;
+            pendingBillingFlows.clear();
             pendingFinishes.clear();
             abandonedFinishHandlers.clear();
             setAsideClients.clear();
+            purchaseCallSettlement.clear();
         }
-        for (BillingClient client : detached) {
+        for (BillingClient client : clientsToEnd) {
             client.endConnection();
         }
-        closeBillingClient();
         super.handleOnDestroy();
+    }
+
+    BillingClient getBillingClientForTest() {
+        return billingClient;
+    }
+
+    void setBillingClientForTest(BillingClient client) {
+        billingClient = client;
     }
 
     /** Package-private so tests can stand in for a later call that replaces the client. */
@@ -472,8 +497,14 @@ public class NativePurchasesPlugin extends Plugin {
             }
             billingClientLock.notifyAll();
         }
-        if (last) {
+        if (last && client != null && !hasOpenBillingFlow(client)) {
             client.endConnection();
+        }
+    }
+
+    private boolean hasOpenBillingFlow(BillingClient client) {
+        synchronized (billingClientLock) {
+            return pendingBillingFlows.containsKey(client);
         }
     }
 
@@ -494,10 +525,6 @@ public class NativePurchasesPlugin extends Plugin {
         while (hasAwaitedFinishesLocked()) {
             long remainingMs = TimeUnit.NANOSECONDS.toMillis(deadline - System.nanoTime());
             if (remainingMs <= 0) {
-                // Stop waiting on the unanswered finishes so they do not delay every later call too,
-                // and settle the calls waiting on them. Their clients stay open and keep their real
-                // pending counts: a slow finish is not a lost one, and endConnection() would drop it.
-                // Each client still ends when its last finish answers.
                 NativePurchasesLog.w(TAG, "Purchase finish still pending, no longer waiting on it");
                 for (BillingClient stale : new ArrayList<>(pendingFinishes.keySet())) {
                     if (!setAsideClients.add(stale)) {
@@ -524,12 +551,13 @@ public class NativePurchasesPlugin extends Plugin {
         }
     }
 
-    /** True while some client that is not set aside has a finish in flight. */
+    /** True while some client that is not set aside has a finish in flight and no open purchase sheet. */
     private boolean hasAwaitedFinishesLocked() {
         for (BillingClient client : pendingFinishes.keySet()) {
-            if (!setAsideClients.contains(client)) {
-                return true;
+            if (setAsideClients.contains(client) || pendingBillingFlows.containsKey(client)) {
+                continue;
             }
+            return true;
         }
         return false;
     }
@@ -540,6 +568,135 @@ public class NativePurchasesPlugin extends Plugin {
             .setResponseCode(BillingClient.BillingResponseCode.ERROR)
             .setDebugMessage(String.valueOf(e.getMessage()))
             .build();
+    }
+
+    /**
+     * Records an open billing flow on {@code client}. The flow ends in {@link #endPendingBillingFlow}.
+     *
+     * @return false when the client is already closed.
+     */
+    boolean beginPendingBillingFlow(BillingClient client) {
+        synchronized (billingClientLock) {
+            if (client == null || !client.isReady()) {
+                return false;
+            }
+            pendingBillingFlows.merge(client, 1, Integer::sum);
+            return true;
+        }
+    }
+
+    /**
+     * Records that Play answered the billing flow for {@code client}. The last one ends the client.
+     */
+    void endPendingBillingFlow(BillingClient client) {
+        if (client == null) {
+            return;
+        }
+        boolean last;
+        boolean finishInFlight;
+        synchronized (billingClientLock) {
+            finishInFlight = pendingFinishes.getOrDefault(client, 0) > 0;
+            Integer pending = pendingBillingFlows.get(client);
+            if (pending == null) {
+                return;
+            }
+            last = pending <= 1;
+            if (last) {
+                pendingBillingFlows.remove(client);
+                if (billingClient == client) {
+                    billingClient = null;
+                }
+            } else {
+                pendingBillingFlows.put(client, pending - 1);
+            }
+            billingClientLock.notifyAll();
+        }
+        if (last && !finishInFlight) {
+            client.endConnection();
+        }
+    }
+
+    private void registerPurchaseCallSettlement(PluginCall call) {
+        purchaseCallSettlement.put(call, new AtomicBoolean(false));
+    }
+
+    void registerPurchaseCallSettlementForTest(PluginCall call) {
+        registerPurchaseCallSettlement(call);
+    }
+
+    private boolean trySettlePurchaseCall(PluginCall call) {
+        if (call == null) {
+            return false;
+        }
+        AtomicBoolean settled = purchaseCallSettlement.get(call);
+        if (settled != null) {
+            return settled.compareAndSet(false, true);
+        }
+        return true;
+    }
+
+    private void rejectPurchaseCallOnce(PluginCall call, String message, String code) {
+        if (trySettlePurchaseCall(call)) {
+            call.reject(message, code);
+        }
+    }
+
+    private void rejectPurchaseCallOnce(PluginCall call, String message) {
+        if (trySettlePurchaseCall(call)) {
+            call.reject(message);
+        }
+    }
+
+    private void resolvePurchaseCallOnce(PluginCall call, JSObject ret) {
+        if (trySettlePurchaseCall(call)) {
+            call.resolve(ret);
+        }
+    }
+
+    private void abortPurchaseClientFlow(BillingClient purchaseClient, PluginCall call, String message) {
+        endPendingBillingFlow(purchaseClient);
+        closeBillingClientIfCurrent(purchaseClient);
+        rejectPurchaseCallOnce(call, message);
+    }
+
+    private void abortPurchaseClientFlow(BillingClient purchaseClient, PluginCall call, String message, String code) {
+        endPendingBillingFlow(purchaseClient);
+        closeBillingClientIfCurrent(purchaseClient);
+        rejectPurchaseCallOnce(call, message, code);
+    }
+
+    /**
+     * Launches the Play sheet on {@code flowClient}, which must be the client captured for this purchase call,
+     * not the shared {@link #billingClient} field.
+     */
+    void launchPurchaseBillingFlow(BillingClient flowClient, PluginCall call, BillingFlowParams billingFlowParams) {
+        if (flowClient == null || !flowClient.isReady()) {
+            NativePurchasesLog.w(TAG, "Purchase billing client closed before launch");
+            abortPurchaseClientFlow(
+                flowClient,
+                call,
+                "Purchase is not purchased",
+                billingResponseCodeName(BillingClient.BillingResponseCode.SERVICE_DISCONNECTED)
+            );
+            return;
+        }
+        BillingResult billingResult2;
+        try {
+            billingResult2 = flowClient.launchBillingFlow(getActivity(), billingFlowParams);
+        } catch (RuntimeException launchError) {
+            endPendingBillingFlow(flowClient);
+            throw launchError;
+        }
+        NativePurchasesLog.d(
+            TAG,
+            "Billing flow launch result: " + billingResult2.getResponseCode() + " - " + billingResult2.getDebugMessage()
+        );
+        NativePurchasesLog.i(NativePurchasesPlugin.TAG, "onProductDetailsResponse2" + billingResult2);
+        if (billingResult2.getResponseCode() != BillingClient.BillingResponseCode.OK) {
+            endPendingBillingFlow(flowClient);
+            rejectPurchaseCallOnce(call, "Purchase is not purchased", billingResponseCodeName(billingResult2.getResponseCode()));
+            closeBillingClientIfCurrent(flowClient);
+        }
     }
 
     /**
@@ -555,11 +712,15 @@ public class NativePurchasesPlugin extends Plugin {
         call.reject("Offer token not found for product: " + productIdentifier);
     }
 
+    private void rejectOfferTokenNotFoundForPurchase(PluginCall call, String productIdentifier, BillingClient purchaseClient) {
+        NativePurchasesLog.d(TAG, "Offer token not found for product: " + productIdentifier);
+        abortPurchaseClientFlow(purchaseClient, call, "Offer token not found for product: " + productIdentifier);
+    }
+
     private void closeBillingClientLocked() {
         NativePurchasesLog.d(TAG, "closeBillingClient() called");
-        if (billingClient != null && pendingFinishes.containsKey(billingClient)) {
-            // Its acknowledge or consume callback ends it; ending it here would drop that work.
-            NativePurchasesLog.d(TAG, "Detaching billing client that is still finishing a purchase");
+        if (billingClient != null && (pendingBillingFlows.containsKey(billingClient) || pendingFinishes.containsKey(billingClient))) {
+            NativePurchasesLog.d(TAG, "Detaching billing client that has an open purchase flow or pending finish");
             billingClient = null;
         } else if (billingClient != null) {
             NativePurchasesLog.d(TAG, "Ending billing client connection");
@@ -682,25 +843,22 @@ public class NativePurchasesPlugin extends Plugin {
             ret.put("willCancel", null); // Default to null, would need API call to determine actual cancellation date
 
             NativePurchasesLog.d(TAG, "Resolving purchase call for product: " + purchase.getProducts().get(0));
-            // Settles purchaseCall once, from Play's answer or from giving up on a lost finish.
             AtomicBoolean settled = new AtomicBoolean(false);
             Runnable onAbandon = () -> {
                 if (settled.compareAndSet(false, true) && purchaseCall != null) {
                     NativePurchasesLog.w(TAG, "Purchase finish was never answered; resolving with isAcknowledged false");
-                    purchaseCall.resolve(ret);
+                    if (purchaseCallSettlement.containsKey(purchaseCall)) {
+                        resolvePurchaseCallOnce(purchaseCall, ret);
+                    } else {
+                        purchaseCall.resolve(ret);
+                    }
                 }
             };
             boolean canFinish = shouldAutoAcknowledge && action != PurchaseAction.NONE;
             if (canFinish && !beginFinishingPurchase(purchaseClient, onAbandon)) {
-                // Another call already ended this client, so an acknowledge or consume would never
-                // be answered. Resolve now; the payload shows isAcknowledged false and the app can
-                // acknowledge or consume the purchase itself.
                 NativePurchasesLog.w(TAG, "Billing client already closed, skipping auto acknowledge or consume");
                 shouldAutoAcknowledge = false;
             }
-            // Still resolves when Play rejects the finish: the user has been charged, and a rejection
-            // would tell the app the purchase failed. isAcknowledged stays false in that case, so the
-            // app can see it and call acknowledgePurchase() or consumePurchase() itself.
             Consumer<BillingResult> completePurchase = (finishResult) -> {
                 if (finishResult != null && finishResult.getResponseCode() == BillingClient.BillingResponseCode.OK) {
                     ret.put("isAcknowledged", true);
@@ -708,8 +866,13 @@ public class NativePurchasesPlugin extends Plugin {
                     NativePurchasesLog.w(TAG, "Automatic purchase finish failed; isAcknowledged stays false");
                 }
                 endFinishingPurchase(purchaseClient);
+                endPendingBillingFlow(purchaseClient);
                 if (settled.compareAndSet(false, true) && purchaseCall != null) {
-                    purchaseCall.resolve(ret);
+                    if (purchaseCallSettlement.containsKey(purchaseCall)) {
+                        resolvePurchaseCallOnce(purchaseCall, ret);
+                    } else {
+                        purchaseCall.resolve(ret);
+                    }
                 }
             };
 
@@ -754,26 +917,25 @@ public class NativePurchasesPlugin extends Plugin {
             }
 
             if (purchaseCall != null) {
-                purchaseCall.resolve(ret);
+                if (purchaseCallSettlement.containsKey(purchaseCall)) {
+                    resolvePurchaseCallOnce(purchaseCall, ret);
+                } else {
+                    purchaseCall.resolve(ret);
+                }
             } else {
                 NativePurchasesLog.d(TAG, "purchaseCall is null, cannot resolve");
             }
         } else if (purchase.getPurchaseState() == Purchase.PurchaseState.PENDING) {
             NativePurchasesLog.d(TAG, "Purchase state is PENDING");
-            // Here you can confirm to the user that they've started the pending
-            // purchase, and to complete it, they should follow instructions that are
-            // given to them. You can also choose to remind the user to complete the
-            // purchase if you detect that it is still pending.
             if (purchaseCall != null) {
-                purchaseCall.reject("Purchase is pending");
+                rejectPurchaseCallOnce(purchaseCall, "Purchase is pending");
             } else {
                 NativePurchasesLog.d(TAG, "purchaseCall is null for pending purchase");
             }
         } else {
             NativePurchasesLog.d(TAG, "Purchase state is OTHER: " + purchase.getPurchaseState());
-            // Handle any other error codes.
             if (purchaseCall != null) {
-                purchaseCall.reject("Purchase is not purchased", "PURCHASE_STATE_" + purchase.getPurchaseState());
+                rejectPurchaseCallOnce(purchaseCall, "Purchase is not purchased", "PURCHASE_STATE_" + purchase.getPurchaseState());
             } else {
                 NativePurchasesLog.d(TAG, "purchaseCall is null for failed purchase");
             }
@@ -781,33 +943,20 @@ public class NativePurchasesPlugin extends Plugin {
         return false;
     }
 
-    /**
-     * Body of each client's PurchasesUpdatedListener. {@code owner} is the client the listener belongs
-     * to. It stays open while handlePurchase has an acknowledge or consume in flight, and is closed
-     * here otherwise.
-     */
-    void handlePurchasesUpdated(BillingResult billingResult, List<Purchase> purchases, PluginCall purchaseCall, BillingClient owner) {
-        NativePurchasesLog.d(TAG, "onPurchasesUpdated() called");
-        NativePurchasesLog.d(TAG, "Billing result: " + billingResult.getResponseCode() + " - " + billingResult.getDebugMessage());
-        NativePurchasesLog.d(TAG, "Purchases count: " + (purchases != null ? purchases.size() : 0));
-        NativePurchasesLog.i(NativePurchasesPlugin.TAG, "onPurchasesUpdated" + billingResult);
-        if (billingResult.getResponseCode() == BillingClient.BillingResponseCode.OK && purchases != null) {
-            NativePurchasesLog.d(TAG, "Purchase update successful, processing first purchase");
-            if (handlePurchase(purchases.get(0), purchaseCall, owner)) {
-                return;
-            }
-        } else {
-            NativePurchasesLog.d(TAG, "Purchase update failed or purchases is null");
-            NativePurchasesLog.i(NativePurchasesPlugin.TAG, "onPurchasesUpdated" + billingResult);
-            if (purchaseCall != null) {
-                purchaseCall.reject("Purchase is not purchased", billingResponseCodeName(billingResult.getResponseCode()));
-            }
-        }
-        closeBillingClientIfCurrent(owner);
-    }
-
     private void acknowledgePurchase(BillingClient client, String purchaseToken, Consumer<BillingResult> onComplete) {
         NativePurchasesLog.d(TAG, "acknowledgePurchase() called");
+        if (client == null) {
+            NativePurchasesLog.w(TAG, "Billing client unavailable, skipping acknowledge");
+            if (onComplete != null) {
+                onComplete.accept(
+                    BillingResult.newBuilder()
+                        .setResponseCode(BillingClient.BillingResponseCode.SERVICE_DISCONNECTED)
+                        .setDebugMessage("Billing client unavailable")
+                        .build()
+                );
+            }
+            return;
+        }
         AcknowledgePurchaseParams acknowledgePurchaseParams = AcknowledgePurchaseParams.newBuilder()
             .setPurchaseToken(purchaseToken)
             .build();
@@ -819,7 +968,9 @@ public class NativePurchasesPlugin extends Plugin {
             NativePurchasesLog.d(TAG, "onAcknowledgePurchaseResponse() called");
             NativePurchasesLog.d(TAG, "Acknowledge result: " + billingResult.getResponseCode() + " - " + billingResult.getDebugMessage());
             NativePurchasesLog.i(NativePurchasesPlugin.TAG, "onAcknowledgePurchaseResponse" + billingResult);
-            onComplete.accept(billingResult);
+            if (onComplete != null) {
+                onComplete.accept(billingResult);
+            }
         };
         try {
             client.acknowledgePurchase(acknowledgePurchaseParams, listener);
@@ -828,7 +979,6 @@ public class NativePurchasesPlugin extends Plugin {
         }
     }
 
-    /** Package-private so tests can drive a new billing call. */
     void initBillingClient(PluginCall purchaseCall) {
         NativePurchasesLog.d(TAG, "initBillingClient() called");
         NativePurchasesLog.d(TAG, "purchaseCall is null: " + (purchaseCall == null));
@@ -888,6 +1038,40 @@ public class NativePurchasesPlugin extends Plugin {
         throw lastFailure != null ? lastFailure : new RuntimeException("Billing setup failed");
     }
 
+    /**
+     * Body of each client's PurchasesUpdatedListener. {@code owner} is the client the listener belongs
+     * to; it stays open while a billing flow is open and ends when Play answers here.
+     */
+    void handlePurchasesUpdated(BillingResult billingResult, List<Purchase> purchases, PluginCall purchaseCall, BillingClient owner) {
+        NativePurchasesLog.d(TAG, "onPurchasesUpdated() called");
+        NativePurchasesLog.d(TAG, "Billing result: " + billingResult.getResponseCode() + " - " + billingResult.getDebugMessage());
+        NativePurchasesLog.d(TAG, "Purchases count: " + (purchases != null ? purchases.size() : 0));
+        NativePurchasesLog.i(NativePurchasesPlugin.TAG, "onPurchasesUpdated" + billingResult);
+        if (billingResult.getResponseCode() == BillingClient.BillingResponseCode.OK && purchases != null) {
+            NativePurchasesLog.d(TAG, "Purchase update successful, processing first purchase");
+            if (handlePurchase(purchases.get(0), purchaseCall, owner)) {
+                endPendingBillingFlow(owner);
+                return;
+            }
+        } else {
+            NativePurchasesLog.d(TAG, "Purchase update failed or purchases is null");
+            NativePurchasesLog.i(NativePurchasesPlugin.TAG, "onPurchasesUpdated" + billingResult);
+            if (purchaseCall != null) {
+                if (purchaseCallSettlement.containsKey(purchaseCall)) {
+                    rejectPurchaseCallOnce(
+                        purchaseCall,
+                        "Purchase is not purchased",
+                        billingResponseCodeName(billingResult.getResponseCode())
+                    );
+                } else {
+                    purchaseCall.reject("Purchase is not purchased", billingResponseCodeName(billingResult.getResponseCode()));
+                }
+            }
+        }
+        endPendingBillingFlow(owner);
+        closeBillingClientIfCurrent(owner);
+    }
+
     private boolean isRetriableBillingSetupFailure(RuntimeException failure) {
         String message = failure.getMessage();
         if (message == null) {
@@ -905,9 +1089,8 @@ public class NativePurchasesPlugin extends Plugin {
         final AtomicBoolean setupSettled = new AtomicBoolean(false);
 
         NativePurchasesLog.d(TAG, "Creating new BillingClient (attempt " + attempt + "/" + BILLING_CONNECTION_MAX_ATTEMPTS + ")");
-        final BillingClient client;
-        // The listener is built before the client exists, so it reads its owner from here.
         final BillingClient[] listenerOwner = new BillingClient[1];
+        final BillingClient client;
         synchronized (billingClientLock) {
             client = BillingClient.newBuilder(getContext())
                 .setListener(
@@ -1082,6 +1265,7 @@ public class NativePurchasesPlugin extends Plugin {
 
         call.getData().put("isConsumable", isConsumable);
         call.getData().put("autoAcknowledgePurchases", autoAcknowledgePurchases);
+        registerPurchaseCallSettlement(call);
 
         // For subscriptions, always use the productIdentifier (subscription ID) to query
         // The planIdentifier is used later when setting the offer token
@@ -1096,8 +1280,18 @@ public class NativePurchasesPlugin extends Plugin {
         QueryProductDetailsParams params = QueryProductDetailsParams.newBuilder().setProductList(productList).build();
         NativePurchasesLog.d(TAG, "Initializing billing client for purchase");
         withBillingClient(call, () -> {
+            final BillingClient purchaseClient = billingClient;
+            if (!beginPendingBillingFlow(purchaseClient)) {
+                abortPurchaseClientFlow(
+                    purchaseClient,
+                    call,
+                    "Purchase is not purchased",
+                    billingResponseCodeName(BillingClient.BillingResponseCode.SERVICE_DISCONNECTED)
+                );
+                return;
+            }
             NativePurchasesLog.d(TAG, "Querying product details for purchase");
-            billingClient.queryProductDetailsAsync(
+            purchaseClient.queryProductDetailsAsync(
                 params,
                 new ProductDetailsResponseListener() {
                     @Override
@@ -1113,10 +1307,19 @@ public class NativePurchasesPlugin extends Plugin {
                         );
                         NativePurchasesLog.d(TAG, "Product details count: " + productDetailsList.size());
 
+                        if (billingResult.getResponseCode() != BillingClient.BillingResponseCode.OK) {
+                            abortPurchaseClientFlow(
+                                purchaseClient,
+                                call,
+                                "Purchase is not purchased",
+                                billingResponseCodeName(billingResult.getResponseCode())
+                            );
+                            return;
+                        }
+
                         if (productDetailsList.isEmpty()) {
                             NativePurchasesLog.d(TAG, "No products found");
-                            closeBillingClient();
-                            call.reject("Product not found");
+                            abortPurchaseClientFlow(purchaseClient, call, "Product not found");
                             return;
                         }
                         // Process the result
@@ -1143,12 +1346,15 @@ public class NativePurchasesPlugin extends Plugin {
                                 );
                                 if (subscriptionSelection.outcome == SubscriptionOfferPurchaseOutcome.NO_OFFERS) {
                                     NativePurchasesLog.w(TAG, "No subscription offer details found for product: " + productIdentifier);
-                                    closeBillingClient();
-                                    call.reject("No subscription offer details found for product: " + productIdentifier);
+                                    abortPurchaseClientFlow(
+                                        purchaseClient,
+                                        call,
+                                        "No subscription offer details found for product: " + productIdentifier
+                                    );
                                     return;
                                 }
                                 if (subscriptionSelection.outcome == SubscriptionOfferPurchaseOutcome.OFFER_TOKEN_NOT_FOUND) {
-                                    rejectOfferTokenNotFound(call, productIdentifier);
+                                    rejectOfferTokenNotFoundForPurchase(call, productIdentifier, purchaseClient);
                                     return;
                                 }
 
@@ -1171,7 +1377,7 @@ public class NativePurchasesPlugin extends Plugin {
                                         }
                                     }
                                     if (selectedOffer == null) {
-                                        rejectOfferTokenNotFound(call, productIdentifier);
+                                        rejectOfferTokenNotFoundForPurchase(call, productIdentifier, purchaseClient);
                                         return;
                                     }
                                     productDetailsParams.setOfferToken(selectedOffer.getOfferToken());
@@ -1197,14 +1403,8 @@ public class NativePurchasesPlugin extends Plugin {
                             billingFlowBuilder.setObfuscatedAccountId(accountIdentifier);
                         }
                         BillingFlowParams billingFlowParams = billingFlowBuilder.build();
-                        // Launch the billing flow
                         NativePurchasesLog.d(TAG, "Launching billing flow");
-                        BillingResult billingResult2 = billingClient.launchBillingFlow(getActivity(), billingFlowParams);
-                        NativePurchasesLog.d(
-                            TAG,
-                            "Billing flow launch result: " + billingResult2.getResponseCode() + " - " + billingResult2.getDebugMessage()
-                        );
-                        NativePurchasesLog.i(NativePurchasesPlugin.TAG, "onProductDetailsResponse2" + billingResult2);
+                        launchPurchaseBillingFlow(purchaseClient, call, billingFlowParams);
                     }
                 }
             );
@@ -1228,8 +1428,6 @@ public class NativePurchasesPlugin extends Plugin {
     boolean processUnfinishedPurchases(BillingClient client) {
         NativePurchasesLog.d(TAG, "processUnfinishedPurchases() called");
         String[] productTypes = { BillingClient.ProductType.INAPP, BillingClient.ProductType.SUBS };
-        // Count every query before sending any, so a fast callback for the first one cannot end the
-        // client before the second is sent.
         for (int registered = 0; registered < productTypes.length; registered++) {
             if (!beginFinishingPurchase(client)) {
                 NativePurchasesLog.w(TAG, "Billing client already closed, skipping unfinished purchase recovery");
@@ -1286,7 +1484,6 @@ public class NativePurchasesPlugin extends Plugin {
                 NativePurchasesLog.d(TAG, "Purchase already acknowledged, skipping consume");
                 continue;
             }
-            // Registered before the query's own finish ends, so the client cannot close in between.
             if (!beginFinishingPurchase(client)) {
                 NativePurchasesLog.w(TAG, "Billing client already closed, skipping recovery acknowledgment");
                 continue;
