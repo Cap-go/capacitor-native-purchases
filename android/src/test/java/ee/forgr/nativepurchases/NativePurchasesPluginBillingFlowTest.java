@@ -4,17 +4,23 @@ import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.mockStatic;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.spy;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import android.app.Activity;
 import android.util.Log;
 import com.android.billingclient.api.AcknowledgePurchaseParams;
 import com.android.billingclient.api.AcknowledgePurchaseResponseListener;
 import com.android.billingclient.api.BillingClient;
+import com.android.billingclient.api.BillingFlowParams;
 import com.android.billingclient.api.BillingResult;
 import com.android.billingclient.api.Purchase;
 import com.getcapacitor.JSObject;
@@ -28,7 +34,7 @@ import org.mockito.MockedStatic;
 public class NativePurchasesPluginBillingFlowTest {
 
     private MockedStatic<Log> log;
-    private final NativePurchasesPlugin plugin = new NativePurchasesPlugin();
+    private NativePurchasesPlugin plugin = new NativePurchasesPlugin();
     private final BillingClient client = mock(BillingClient.class);
     private final BillingClient replacement = mock(BillingClient.class);
     private final PluginCall call = mock(PluginCall.class);
@@ -39,7 +45,7 @@ public class NativePurchasesPluginBillingFlowTest {
     @Before
     public void setUp() {
         log = mockStatic(Log.class);
-        plugin.billingClient = client;
+        plugin.setBillingClientForTest(client);
         when(client.isReady()).thenReturn(true);
         when(purchase.getPurchaseState()).thenReturn(Purchase.PurchaseState.PURCHASED);
         when(purchase.getPurchaseToken()).thenReturn("token");
@@ -64,7 +70,7 @@ public class NativePurchasesPluginBillingFlowTest {
 
         plugin.closeBillingClient();
 
-        assertNull(plugin.billingClient);
+        assertNull(plugin.getBillingClientForTest());
         verify(client, never()).endConnection();
     }
 
@@ -75,7 +81,7 @@ public class NativePurchasesPluginBillingFlowTest {
         plugin.handlePurchasesUpdated(ok, List.of(purchase), call, client);
 
         verify(client).endConnection();
-        assertNull(plugin.billingClient);
+        assertNull(plugin.getBillingClientForTest());
         verify(call).resolve(any(JSObject.class));
     }
 
@@ -84,10 +90,10 @@ public class NativePurchasesPluginBillingFlowTest {
         assertTrue(plugin.beginPendingBillingFlow(client));
 
         // initBillingClient detached the flow client and attached a new one.
-        plugin.billingClient = replacement;
+        plugin.setBillingClientForTest(replacement);
 
         verify(client, never()).endConnection();
-        assertSame(replacement, plugin.billingClient);
+        assertSame(replacement, plugin.getBillingClientForTest());
 
         plugin.handlePurchasesUpdated(ok, List.of(purchase), call, client);
 
@@ -97,10 +103,39 @@ public class NativePurchasesPluginBillingFlowTest {
     }
 
     @Test
+    public void launchPurchaseBillingFlow_usesCapturedClientAfterFieldReplaced() {
+        NativePurchasesPlugin pluginSpy = spy(plugin);
+        Activity activity = mock(Activity.class);
+        doReturn(activity).when(pluginSpy).getActivity();
+        when(client.launchBillingFlow(any(), any())).thenReturn(ok);
+
+        assertTrue(pluginSpy.beginPendingBillingFlow(client));
+        pluginSpy.setBillingClientForTest(replacement);
+
+        BillingFlowParams params = BillingFlowParams.newBuilder().build();
+        pluginSpy.launchPurchaseBillingFlow(client, call, params);
+
+        verify(client).launchBillingFlow(eq(activity), eq(params));
+        verify(replacement, never()).launchBillingFlow(any(), any());
+    }
+
+    @Test
+    public void launchPurchaseBillingFlow_rejectsWhenCapturedClientClosed() {
+        when(client.isReady()).thenReturn(false);
+        assertTrue(plugin.beginPendingBillingFlow(client));
+
+        BillingFlowParams params = BillingFlowParams.newBuilder().build();
+        plugin.launchPurchaseBillingFlow(client, call, params);
+
+        verify(client, never()).launchBillingFlow(any(), any());
+        verify(call).reject(eq("Purchase is not purchased"), eq("SERVICE_DISCONNECTED"));
+    }
+
+    @Test
     public void detachedClient_unacknowledgedPurchase_usesOwnerForAutoAcknowledge() {
         when(purchase.isAcknowledged()).thenReturn(false);
         assertTrue(plugin.beginPendingBillingFlow(client));
-        plugin.billingClient = replacement;
+        plugin.setBillingClientForTest(replacement);
 
         doAnswer((invocation) -> {
             AcknowledgePurchaseResponseListener listener = invocation.getArgument(1);
@@ -137,6 +172,45 @@ public class NativePurchasesPluginBillingFlowTest {
         verify(client, never()).endConnection();
         listenerHolder[0].onAcknowledgePurchaseResponse(ok);
         verify(client).endConnection();
+    }
+
+    @Test
+    public void secondPurchaseUpdate_doesNotEndClientWhileAckInFlight() {
+        when(purchase.isAcknowledged()).thenReturn(false);
+        assertTrue(plugin.beginPendingBillingFlow(client));
+
+        final AcknowledgePurchaseResponseListener[] listenerHolder = new AcknowledgePurchaseResponseListener[1];
+        doAnswer((invocation) -> {
+            listenerHolder[0] = invocation.getArgument(1);
+            return null;
+        })
+            .when(client)
+            .acknowledgePurchase(any(AcknowledgePurchaseParams.class), any());
+
+        plugin.handlePurchasesUpdated(ok, List.of(purchase), call, client);
+
+        BillingResult canceled = BillingResult.newBuilder().setResponseCode(BillingClient.BillingResponseCode.USER_CANCELED).build();
+        plugin.handlePurchasesUpdated(canceled, null, call, client);
+
+        verify(client, never()).endConnection();
+        listenerHolder[0].onAcknowledgePurchaseResponse(ok);
+        verify(client).endConnection();
+    }
+
+    @Test
+    public void launchFailureAndListenerReject_purchaseCallOnce() {
+        NativePurchasesPlugin pluginSpy = spy(plugin);
+        Activity activity = mock(Activity.class);
+        doReturn(activity).when(pluginSpy).getActivity();
+        pluginSpy.registerPurchaseCallSettlementForTest(call);
+        BillingResult launchError = BillingResult.newBuilder().setResponseCode(BillingClient.BillingResponseCode.DEVELOPER_ERROR).build();
+        when(client.launchBillingFlow(any(), any())).thenReturn(launchError);
+        assertTrue(pluginSpy.beginPendingBillingFlow(client));
+
+        pluginSpy.launchPurchaseBillingFlow(client, call, BillingFlowParams.newBuilder().build());
+        pluginSpy.handlePurchasesUpdated(launchError, null, call, client);
+
+        verify(call, times(1)).reject(any(String.class), any(String.class));
     }
 
     @Test
