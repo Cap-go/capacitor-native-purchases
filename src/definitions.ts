@@ -1061,8 +1061,9 @@ export interface Product {
    *
    * @platform ios Populated from StoreKit promotional offers when available.
    * @platform android On base subscription offers (`offerId` null), lists promotional offers on
-   * the same base plan, each quoting its last pricing phase (a trial-only offer quotes its free phase). A promotional
-   * offer line itself returns an empty array; its introductory phase is on `introductoryPrice`.
+   * the same base plan, each quoting its recurring phase (a trial only offer quotes its free
+   * phase). A promotional offer line itself returns an empty array; its introductory phase is on
+   * `introductoryPrice`.
    */
   readonly discounts: SKProductDiscount[];
 }
