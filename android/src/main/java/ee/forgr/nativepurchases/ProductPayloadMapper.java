@@ -123,7 +123,9 @@ final class ProductPayloadMapper {
                 // A base plan's own offer details carry a single recurring phase, so the lookup
                 // above can only ever return null for this entry: on Google Play a free trial or
                 // intro price is a separate offer ON the base plan, not a phase OF it. Fall back to
-                // those offers, so a base plan with a trial reports it here rather than nowhere.
+                // those offers, so a base plan with a trial reports it here rather than nowhere. The value
+                // then names that offer in its identifier, and only that offer's own entry and token
+                // buy the trial; this entry's token buys the base offer. See Product.introductoryPrice.
                 product.put(
                     "introductoryPrice",
                     introductoryPriceFromOffers(offerDetails.getBasePlanId(), allOffers, currencyCode, currencySymbol)
@@ -180,7 +182,7 @@ final class ProductPayloadMapper {
     }
 
     /**
-     * An offer's leading phase when it is introductory — a free trial or a reduced first period —
+     * An offer's leading phase when it is introductory (a free trial or a reduced first period)
      * rather than the ongoing price.
      *
      * <p>Unlike {@link #findIntroductoryPricingPhase} this does not require a second phase: a

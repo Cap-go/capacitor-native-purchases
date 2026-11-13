@@ -1041,10 +1041,14 @@ export interface Product {
    * for full subscription offer wording before purchase. iOS: from StoreKit introductory offers
    * when available. Android base subscription offers (`offerId` null): from the first pricing
    * phase when multiple phases exist (intro then recurring), and otherwise from the first offer on
-   * that base plan whose leading phase is introductory — Play models a free trial as an offer ON a
+   * that base plan whose leading phase is introductory. Play models a free trial as an offer ON a
    * base plan rather than a phase OF it, so a base plan's own phases carry only its recurring
-   * price. Android promotional offer lines (`offerId` set): that offer's own leading phase when it
-   * is introductory, else null. Mapping matches `ProductPayloadMapper`.
+   * price. In that fallback case the value describes another offer, not this entry's `offerToken`:
+   * purchasing with this entry's `offerToken` buys the base offer at its regular price, without the
+   * trial. To sell the trial, purchase with the `offerToken` of the entry whose `offerId` equals
+   * `introductoryPrice.identifier`. Android promotional offer lines (`offerId` set): that offer's
+   * own leading phase when it is introductory, else null; this entry's `offerToken` buys it.
+   * Mapping matches `ProductPayloadMapper`.
    */
   readonly introductoryPrice: SKProductDiscount | null;
   /**
@@ -1060,7 +1064,7 @@ export interface Product {
    *
    * @platform ios Populated from StoreKit promotional offers when available.
    * @platform android On base subscription offers (`offerId` null), lists promotional offers on
-   * the same base plan, each quoting the price that applies once the offer ends. A promotional
+   * the same base plan, each quoting its last pricing phase (a trial-only offer quotes its free phase). A promotional
    * offer line itself returns an empty array; its introductory phase is on `introductoryPrice`.
    */
   readonly discounts: SKProductDiscount[];
