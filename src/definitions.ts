@@ -1038,19 +1038,14 @@ export interface Product {
   readonly subscriptionBillingCycles?: number;
   /**
    * Introductory price for this product line when the store exposes it. Pair with `priceString`
-   * for full subscription offer wording before purchase. iOS: from StoreKit introductory offers
-   * when available. Android base subscription offers (`offerId` null): from the first pricing
-   * phase when multiple phases exist (intro then recurring), and otherwise from the first offer on
-   * that base plan whose leading phase is introductory. Play models a free trial as an offer ON a
-   * base plan rather than a phase OF it, so a base plan's own phases carry only its recurring
-   * price. In that fallback case the value describes another offer, not this entry's `offerToken`:
-   * purchasing with this entry's `offerToken` buys the base offer at its regular price, without the
-   * trial. To sell the trial, purchase with the `offerToken` of the entry that has the same
-   * `planIdentifier` (subscription product ID) and `identifier` (base plan ID) as this entry and
-   * whose `offerId` equals `introductoryPrice.identifier`. Offer IDs are unique only within a base
-   * plan, so do not match on `offerId` alone. Android promotional offer lines (`offerId` set): that
-   * offer's own leading phase when it is introductory, else null; this entry's `offerToken` buys it.
-   * Mapping matches `ProductPayloadMapper`.
+   * for full subscription offer wording before purchase. It always describes what buying this
+   * entry gives. iOS: from StoreKit introductory offers when available. Android base subscription
+   * offers (`offerId` null): from the first pricing phase when multiple phases exist (intro then
+   * recurring), else null. On Google Play a free trial or intro price is a separate offer on the
+   * base plan, so a base plan entry is usually null even when the plan has a trial; that trial is
+   * reported on the offer's own entry. Android promotional offer lines (`offerId` set): that
+   * offer's own leading phase when it is introductory, else null; buy it with that entry's
+   * `offerToken`. Mapping matches `ProductPayloadMapper`.
    */
   readonly introductoryPrice: SKProductDiscount | null;
   /**

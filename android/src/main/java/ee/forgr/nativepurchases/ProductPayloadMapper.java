@@ -120,16 +120,10 @@ final class ProductPayloadMapper {
             if (introPhase != null) {
                 product.put("introductoryPrice", pricingPhaseToDiscount(introPhase, "", 0, currencyCode, currencySymbol));
             } else {
-                // A base plan's own offer details carry a single recurring phase, so the lookup
-                // above can only ever return null for this entry: on Google Play a free trial or
-                // intro price is a separate offer ON the base plan, not a phase OF it. Fall back to
-                // those offers, so a base plan with a trial reports it here rather than nowhere. The value
-                // then names that offer in its identifier, and only that offer's own entry and token
-                // buy the trial; this entry's token buys the base offer. See Product.introductoryPrice.
-                product.put(
-                    "introductoryPrice",
-                    introductoryPriceFromOffers(offerDetails.getBasePlanId(), allOffers, currencyCode, currencySymbol)
-                );
+                // Stays null even when a sibling offer on this base plan has a trial: this entry's
+                // offerToken buys the base offer at full price. The trial is reported on the offer's
+                // own entry, whose offerToken actually buys it.
+                product.put("introductoryPrice", JSONObject.NULL);
             }
             product.put(
                 "discounts",
@@ -146,39 +140,6 @@ final class ProductPayloadMapper {
             );
             product.put("discounts", new JSONArray());
         }
-    }
-
-    /**
-     * The introductory pricing of the first offer on {@code basePlanId} that has one.
-     *
-     * <p>Used only when the base plan's own phases carry none, which is the usual case: Play models
-     * a free trial or intro price as an offer attached to the base plan, and the base plan entry
-     * itself lists just its recurring phase.
-     */
-    private static Object introductoryPriceFromOffers(
-        String basePlanId,
-        List<ProductDetails.SubscriptionOfferDetails> allOffers,
-        String currencyCode,
-        String currencySymbol
-    ) {
-        if (allOffers == null || basePlanId == null) {
-            return JSONObject.NULL;
-        }
-
-        for (ProductDetails.SubscriptionOfferDetails offer : allOffers) {
-            if (offer.getOfferId() == null || !basePlanId.equals(offer.getBasePlanId())) {
-                continue;
-            }
-
-            List<ProductDetails.PricingPhase> offerPhases =
-                offer.getPricingPhases() == null ? List.of() : offer.getPricingPhases().getPricingPhaseList();
-            ProductDetails.PricingPhase introPhase = findLeadingIntroductoryPhase(offerPhases);
-            if (introPhase != null) {
-                return pricingPhaseToDiscount(introPhase, offer.getOfferId(), 0, currencyCode, currencySymbol);
-            }
-        }
-
-        return JSONObject.NULL;
     }
 
     /**
