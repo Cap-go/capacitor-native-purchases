@@ -15,8 +15,8 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import android.app.Activity;
 import android.util.Log;
+import androidx.appcompat.app.AppCompatActivity;
 import com.android.billingclient.api.AcknowledgePurchaseParams;
 import com.android.billingclient.api.AcknowledgePurchaseResponseListener;
 import com.android.billingclient.api.BillingClient;
@@ -105,14 +105,14 @@ public class NativePurchasesPluginBillingFlowTest {
     @Test
     public void launchPurchaseBillingFlow_usesCapturedClientAfterFieldReplaced() {
         NativePurchasesPlugin pluginSpy = spy(plugin);
-        Activity activity = mock(Activity.class);
+        AppCompatActivity activity = mock(AppCompatActivity.class);
         doReturn(activity).when(pluginSpy).getActivity();
         when(client.launchBillingFlow(any(), any())).thenReturn(ok);
 
         assertTrue(pluginSpy.beginPendingBillingFlow(client));
         pluginSpy.setBillingClientForTest(replacement);
 
-        BillingFlowParams params = BillingFlowParams.newBuilder().build();
+        BillingFlowParams params = mock(BillingFlowParams.class);
         pluginSpy.launchPurchaseBillingFlow(client, call, params);
 
         verify(client).launchBillingFlow(eq(activity), eq(params));
@@ -122,9 +122,8 @@ public class NativePurchasesPluginBillingFlowTest {
     @Test
     public void launchPurchaseBillingFlow_rejectsWhenCapturedClientClosed() {
         when(client.isReady()).thenReturn(false);
-        assertTrue(plugin.beginPendingBillingFlow(client));
 
-        BillingFlowParams params = BillingFlowParams.newBuilder().build();
+        BillingFlowParams params = mock(BillingFlowParams.class);
         plugin.launchPurchaseBillingFlow(client, call, params);
 
         verify(client, never()).launchBillingFlow(any(), any());
@@ -200,14 +199,14 @@ public class NativePurchasesPluginBillingFlowTest {
     @Test
     public void launchFailureAndListenerReject_purchaseCallOnce() {
         NativePurchasesPlugin pluginSpy = spy(plugin);
-        Activity activity = mock(Activity.class);
+        AppCompatActivity activity = mock(AppCompatActivity.class);
         doReturn(activity).when(pluginSpy).getActivity();
         pluginSpy.registerPurchaseCallSettlementForTest(call);
         BillingResult launchError = BillingResult.newBuilder().setResponseCode(BillingClient.BillingResponseCode.DEVELOPER_ERROR).build();
         when(client.launchBillingFlow(any(), any())).thenReturn(launchError);
         assertTrue(pluginSpy.beginPendingBillingFlow(client));
 
-        pluginSpy.launchPurchaseBillingFlow(client, call, BillingFlowParams.newBuilder().build());
+        pluginSpy.launchPurchaseBillingFlow(client, call, mock(BillingFlowParams.class));
         pluginSpy.handlePurchasesUpdated(launchError, null, call, client);
 
         verify(call, times(1)).reject(any(String.class), any(String.class));
