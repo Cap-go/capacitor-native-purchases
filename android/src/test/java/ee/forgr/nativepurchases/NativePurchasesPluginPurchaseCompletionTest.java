@@ -298,10 +298,10 @@ public class NativePurchasesPluginPurchaseCompletionTest {
 
     @Test
     public void restorePurchases_withAClosedClient_doesNotCrash() {
-        plugin.processUnfinishedPurchases(null);
+        assertFalse(plugin.processUnfinishedPurchases(null));
 
         when(client.isReady()).thenReturn(false);
-        plugin.processUnfinishedPurchases(client);
+        assertFalse(plugin.processUnfinishedPurchases(client));
 
         verify(client, never()).queryPurchasesAsync(any(QueryPurchasesParams.class), any());
     }
@@ -330,5 +330,23 @@ public class NativePurchasesPluginPurchaseCompletionTest {
 
         verify(client, times(2)).queryPurchasesAsync(any(QueryPurchasesParams.class), any(PurchasesResponseListener.class));
         verify(client, times(1)).endConnection();
+    }
+
+    @Test
+    public void lostFinish_isGivenUpOnceSoLaterCallsDoNotWaitAgain() {
+        plugin.pendingFinishWaitMs = 50;
+        assertTrue(plugin.handlePurchase(purchase, call, client));
+        verify(client).acknowledgePurchase(any(AcknowledgePurchaseParams.class), any());
+
+        // Play never answers the acknowledge.
+        plugin.awaitPendingFinishes();
+        verify(client).endConnection();
+        assertNull(plugin.billingClient);
+
+        plugin.pendingFinishWaitMs = 5000;
+        long start = System.nanoTime();
+        plugin.awaitPendingFinishes();
+        long elapsedMs = (System.nanoTime() - start) / 1_000_000;
+        assertTrue("second call waited " + elapsedMs + " ms", elapsedMs < 1000);
     }
 }

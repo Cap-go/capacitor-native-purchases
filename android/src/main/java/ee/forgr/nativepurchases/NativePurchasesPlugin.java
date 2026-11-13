@@ -127,6 +127,8 @@ public class NativePurchasesPlugin extends Plugin {
     private final Map<BillingClient, Integer> pendingFinishes = new IdentityHashMap<>();
     /** How long a new billing call waits for an in flight acknowledge or consume before it proceeds. */
     private static final long PENDING_FINISH_WAIT_MS = 10_000;
+    /** Package-private so tests can shorten the wait. */
+    long pendingFinishWaitMs = PENDING_FINISH_WAIT_MS;
     private volatile boolean autoFinishTransactions = true;
 
     @PluginMethod
@@ -441,11 +443,21 @@ public class NativePurchasesPlugin extends Plugin {
     }
 
     private void awaitPendingFinishesLocked() {
-        long deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(PENDING_FINISH_WAIT_MS);
+        long deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(pendingFinishWaitMs);
         while (!pendingFinishes.isEmpty()) {
             long remainingMs = TimeUnit.NANOSECONDS.toMillis(deadline - System.nanoTime());
             if (remainingMs <= 0) {
-                NativePurchasesLog.w(TAG, "Purchase finish still pending, continuing with a new billing client");
+                // Treat the unanswered finishes as lost, so they do not delay every later call too.
+                // Their clients are ended here; a callback that still arrives later finds no entry,
+                // ends its already ended client again (a no op) and settles its call as before.
+                NativePurchasesLog.w(TAG, "Purchase finish still pending, giving up on it and continuing");
+                for (BillingClient stale : new ArrayList<>(pendingFinishes.keySet())) {
+                    pendingFinishes.remove(stale);
+                    if (billingClient == stale) {
+                        billingClient = null;
+                    }
+                    stale.endConnection();
+                }
                 return;
             }
             try {
@@ -1130,8 +1142,10 @@ public class NativePurchasesPlugin extends Plugin {
      * Queries unfinished purchases on {@code client} and acknowledges them. Each query and each
      * acknowledge counts as a pending finish on that client, so a later call waits for them or
      * detaches the client instead of ending it, and the last one ends it. Package-private for tests.
+     *
+     * @return false when the client is already closed and no query was sent.
      */
-    void processUnfinishedPurchases(BillingClient client) {
+    boolean processUnfinishedPurchases(BillingClient client) {
         NativePurchasesLog.d(TAG, "processUnfinishedPurchases() called");
         String[] productTypes = { BillingClient.ProductType.INAPP, BillingClient.ProductType.SUBS };
         // Count every query before sending any, so a fast callback for the first one cannot end the
@@ -1142,7 +1156,7 @@ public class NativePurchasesPlugin extends Plugin {
                 for (int undo = 0; undo < registered; undo++) {
                     endFinishingPurchase(client);
                 }
-                return;
+                return false;
             }
         }
         for (String productType : productTypes) {
@@ -1156,6 +1170,7 @@ public class NativePurchasesPlugin extends Plugin {
                 }
             });
         }
+        return true;
     }
 
     private void handlePurchases(BillingResult billingResult, List<Purchase> purchases, BillingClient client) {
@@ -1212,7 +1227,10 @@ public class NativePurchasesPlugin extends Plugin {
         NativePurchasesLog.d(TAG, "restorePurchases() called");
         NativePurchasesLog.d(NativePurchasesPlugin.TAG, "restorePurchases");
         withBillingClient(call, () -> {
-            this.processUnfinishedPurchases(currentBillingClient());
+            if (!this.processUnfinishedPurchases(currentBillingClient())) {
+                call.reject("Billing client closed before restore could run. Please try again.");
+                return;
+            }
             call.resolve();
             NativePurchasesLog.d(TAG, "restorePurchases() completed");
         });
