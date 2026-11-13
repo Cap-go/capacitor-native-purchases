@@ -470,4 +470,97 @@ public class NativePurchasesPluginPurchaseCompletionTest {
         verify(call, times(1)).reject(any(String.class), org.mockito.ArgumentMatchers.eq("FINISH_TIMEOUT"));
         verify(call, never()).reject(any(String.class));
     }
+
+    @Test
+    public void givenUpRestoreClient_endsOnlyWhenItsRealCountReachesZero() {
+        plugin.pendingFinishWaitMs = 50;
+        // 1. Both restore queries are pending.
+        plugin.processUnfinishedPurchases(client);
+        ArgumentCaptor<PurchasesResponseListener> queries = ArgumentCaptor.forClass(PurchasesResponseListener.class);
+        verify(client, times(2)).queryPurchasesAsync(any(QueryPurchasesParams.class), queries.capture());
+
+        // 2. A later call gives up waiting on them.
+        plugin.awaitPendingFinishes();
+        verify(client, never()).endConnection();
+        assertNull(plugin.billingClient);
+
+        // 3. The in-app query answers with an unacknowledged purchase and starts a recovery acknowledge.
+        queries.getAllValues().get(0).onQueryPurchasesResponse(ok, List.of(purchase));
+        ArgumentCaptor<AcknowledgePurchaseResponseListener> ack = ArgumentCaptor.forClass(AcknowledgePurchaseResponseListener.class);
+        verify(client).acknowledgePurchase(any(AcknowledgePurchaseParams.class), ack.capture());
+        verify(client, never()).endConnection();
+
+        // 4. The acknowledge answers; the subscriptions query is still in flight.
+        ack.getValue().onAcknowledgePurchaseResponse(ok);
+        verify(client, never()).endConnection();
+
+        queries.getAllValues().get(1).onQueryPurchasesResponse(ok, List.of());
+        verify(client, times(1)).endConnection();
+
+        // A set aside client never makes a later call wait.
+        long start = System.nanoTime();
+        plugin.pendingFinishWaitMs = 5000;
+        plugin.awaitPendingFinishes();
+        assertTrue((System.nanoTime() - start) / 1_000_000 < 1000);
+    }
+
+    @Test
+    public void manualAcknowledge_thatThrows_undoesItsCountAndRejectsOnce() {
+        org.mockito.Mockito.doThrow(new IllegalStateException("boom"))
+            .when(client)
+            .acknowledgePurchase(any(AcknowledgePurchaseParams.class), any(AcknowledgePurchaseResponseListener.class));
+
+        plugin.acknowledgeWithClient(call, client, "token");
+
+        verify(call, times(1)).reject("Failed to acknowledge purchase: boom");
+        verify(call, never()).resolve();
+        verify(client, times(1)).endConnection();
+        assertNoPendingFinish();
+    }
+
+    @Test
+    public void manualConsume_thatThrows_undoesItsCountAndRejectsOnce() {
+        org.mockito.Mockito.doThrow(new IllegalStateException("boom"))
+            .when(client)
+            .consumeAsync(any(ConsumeParams.class), any(ConsumeResponseListener.class));
+
+        plugin.consumeWithClient(call, client, "token");
+
+        verify(call, times(1)).reject("Failed to consume purchase: boom");
+        verify(client, times(1)).endConnection();
+        assertNoPendingFinish();
+    }
+
+    @Test
+    public void autoAcknowledge_thatThrows_resolvesOnceWithoutLeakingTheCount() {
+        org.mockito.Mockito.doThrow(new IllegalStateException("boom"))
+            .when(client)
+            .acknowledgePurchase(any(AcknowledgePurchaseParams.class), any(AcknowledgePurchaseResponseListener.class));
+
+        assertTrue(plugin.handlePurchase(purchase, call, client));
+
+        verify(call, times(1)).resolve(any(JSObject.class));
+        verify(client, times(1)).endConnection();
+        assertNoPendingFinish();
+    }
+
+    @Test
+    public void restoreQueries_thatThrow_undoTheirCounts() {
+        org.mockito.Mockito.doThrow(new IllegalStateException("boom"))
+            .when(client)
+            .queryPurchasesAsync(any(QueryPurchasesParams.class), any(PurchasesResponseListener.class));
+
+        plugin.processUnfinishedPurchases(client);
+
+        verify(client, times(1)).endConnection();
+        assertNoPendingFinish();
+    }
+
+    /** With nothing counted, a later call returns at once instead of waiting. */
+    private void assertNoPendingFinish() {
+        plugin.pendingFinishWaitMs = 5000;
+        long start = System.nanoTime();
+        plugin.awaitPendingFinishes();
+        assertTrue((System.nanoTime() - start) / 1_000_000 < 1000);
+    }
 }
