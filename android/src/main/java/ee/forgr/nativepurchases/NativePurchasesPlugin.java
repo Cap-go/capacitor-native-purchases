@@ -461,16 +461,16 @@ public class NativePurchasesPlugin extends Plugin {
         while (!pendingFinishes.isEmpty()) {
             long remainingMs = TimeUnit.NANOSECONDS.toMillis(deadline - System.nanoTime());
             if (remainingMs <= 0) {
-                // Treat the unanswered finishes as lost, so they do not delay every later call too.
-                // Their clients are ended here; a callback that still arrives later finds no entry,
-                // ends its already ended client again (a no op) and settles its call as before.
-                NativePurchasesLog.w(TAG, "Purchase finish still pending, giving up on it and continuing");
+                // Stop waiting on the unanswered finishes so they do not delay every later call too,
+                // and settle the calls waiting on them. Their clients stay open: a slow finish is not
+                // a lost one, and endConnection() would drop it. A callback that still arrives finds
+                // no entry, so endFinishingPurchase treats it as the last one and ends the client.
+                NativePurchasesLog.w(TAG, "Purchase finish still pending, no longer waiting on it");
                 for (BillingClient stale : new ArrayList<>(pendingFinishes.keySet())) {
                     pendingFinishes.remove(stale);
                     if (billingClient == stale) {
                         billingClient = null;
                     }
-                    stale.endConnection();
                     List<Runnable> handlers = abandonedFinishHandlers.remove(stale);
                     if (handlers != null) {
                         for (Runnable handler : handlers) {
@@ -1795,34 +1795,44 @@ public class NativePurchasesPlugin extends Plugin {
         }
 
         NativePurchasesLog.d(TAG, "Manually acknowledging purchase");
-        withBillingClient(call, () -> {
-            AcknowledgePurchaseParams acknowledgePurchaseParams = AcknowledgePurchaseParams.newBuilder()
-                .setPurchaseToken(purchaseToken)
-                .build();
+        withBillingClient(call, () -> acknowledgeWithClient(call, currentBillingClient(), purchaseToken));
+    }
 
-            billingClient.acknowledgePurchase(
-                acknowledgePurchaseParams,
-                new AcknowledgePurchaseResponseListener() {
-                    @Override
-                    public void onAcknowledgePurchaseResponse(@NonNull BillingResult billingResult) {
-                        NativePurchasesLog.d(TAG, "onAcknowledgePurchaseResponse() called");
-                        NativePurchasesLog.d(
-                            TAG,
-                            "Acknowledge result: " + billingResult.getResponseCode() + " - " + billingResult.getDebugMessage()
-                        );
-
-                        if (billingResult.getResponseCode() == BillingClient.BillingResponseCode.OK) {
-                            NativePurchasesLog.d(TAG, "Purchase acknowledged successfully");
-                            closeBillingClient();
-                            call.resolve();
-                        } else {
-                            NativePurchasesLog.d(TAG, "Purchase acknowledgment failed");
-                            closeBillingClient();
-                            call.reject("Failed to acknowledge purchase: " + billingResult.getDebugMessage());
-                        }
-                    }
-                }
-            );
+    /**
+     * Manual acknowledge on {@code client}, counted as a pending finish so a later call does not
+     * end the client under it. The call settles once: from Play's answer, or with a FINISH_TIMEOUT
+     * rejection if a later call stops waiting on it. Package-private for tests.
+     */
+    void acknowledgeWithClient(PluginCall call, BillingClient client, String purchaseToken) {
+        AtomicBoolean settled = new AtomicBoolean(false);
+        Runnable onAbandon = () -> {
+            if (settled.compareAndSet(false, true)) {
+                call.reject(
+                    "Acknowledge was not answered in time. It may still complete; check getUnfinishedTransactions before retrying.",
+                    "FINISH_TIMEOUT"
+                );
+            }
+        };
+        if (!beginFinishingPurchase(client, onAbandon)) {
+            call.reject("Billing client closed before the acknowledge could run. Please try again.");
+            return;
+        }
+        AcknowledgePurchaseParams acknowledgePurchaseParams = AcknowledgePurchaseParams.newBuilder()
+            .setPurchaseToken(purchaseToken)
+            .build();
+        client.acknowledgePurchase(acknowledgePurchaseParams, (billingResult) -> {
+            NativePurchasesLog.d(TAG, "Acknowledge result: " + billingResult.getResponseCode() + " - " + billingResult.getDebugMessage());
+            endFinishingPurchase(client);
+            if (!settled.compareAndSet(false, true)) {
+                return;
+            }
+            if (billingResult.getResponseCode() == BillingClient.BillingResponseCode.OK) {
+                NativePurchasesLog.d(TAG, "Purchase acknowledged successfully");
+                call.resolve();
+            } else {
+                NativePurchasesLog.d(TAG, "Purchase acknowledgment failed");
+                call.reject("Failed to acknowledge purchase: " + billingResult.getDebugMessage());
+            }
         });
     }
 
@@ -1838,23 +1848,38 @@ public class NativePurchasesPlugin extends Plugin {
         }
 
         NativePurchasesLog.d(TAG, "Consuming purchase");
-        withBillingClient(call, () -> {
-            ConsumeParams consumeParams = ConsumeParams.newBuilder().setPurchaseToken(purchaseToken).build();
+        withBillingClient(call, () -> consumeWithClient(call, currentBillingClient(), purchaseToken));
+    }
 
-            billingClient.consumeAsync(consumeParams, (billingResult, consumedToken) -> {
-                NativePurchasesLog.d(TAG, "onConsumeResponse() called");
-                NativePurchasesLog.d(TAG, "Consume result: " + billingResult.getResponseCode() + " - " + billingResult.getDebugMessage());
-
-                if (billingResult.getResponseCode() == BillingClient.BillingResponseCode.OK) {
-                    NativePurchasesLog.d(TAG, "Purchase consumed successfully");
-                    closeBillingClient();
-                    call.resolve();
-                } else {
-                    NativePurchasesLog.d(TAG, "Purchase consumption failed");
-                    closeBillingClient();
-                    call.reject("Failed to consume purchase: " + billingResult.getDebugMessage());
-                }
-            });
+    /** Manual consume on {@code client}, with the same pending finish counting as {@link #acknowledgeWithClient}. */
+    void consumeWithClient(PluginCall call, BillingClient client, String purchaseToken) {
+        AtomicBoolean settled = new AtomicBoolean(false);
+        Runnable onAbandon = () -> {
+            if (settled.compareAndSet(false, true)) {
+                call.reject(
+                    "Consume was not answered in time. It may still complete; check getUnfinishedTransactions before retrying.",
+                    "FINISH_TIMEOUT"
+                );
+            }
+        };
+        if (!beginFinishingPurchase(client, onAbandon)) {
+            call.reject("Billing client closed before the consume could run. Please try again.");
+            return;
+        }
+        ConsumeParams consumeParams = ConsumeParams.newBuilder().setPurchaseToken(purchaseToken).build();
+        client.consumeAsync(consumeParams, (billingResult, consumedToken) -> {
+            NativePurchasesLog.d(TAG, "Consume result: " + billingResult.getResponseCode() + " - " + billingResult.getDebugMessage());
+            endFinishingPurchase(client);
+            if (!settled.compareAndSet(false, true)) {
+                return;
+            }
+            if (billingResult.getResponseCode() == BillingClient.BillingResponseCode.OK) {
+                NativePurchasesLog.d(TAG, "Purchase consumed successfully");
+                call.resolve();
+            } else {
+                NativePurchasesLog.d(TAG, "Purchase consumption failed");
+                call.reject("Failed to consume purchase: " + billingResult.getDebugMessage());
+            }
         });
     }
 

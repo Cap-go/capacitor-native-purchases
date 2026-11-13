@@ -342,7 +342,8 @@ public class NativePurchasesPluginPurchaseCompletionTest {
 
         // Play does not answer the acknowledge in time.
         plugin.awaitPendingFinishes();
-        verify(client).endConnection();
+        // A slow acknowledge is not a lost one: the client stays open so it can still complete.
+        verify(client, never()).endConnection();
         assertNull(plugin.billingClient);
         // The waiting purchase call still settles, once.
         verify(call, times(1)).resolve(any(JSObject.class));
@@ -353,8 +354,9 @@ public class NativePurchasesPluginPurchaseCompletionTest {
         long elapsedMs = (System.nanoTime() - start) / 1_000_000;
         assertTrue("second call waited " + elapsedMs + " ms", elapsedMs < 1000);
 
-        // A late answer does not settle the call a second time.
+        // The late answer ends the client and does not settle the call a second time.
         ack.getValue().onAcknowledgePurchaseResponse(ok);
+        verify(client, times(1)).endConnection();
         verify(call, times(1)).resolve(any(JSObject.class));
     }
 
@@ -377,5 +379,89 @@ public class NativePurchasesPluginPurchaseCompletionTest {
         verify(client, times(2)).queryPurchasesAsync(any(QueryPurchasesParams.class), any(PurchasesResponseListener.class));
         verify(call).resolve();
         verify(call, never()).reject(any(String.class));
+    }
+
+    @Test
+    public void manualAcknowledge_survivesALaterCallAndSettlesOnce() {
+        plugin.acknowledgeWithClient(call, client, "token");
+
+        ArgumentCaptor<AcknowledgePurchaseResponseListener> ack = ArgumentCaptor.forClass(AcknowledgePurchaseResponseListener.class);
+        verify(client).acknowledgePurchase(any(AcknowledgePurchaseParams.class), ack.capture());
+
+        // A later billing call closes the current client; the manual acknowledge must survive it.
+        plugin.closeBillingClient();
+        verify(client, never()).endConnection();
+        verify(call, never()).resolve();
+
+        ack.getValue().onAcknowledgePurchaseResponse(ok);
+
+        verify(client, times(1)).endConnection();
+        verify(call, times(1)).resolve();
+        verify(call, never()).reject(any(String.class));
+    }
+
+    @Test
+    public void manualAcknowledge_givenUpRejectsOnceAndKeepsTheClientOpen() {
+        plugin.pendingFinishWaitMs = 50;
+        plugin.acknowledgeWithClient(call, client, "token");
+        ArgumentCaptor<AcknowledgePurchaseResponseListener> ack = ArgumentCaptor.forClass(AcknowledgePurchaseResponseListener.class);
+        verify(client).acknowledgePurchase(any(AcknowledgePurchaseParams.class), ack.capture());
+
+        plugin.awaitPendingFinishes();
+
+        verify(call, times(1)).reject(any(String.class), org.mockito.ArgumentMatchers.eq("FINISH_TIMEOUT"));
+        verify(client, never()).endConnection();
+
+        ack.getValue().onAcknowledgePurchaseResponse(ok);
+
+        verify(client, times(1)).endConnection();
+        verify(call, never()).resolve();
+    }
+
+    @Test
+    public void manualAcknowledge_withAClosedClient_rejects() {
+        when(client.isReady()).thenReturn(false);
+
+        plugin.acknowledgeWithClient(call, client, "token");
+        plugin.acknowledgeWithClient(call, null, "token");
+
+        verify(call, times(2)).reject("Billing client closed before the acknowledge could run. Please try again.");
+        verify(client, never()).acknowledgePurchase(any(), any());
+    }
+
+    @Test
+    public void manualConsume_survivesALaterCallAndSettlesOnce() {
+        plugin.consumeWithClient(call, client, "token");
+
+        ArgumentCaptor<ConsumeResponseListener> consume = ArgumentCaptor.forClass(ConsumeResponseListener.class);
+        verify(client).consumeAsync(any(ConsumeParams.class), consume.capture());
+
+        plugin.closeBillingClient();
+        verify(client, never()).endConnection();
+        verify(call, never()).resolve();
+
+        consume.getValue().onConsumeResponse(ok, "token");
+
+        verify(client, times(1)).endConnection();
+        verify(call, times(1)).resolve();
+        verify(call, never()).reject(any(String.class));
+    }
+
+    @Test
+    public void manualConsume_givenUpRejectsOnceAndKeepsTheClientOpen() {
+        plugin.pendingFinishWaitMs = 50;
+        plugin.consumeWithClient(call, client, "token");
+        ArgumentCaptor<ConsumeResponseListener> consume = ArgumentCaptor.forClass(ConsumeResponseListener.class);
+        verify(client).consumeAsync(any(ConsumeParams.class), consume.capture());
+
+        plugin.awaitPendingFinishes();
+
+        verify(call, times(1)).reject(any(String.class), org.mockito.ArgumentMatchers.eq("FINISH_TIMEOUT"));
+        verify(client, never()).endConnection();
+
+        consume.getValue().onConsumeResponse(ok, "token");
+
+        verify(client, times(1)).endConnection();
+        verify(call, never()).resolve();
     }
 }
