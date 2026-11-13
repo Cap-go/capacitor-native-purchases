@@ -26,7 +26,7 @@ public class NativePurchasesPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "finishTransaction", returnType: CAPPluginReturnPromise)
     ]
 
-    private let pluginVersion: String = "8.9.13"
+    private let pluginVersion: String = "8.9.15"
     var autoFinishTransactions: Bool = true
     private var transactionUpdatesTask: Task<Void, Never>?
 
@@ -428,10 +428,8 @@ extension NativePurchasesPlugin {
             switch verificationResult {
             case .verified(let appTransaction):
                 let originalBuildNumber = appTransaction.originalAppVersion
-                let originalInt = Int(originalBuildNumber) ?? 0
-                let targetInt = Int(targetBuildNumber) ?? 0
                 call.resolve([
-                    "isOlderVersion": originalInt < targetInt,
+                    "isOlderVersion": TransactionHelpers.isBuildNumber(originalBuildNumber, olderThan: targetBuildNumber),
                     "originalAppVersion": originalBuildNumber
                 ])
             case .unverified(_, let error):
