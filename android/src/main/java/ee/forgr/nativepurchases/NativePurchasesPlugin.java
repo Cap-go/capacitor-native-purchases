@@ -125,6 +125,11 @@ public class NativePurchasesPlugin extends Plugin {
      * {@link #awaitPendingFinishes()}) so only one client is normally active.
      */
     private final Map<BillingClient, Integer> pendingFinishes = new IdentityHashMap<>();
+    /**
+     * Run when a client's pending finishes are given up after the wait, so a purchase call waiting on
+     * one still settles. Guarded by {@link #billingClientLock}.
+     */
+    private final Map<BillingClient, List<Runnable>> abandonedFinishHandlers = new IdentityHashMap<>();
     /** How long a new billing call waits for an in flight acknowledge or consume before it proceeds. */
     private static final long PENDING_FINISH_WAIT_MS = 10_000;
     /** Package-private so tests can shorten the wait. */
@@ -397,11 +402,19 @@ public class NativePurchasesPlugin extends Plugin {
      * @return false when the client is already closed, in which case nothing can run on it.
      */
     private boolean beginFinishingPurchase(BillingClient client) {
+        return beginFinishingPurchase(client, null);
+    }
+
+    /** @param onAbandon run if this finish is given up after the wait; may be null. */
+    private boolean beginFinishingPurchase(BillingClient client, Runnable onAbandon) {
         synchronized (billingClientLock) {
             if (client == null || !client.isReady()) {
                 return false;
             }
             pendingFinishes.merge(client, 1, Integer::sum);
+            if (onAbandon != null) {
+                abandonedFinishHandlers.computeIfAbsent(client, (key) -> new ArrayList<>()).add(onAbandon);
+            }
             return true;
         }
     }
@@ -417,6 +430,7 @@ public class NativePurchasesPlugin extends Plugin {
             last = pending == null || pending <= 1;
             if (last) {
                 pendingFinishes.remove(client);
+                abandonedFinishHandlers.remove(client);
                 if (billingClient == client) {
                     billingClient = null;
                 }
@@ -457,6 +471,12 @@ public class NativePurchasesPlugin extends Plugin {
                         billingClient = null;
                     }
                     stale.endConnection();
+                    List<Runnable> handlers = abandonedFinishHandlers.remove(stale);
+                    if (handlers != null) {
+                        for (Runnable handler : handlers) {
+                            handler.run();
+                        }
+                    }
                 }
                 return;
             }
@@ -618,8 +638,16 @@ public class NativePurchasesPlugin extends Plugin {
             }
 
             NativePurchasesLog.d(TAG, "Resolving purchase call for product: " + purchase.getProducts().get(0));
+            // Settles purchaseCall once, from Play's answer or from giving up on a lost finish.
+            AtomicBoolean settled = new AtomicBoolean(false);
+            Runnable onAbandon = () -> {
+                if (settled.compareAndSet(false, true) && purchaseCall != null) {
+                    NativePurchasesLog.w(TAG, "Purchase finish was never answered; resolving with isAcknowledged false");
+                    purchaseCall.resolve(ret);
+                }
+            };
             boolean canFinish = shouldAutoAcknowledge && action != PurchaseAction.NONE;
-            if (canFinish && !beginFinishingPurchase(purchaseClient)) {
+            if (canFinish && !beginFinishingPurchase(purchaseClient, onAbandon)) {
                 // Another call already ended this client, so an acknowledge or consume would never
                 // be answered. Resolve now; the payload shows isAcknowledged false and the app can
                 // acknowledge or consume the purchase itself.
@@ -636,7 +664,7 @@ public class NativePurchasesPlugin extends Plugin {
                     NativePurchasesLog.w(TAG, "Automatic purchase finish failed; isAcknowledged stays false");
                 }
                 endFinishingPurchase(purchaseClient);
-                if (purchaseCall != null) {
+                if (settled.compareAndSet(false, true) && purchaseCall != null) {
                     purchaseCall.resolve(ret);
                 }
             };

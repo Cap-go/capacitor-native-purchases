@@ -336,17 +336,25 @@ public class NativePurchasesPluginPurchaseCompletionTest {
     public void lostFinish_isGivenUpOnceSoLaterCallsDoNotWaitAgain() {
         plugin.pendingFinishWaitMs = 50;
         assertTrue(plugin.handlePurchase(purchase, call, client));
-        verify(client).acknowledgePurchase(any(AcknowledgePurchaseParams.class), any());
 
-        // Play never answers the acknowledge.
+        ArgumentCaptor<AcknowledgePurchaseResponseListener> ack = ArgumentCaptor.forClass(AcknowledgePurchaseResponseListener.class);
+        verify(client).acknowledgePurchase(any(AcknowledgePurchaseParams.class), ack.capture());
+
+        // Play does not answer the acknowledge in time.
         plugin.awaitPendingFinishes();
         verify(client).endConnection();
         assertNull(plugin.billingClient);
+        // The waiting purchase call still settles, once.
+        verify(call, times(1)).resolve(any(JSObject.class));
 
         plugin.pendingFinishWaitMs = 5000;
         long start = System.nanoTime();
         plugin.awaitPendingFinishes();
         long elapsedMs = (System.nanoTime() - start) / 1_000_000;
         assertTrue("second call waited " + elapsedMs + " ms", elapsedMs < 1000);
+
+        // A late answer does not settle the call a second time.
+        ack.getValue().onAcknowledgePurchaseResponse(ok);
+        verify(call, times(1)).resolve(any(JSObject.class));
     }
 }
