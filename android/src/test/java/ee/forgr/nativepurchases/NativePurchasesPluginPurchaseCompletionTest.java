@@ -357,4 +357,25 @@ public class NativePurchasesPluginPurchaseCompletionTest {
         ack.getValue().onAcknowledgePurchaseResponse(ok);
         verify(call, times(1)).resolve(any(JSObject.class));
     }
+
+    @Test
+    public void restorePurchases_withAClosedClient_rejectsInsteadOfResolving() {
+        when(client.isReady()).thenReturn(false);
+
+        plugin.restoreWithClient(call, client);
+        plugin.restoreWithClient(call, null);
+
+        verify(call, times(2)).reject("Billing client closed before restore could run. Please try again.");
+        verify(call, never()).resolve();
+        verify(client, never()).queryPurchasesAsync(any(QueryPurchasesParams.class), any());
+    }
+
+    @Test
+    public void restorePurchases_withAReadyClient_sendsBothQueriesAndResolves() {
+        plugin.restoreWithClient(call, client);
+
+        verify(client, times(2)).queryPurchasesAsync(any(QueryPurchasesParams.class), any(PurchasesResponseListener.class));
+        verify(call).resolve();
+        verify(call, never()).reject(any(String.class));
+    }
 }

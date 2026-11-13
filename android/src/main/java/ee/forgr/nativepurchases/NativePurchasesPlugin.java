@@ -1254,14 +1254,17 @@ public class NativePurchasesPlugin extends Plugin {
     public void restorePurchases(PluginCall call) {
         NativePurchasesLog.d(TAG, "restorePurchases() called");
         NativePurchasesLog.d(NativePurchasesPlugin.TAG, "restorePurchases");
-        withBillingClient(call, () -> {
-            if (!this.processUnfinishedPurchases(currentBillingClient())) {
-                call.reject("Billing client closed before restore could run. Please try again.");
-                return;
-            }
-            call.resolve();
-            NativePurchasesLog.d(TAG, "restorePurchases() completed");
-        });
+        withBillingClient(call, () -> restoreWithClient(call, currentBillingClient()));
+    }
+
+    /** Body of restorePurchases once a client exists. Package-private for tests. */
+    void restoreWithClient(PluginCall call, BillingClient client) {
+        if (!processUnfinishedPurchases(client)) {
+            call.reject("Billing client closed before restore could run. Please try again.");
+            return;
+        }
+        call.resolve();
+        NativePurchasesLog.d(TAG, "restorePurchases() completed");
     }
 
     private void querySingleProductDetails(String productIdentifier, String productType, PluginCall call) {
