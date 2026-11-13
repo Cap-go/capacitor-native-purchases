@@ -305,4 +305,30 @@ public class NativePurchasesPluginPurchaseCompletionTest {
 
         verify(client, never()).queryPurchasesAsync(any(QueryPurchasesParams.class), any());
     }
+
+    @Test
+    public void restorePurchases_fastFirstCallbackDoesNotStopTheSecondQuery() {
+        // An ended client reports not ready, like the real one.
+        AtomicBoolean ready = new AtomicBoolean(true);
+        when(client.isReady()).thenAnswer((invocation) -> ready.get());
+        org.mockito.Mockito.doAnswer((invocation) -> {
+            ready.set(false);
+            return null;
+        })
+            .when(client)
+            .endConnection();
+        // Play answers the in-app query synchronously, before the subscriptions query is sent.
+        org.mockito.Mockito.doAnswer((invocation) -> {
+            PurchasesResponseListener listener = invocation.getArgument(1);
+            listener.onQueryPurchasesResponse(ok, List.of());
+            return null;
+        })
+            .when(client)
+            .queryPurchasesAsync(any(QueryPurchasesParams.class), any(PurchasesResponseListener.class));
+
+        plugin.processUnfinishedPurchases(client);
+
+        verify(client, times(2)).queryPurchasesAsync(any(QueryPurchasesParams.class), any(PurchasesResponseListener.class));
+        verify(client, times(1)).endConnection();
+    }
 }

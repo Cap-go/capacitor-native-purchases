@@ -1134,11 +1134,18 @@ public class NativePurchasesPlugin extends Plugin {
     void processUnfinishedPurchases(BillingClient client) {
         NativePurchasesLog.d(TAG, "processUnfinishedPurchases() called");
         String[] productTypes = { BillingClient.ProductType.INAPP, BillingClient.ProductType.SUBS };
-        for (String productType : productTypes) {
+        // Count every query before sending any, so a fast callback for the first one cannot end the
+        // client before the second is sent.
+        for (int registered = 0; registered < productTypes.length; registered++) {
             if (!beginFinishingPurchase(client)) {
                 NativePurchasesLog.w(TAG, "Billing client already closed, skipping unfinished purchase recovery");
+                for (int undo = 0; undo < registered; undo++) {
+                    endFinishingPurchase(client);
+                }
                 return;
             }
+        }
+        for (String productType : productTypes) {
             QueryPurchasesParams params = QueryPurchasesParams.newBuilder().setProductType(productType).build();
             NativePurchasesLog.d(TAG, "Querying unfinished purchases of type " + productType);
             client.queryPurchasesAsync(params, (billingResult, purchases) -> {
