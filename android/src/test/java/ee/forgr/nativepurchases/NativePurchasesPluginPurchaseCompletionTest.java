@@ -7,6 +7,7 @@ import static org.junit.Assert.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -20,6 +21,7 @@ import com.android.billingclient.api.Purchase;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.PluginCall;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicBoolean;
 import org.junit.Before;
 import org.junit.Test;
 import org.mockito.ArgumentCaptor;
@@ -154,5 +156,89 @@ public class NativePurchasesPluginPurchaseCompletionTest {
 
         verify(client, never()).acknowledgePurchase(any(), any());
         verify(call).resolve(any(JSObject.class));
+    }
+
+    @Test
+    public void twoFinishesOnOneClient_endTheClientOnlyAfterTheLast() {
+        Purchase second = mock(Purchase.class);
+        when(second.getPurchaseState()).thenReturn(Purchase.PurchaseState.PURCHASED);
+        when(second.getPurchaseToken()).thenReturn("token2");
+        when(second.getProducts()).thenReturn(List.of("premium"));
+        when(second.isAcknowledged()).thenReturn(false);
+
+        assertTrue(plugin.handlePurchase(purchase, call, client));
+        assertTrue(plugin.handlePurchase(second, call, client));
+
+        ArgumentCaptor<AcknowledgePurchaseResponseListener> listener = ArgumentCaptor.forClass(AcknowledgePurchaseResponseListener.class);
+        verify(client, times(2)).acknowledgePurchase(any(AcknowledgePurchaseParams.class), listener.capture());
+
+        listener.getAllValues().get(0).onAcknowledgePurchaseResponse(ok);
+        verify(client, never()).endConnection();
+
+        listener.getAllValues().get(1).onAcknowledgePurchaseResponse(ok);
+        verify(client, times(1)).endConnection();
+    }
+
+    @Test
+    public void failedAcknowledge_stillResolvesAndEndsTheClient() {
+        BillingResult error = BillingResult.newBuilder().setResponseCode(BillingClient.BillingResponseCode.ERROR).build();
+
+        assertTrue(plugin.handlePurchase(purchase, call, client));
+
+        ArgumentCaptor<AcknowledgePurchaseResponseListener> listener = ArgumentCaptor.forClass(AcknowledgePurchaseResponseListener.class);
+        verify(client).acknowledgePurchase(any(AcknowledgePurchaseParams.class), listener.capture());
+
+        listener.getValue().onAcknowledgePurchaseResponse(error);
+
+        verify(client).endConnection();
+        verify(call).resolve(any(JSObject.class));
+    }
+
+    @Test
+    public void purchasesUpdated_pendingAcknowledge_keepsTheOwnerAsTheCurrentClient() {
+        plugin.handlePurchasesUpdated(ok, List.of(purchase), call, client);
+
+        ArgumentCaptor<AcknowledgePurchaseResponseListener> listener = ArgumentCaptor.forClass(AcknowledgePurchaseResponseListener.class);
+        verify(client).acknowledgePurchase(any(AcknowledgePurchaseParams.class), listener.capture());
+        assertSame(client, plugin.billingClient);
+        verify(client, never()).endConnection();
+        verify(call, never()).resolve(any(JSObject.class));
+
+        listener.getValue().onAcknowledgePurchaseResponse(ok);
+
+        verify(client).endConnection();
+        assertNull(plugin.billingClient);
+        verify(call).resolve(any(JSObject.class));
+    }
+
+    @Test
+    public void purchasesUpdated_nothingPending_closesTheOwner() {
+        when(call.getBoolean("autoAcknowledgePurchases", true)).thenReturn(false);
+
+        plugin.handlePurchasesUpdated(ok, List.of(purchase), call, client);
+
+        verify(client).endConnection();
+        assertNull(plugin.billingClient);
+    }
+
+    @Test
+    public void nextBillingCall_waitsForTheFinishBeforeCreatingAClient() throws InterruptedException {
+        assertTrue(plugin.handlePurchase(purchase, call, client));
+        ArgumentCaptor<AcknowledgePurchaseResponseListener> listener = ArgumentCaptor.forClass(AcknowledgePurchaseResponseListener.class);
+        verify(client).acknowledgePurchase(any(AcknowledgePurchaseParams.class), listener.capture());
+
+        AtomicBoolean released = new AtomicBoolean(false);
+        Thread nextCall = new Thread(() -> {
+            plugin.awaitPendingFinishes();
+            released.set(true);
+        });
+        nextCall.start();
+        nextCall.join(200);
+        assertFalse(released.get());
+
+        listener.getValue().onAcknowledgePurchaseResponse(ok);
+        nextCall.join(2000);
+
+        assertTrue(released.get());
     }
 }
