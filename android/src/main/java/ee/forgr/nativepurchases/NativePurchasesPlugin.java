@@ -152,6 +152,10 @@ public class NativePurchasesPlugin extends Plugin {
     /** Ensures purchaseProduct settles its promise once even if Play reports the failure twice. */
     private final Map<PluginCall, AtomicBoolean> purchaseCallSettlement = new WeakHashMap<>();
     private volatile boolean autoFinishTransactions = true;
+    private static final String TRANSACTION_UPDATED_EVENT = "transactionUpdated";
+    /** Billing client kept open while JS listens for {@link #TRANSACTION_UPDATED_EVENT}. */
+    private BillingClient updatesBillingClient;
+    private final Object updatesClientLock = new Object();
 
     @PluginMethod
     public void configure(PluginCall call) {
@@ -262,6 +266,17 @@ public class NativePurchasesPlugin extends Plugin {
         java.text.SimpleDateFormat purchaseDateFormat = new java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", java.util.Locale.US);
         purchaseDateFormat.setTimeZone(java.util.TimeZone.getTimeZone("UTC"));
         return purchaseDateFormat.format(new java.util.Date(timeMillis));
+    }
+
+    static String productTypeForBillingQuery(String billingProductType) {
+        return BillingClient.ProductType.SUBS.equals(billingProductType) ? "subs" : "inapp";
+    }
+
+    static String inferProductTypeFromPurchase(Purchase purchase) {
+        if (purchase != null && purchase.isAutoRenewing()) {
+            return "subs";
+        }
+        return "inapp";
     }
 
     private JSObject buildPurchaseTransactionObject(Purchase purchase, String productType) {
@@ -375,6 +390,187 @@ public class NativePurchasesPlugin extends Plugin {
         NativePurchasesLog.d(TAG, "Plugin load() completed");
     }
 
+    @Override
+    public void addListener(PluginCall call) {
+        String eventName = call.getString("eventName");
+        boolean firstTransactionUpdatedListener = TRANSACTION_UPDATED_EVENT.equals(eventName) && !hasListeners(TRANSACTION_UPDATED_EVENT);
+        super.addListener(call);
+        if (firstTransactionUpdatedListener) {
+            billingExecutor.execute(this::ensureTransactionUpdatesBillingClient);
+        }
+    }
+
+    @Override
+    public void removeListener(PluginCall call) {
+        String eventName = call.getString("eventName");
+        super.removeListener(call);
+        if (TRANSACTION_UPDATED_EVENT.equals(eventName) && !hasListeners(TRANSACTION_UPDATED_EVENT)) {
+            billingExecutor.execute(this::disconnectTransactionUpdatesBillingClient);
+        }
+    }
+
+    @Override
+    public void removeAllListeners() {
+        boolean hadTransactionUpdatedListeners = hasListeners(TRANSACTION_UPDATED_EVENT);
+        super.removeAllListeners();
+        if (hadTransactionUpdatedListeners) {
+            billingExecutor.execute(this::disconnectTransactionUpdatesBillingClient);
+        }
+    }
+
+    @Override
+    protected void handleOnResume() {
+        super.handleOnResume();
+        if (hasListeners(TRANSACTION_UPDATED_EVENT)) {
+            billingExecutor.execute(this::refreshTransactionUpdatesFromPlay);
+        }
+    }
+
+    private void refreshTransactionUpdatesFromPlay() {
+        BillingClient client;
+        synchronized (updatesClientLock) {
+            client = updatesBillingClient;
+        }
+        if (client != null && client.isReady()) {
+            queryUnacknowledgedPurchasesForTransactionUpdated(client);
+            return;
+        }
+        ensureTransactionUpdatesBillingClient();
+    }
+
+    private void ensureTransactionUpdatesBillingClient() {
+        if (!hasListeners(TRANSACTION_UPDATED_EVENT)) {
+            return;
+        }
+        synchronized (updatesClientLock) {
+            if (updatesBillingClient != null && updatesBillingClient.isReady()) {
+                queryUnacknowledgedPurchasesForTransactionUpdated(updatesBillingClient);
+                return;
+            }
+            if (updatesBillingClient != null) {
+                try {
+                    updatesBillingClient.endConnection();
+                } catch (RuntimeException e) {
+                    NativePurchasesLog.w(TAG, "Failed to end stale updates billing client: " + e.getMessage());
+                }
+                updatesBillingClient = null;
+            }
+            final BillingClient[] clientHolder = new BillingClient[1];
+            clientHolder[0] = BillingClient.newBuilder(getContext())
+                .setListener(
+                    new PurchasesUpdatedListener() {
+                        @Override
+                        public void onPurchasesUpdated(@NonNull BillingResult billingResult, List<Purchase> purchases) {
+                            handleUpdatesPurchasesUpdated(billingResult, purchases, clientHolder[0]);
+                        }
+                    }
+                )
+                .enablePendingPurchases(PendingPurchasesParams.newBuilder().enableOneTimeProducts().build())
+                .build();
+            updatesBillingClient = clientHolder[0];
+            NativePurchasesLog.d(TAG, "Starting updates billing client connection");
+            clientHolder[0].startConnection(
+                new BillingClientStateListener() {
+                    @Override
+                    public void onBillingSetupFinished(@NonNull BillingResult billingResult) {
+                        if (billingResult.getResponseCode() == BillingClient.BillingResponseCode.OK) {
+                            queryUnacknowledgedPurchasesForTransactionUpdated(clientHolder[0]);
+                        } else {
+                            NativePurchasesLog.w(TAG, "Updates billing client setup failed: " + billingResult.getDebugMessage());
+                        }
+                    }
+
+                    @Override
+                    public void onBillingServiceDisconnected() {
+                        NativePurchasesLog.d(TAG, "Updates billing client disconnected");
+                        synchronized (updatesClientLock) {
+                            if (updatesBillingClient == clientHolder[0]) {
+                                updatesBillingClient = null;
+                            }
+                        }
+                    }
+                }
+            );
+        }
+    }
+
+    private void disconnectTransactionUpdatesBillingClient() {
+        synchronized (updatesClientLock) {
+            if (updatesBillingClient != null) {
+                try {
+                    updatesBillingClient.endConnection();
+                } catch (RuntimeException e) {
+                    NativePurchasesLog.w(TAG, "Failed to end updates billing client: " + e.getMessage());
+                }
+                updatesBillingClient = null;
+            }
+        }
+    }
+
+    private void queryUnacknowledgedPurchasesForTransactionUpdated(BillingClient client) {
+        if (client == null || !client.isReady() || !hasListeners(TRANSACTION_UPDATED_EVENT)) {
+            return;
+        }
+        queryUnacknowledgedPurchasesForTransactionUpdated(client, BillingClient.ProductType.INAPP);
+        queryUnacknowledgedPurchasesForTransactionUpdated(client, BillingClient.ProductType.SUBS);
+    }
+
+    private void queryUnacknowledgedPurchasesForTransactionUpdated(BillingClient client, String billingProductType) {
+        final String productType = productTypeForBillingQuery(billingProductType);
+        QueryPurchasesParams params = QueryPurchasesParams.newBuilder().setProductType(billingProductType).build();
+        try {
+            client.queryPurchasesAsync(params, (billingResult, purchases) -> {
+                if (billingResult.getResponseCode() != BillingClient.BillingResponseCode.OK || purchases == null) {
+                    return;
+                }
+                for (Purchase purchase : purchases) {
+                    if (purchase.getPurchaseState() == Purchase.PurchaseState.PURCHASED && !purchase.isAcknowledged()) {
+                        processPurchaseForTransactionUpdated(purchase, productType, client);
+                    }
+                }
+            });
+        } catch (RuntimeException e) {
+            NativePurchasesLog.w(TAG, "queryPurchasesAsync failed for transactionUpdated recovery: " + e.getMessage());
+        }
+    }
+
+    void handleUpdatesPurchasesUpdated(BillingResult billingResult, List<Purchase> purchases, BillingClient client) {
+        if (billingResult.getResponseCode() != BillingClient.BillingResponseCode.OK || purchases == null) {
+            return;
+        }
+        for (Purchase purchase : purchases) {
+            processPurchaseForTransactionUpdated(purchase, inferProductTypeFromPurchase(purchase), client);
+        }
+    }
+
+    void processPurchaseForTransactionUpdated(Purchase purchase, String productType, BillingClient client) {
+        if (!hasListeners(TRANSACTION_UPDATED_EVENT)) {
+            return;
+        }
+        int purchaseState = purchase.getPurchaseState();
+        if (purchaseState != Purchase.PurchaseState.PURCHASED && purchaseState != Purchase.PurchaseState.PENDING) {
+            return;
+        }
+        JSObject payload = buildPurchaseTransactionObject(purchase, productType);
+        if (purchaseState == Purchase.PurchaseState.PURCHASED) {
+            if (autoFinishTransactions) {
+                PurchaseAction action = PurchaseActionDecider.decide(false, purchase);
+                if (action == PurchaseAction.ACKNOWLEDGE && client != null && client.isReady()) {
+                    acknowledgePurchase(client, purchase.getPurchaseToken(), (billingResult) -> {
+                        if (billingResult != null && billingResult.getResponseCode() == BillingClient.BillingResponseCode.OK) {
+                            payload.put("isAcknowledged", true);
+                        }
+                        notifyListeners(TRANSACTION_UPDATED_EVENT, payload);
+                    });
+                    return;
+                }
+            } else if (!purchase.isAcknowledged()) {
+                payload.put("needsFinish", true);
+            }
+        }
+        notifyListeners(TRANSACTION_UPDATED_EVENT, payload);
+    }
+
     @FunctionalInterface
     private interface BillingTask {
         void run() throws Exception;
@@ -402,6 +598,12 @@ public class NativePurchasesPlugin extends Plugin {
     protected void handleOnDestroy() {
         billingExecutor.shutdownNow();
         List<BillingClient> clientsToEnd = new ArrayList<>();
+        synchronized (updatesClientLock) {
+            if (updatesBillingClient != null) {
+                clientsToEnd.add(updatesBillingClient);
+                updatesBillingClient = null;
+            }
+        }
         synchronized (billingClientLock) {
             if (billingClient != null) {
                 clientsToEnd.add(billingClient);
@@ -622,6 +824,10 @@ public class NativePurchasesPlugin extends Plugin {
 
     void registerPurchaseCallSettlementForTest(PluginCall call) {
         registerPurchaseCallSettlement(call);
+    }
+
+    void setAutoFinishTransactionsForTest(boolean value) {
+        autoFinishTransactions = value;
     }
 
     private boolean trySettlePurchaseCall(PluginCall call) {
@@ -1047,6 +1253,15 @@ public class NativePurchasesPlugin extends Plugin {
         NativePurchasesLog.d(TAG, "Billing result: " + billingResult.getResponseCode() + " - " + billingResult.getDebugMessage());
         NativePurchasesLog.d(TAG, "Purchases count: " + (purchases != null ? purchases.size() : 0));
         NativePurchasesLog.i(NativePurchasesPlugin.TAG, "onPurchasesUpdated" + billingResult);
+        if (billingResult.getResponseCode() == BillingClient.BillingResponseCode.OK && purchases != null && purchaseCall == null) {
+            NativePurchasesLog.d(TAG, "Purchase update outside purchaseProduct, emitting transactionUpdated");
+            for (Purchase purchase : purchases) {
+                processPurchaseForTransactionUpdated(purchase, inferProductTypeFromPurchase(purchase), owner);
+            }
+            endPendingBillingFlow(owner);
+            closeBillingClientIfCurrent(owner);
+            return;
+        }
         if (billingResult.getResponseCode() == BillingClient.BillingResponseCode.OK && purchases != null) {
             NativePurchasesLog.d(TAG, "Purchase update successful, processing first purchase");
             if (handlePurchase(purchases.get(0), purchaseCall, owner)) {

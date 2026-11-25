@@ -583,7 +583,7 @@ export interface Transaction {
    *
    * @since 8.9.0
    * @platform ios Present when the transaction is unfinished in StoreKit 2
-   * @platform android Not available (use `isAcknowledged === false` instead)
+   * @platform android Present when `autoFinishTransactions` is `false` and the purchase is not acknowledged
    */
   readonly needsFinish?: boolean;
   /**
@@ -1553,14 +1553,17 @@ export interface NativePurchasesPlugin {
   getStorefront(): Promise<{ countryCode: string; storefrontId?: string }>;
 
   /**
-   * Listen for StoreKit transaction updates delivered by Apple's Transaction.updates.
-   * Fires on app launch if there are unfinished transactions, and for any updates afterward.
+   * Listen for purchase transaction updates outside an in-flight `purchaseProduct()` call.
    *
-   * When `autoFinishTransactions` is `true` (default), the plugin finishes each verified transaction
-   * before emitting the event. When `false`, the event includes `needsFinish: true` and you must call
-   * `finishTransaction()` after backend validation.
+   * **iOS:** StoreKit `Transaction.updates`. Fires on app launch for unfinished transactions.
    *
-   * iOS only.
+   * **Android:** Google Play `PurchasesUpdatedListener` on a persistent billing connection while this
+   * listener is registered, plus `queryPurchasesAsync` when the first listener is added and when the
+   * app returns to the foreground. Pending purchases that complete later are reported here.
+   *
+   * When `autoFinishTransactions` is `true` (default), the plugin acknowledges or finishes each
+   * purchase before emitting the event. When `false`, the event includes `needsFinish: true` and you
+   * must call `finishTransaction()` / `acknowledgePurchase()` after backend validation.
    */
   addListener(
     eventName: 'transactionUpdated',
