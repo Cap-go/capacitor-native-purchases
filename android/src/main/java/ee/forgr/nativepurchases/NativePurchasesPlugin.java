@@ -746,7 +746,7 @@ public class NativePurchasesPlugin extends Plugin {
 
     private void rejectBillingSetupCall(PluginCall purchaseCall, AtomicBoolean callRejected, String code, String message) {
         if (purchaseCall != null && callRejected.compareAndSet(false, true)) {
-            purchaseCall.reject(code, message);
+            purchaseCall.reject(message, code);
         }
     }
 
@@ -1531,6 +1531,15 @@ public class NativePurchasesPlugin extends Plugin {
                         );
                         NativePurchasesLog.d(TAG, "Product details count: " + productDetailsList.size());
 
+                        if (billingResult.getResponseCode() != BillingClient.BillingResponseCode.OK) {
+                            closeBillingClient();
+                            call.reject(
+                                "Failed to query product details: " + billingResult.getDebugMessage(),
+                                BillingResponseCodes.name(billingResult.getResponseCode())
+                            );
+                            return;
+                        }
+
                         if (productDetailsList.isEmpty()) {
                             NativePurchasesLog.d(TAG, "No product found in query");
                             NativePurchasesLog.d(TAG, "This usually means:");
@@ -1671,6 +1680,15 @@ public class NativePurchasesPlugin extends Plugin {
                             "Query result: " + billingResult.getResponseCode() + " - " + billingResult.getDebugMessage()
                         );
                         NativePurchasesLog.d(TAG, "Product details count: " + productDetailsList.size());
+
+                        if (billingResult.getResponseCode() != BillingClient.BillingResponseCode.OK) {
+                            closeBillingClient();
+                            call.reject(
+                                "Failed to query product details: " + billingResult.getDebugMessage(),
+                                BillingResponseCodes.name(billingResult.getResponseCode())
+                            );
+                            return;
+                        }
 
                         if (productDetailsList.isEmpty()) {
                             NativePurchasesLog.d(TAG, "No products found in query");

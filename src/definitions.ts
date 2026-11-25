@@ -138,7 +138,6 @@ export enum PACKAGE_TYPE {
  * @platform android
  */
 export type NativePurchasesAndroidErrorCode =
-  | 'OK'
   | 'USER_CANCELED'
   | 'SERVICE_TIMEOUT'
   | 'SERVICE_UNAVAILABLE'

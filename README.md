@@ -113,7 +113,7 @@ Add this to manifest
 
 ### Android rejection codes
 
-Rejected plugin calls expose a stable `error.code` (see `NativePurchasesAndroidErrorCode` in `definitions.ts`). Branch on `error.code` instead of message text to tell user cancel (`USER_CANCELED`), pending purchase (`PURCHASE_PENDING`), missing catalog product (`PRODUCT_NOT_FOUND`), and Play billing failures (`SERVICE_TIMEOUT`, `NETWORK_ERROR`, and the other mapped codes).
+Mapped Android billing and operation failures expose a stable `error.code` (see `NativePurchasesAndroidErrorCode` in `definitions.ts`). Branch on `error.code` instead of message text to tell user cancel (`USER_CANCELED`), pending purchase (`PURCHASE_PENDING`), missing catalog product (`PRODUCT_NOT_FOUND`), and Play billing failures (`SERVICE_TIMEOUT`, `NETWORK_ERROR`, and the other mapped codes).
 
 ### Testing with Google Play Console
 

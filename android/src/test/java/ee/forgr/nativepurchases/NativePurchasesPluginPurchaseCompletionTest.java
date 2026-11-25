@@ -519,7 +519,7 @@ public class NativePurchasesPluginPurchaseCompletionTest {
         ack.getValue().onAcknowledgePurchaseResponse(error);
         verify(call).reject(
             org.mockito.ArgumentMatchers.startsWith("Failed to acknowledge purchase"),
-            org.mockito.ArgumentMatchers.eq(BillingResponseCodes.name(BillingClient.BillingResponseCode.ERROR))
+            org.mockito.ArgumentMatchers.eq("ERROR")
         );
     }
 
@@ -531,7 +531,7 @@ public class NativePurchasesPluginPurchaseCompletionTest {
 
         plugin.acknowledgeWithClient(call, client, "token");
 
-        verify(call, times(1)).reject("Failed to acknowledge purchase: boom");
+        verify(call, times(1)).reject("Failed to acknowledge purchase: boom", "ERROR");
         verify(call, never()).resolve();
         verify(client, times(1)).endConnection();
         assertNoPendingFinish();
@@ -545,7 +545,7 @@ public class NativePurchasesPluginPurchaseCompletionTest {
 
         plugin.consumeWithClient(call, client, "token");
 
-        verify(call, times(1)).reject("Failed to consume purchase: boom");
+        verify(call, times(1)).reject("Failed to consume purchase: boom", "ERROR");
         verify(client, times(1)).endConnection();
         assertNoPendingFinish();
     }
