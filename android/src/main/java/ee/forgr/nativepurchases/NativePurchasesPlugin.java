@@ -700,6 +700,28 @@ public class NativePurchasesPlugin extends Plugin {
     }
 
     /**
+     * Play Billing calls {@code queryProductDetailsAsync} listeners on its worker pool, but
+     * {@link BillingClient#launchBillingFlow} must run on the UI thread. Package-private for tests.
+     */
+    void launchPurchaseBillingFlowOnUiThread(BillingClient purchaseClient, PluginCall call, BillingFlowParams billingFlowParams) {
+        final android.app.Activity launchActivity = getActivity();
+        if (launchActivity == null) {
+            NativePurchasesLog.e(TAG, "Cannot launch billing flow: no activity");
+            abortPurchaseClientFlow(purchaseClient, call, "Purchase could not start");
+            return;
+        }
+        NativePurchasesLog.d(TAG, "Launching billing flow on the UI thread");
+        launchActivity.runOnUiThread(() -> {
+            try {
+                launchPurchaseBillingFlow(purchaseClient, call, billingFlowParams);
+            } catch (RuntimeException launchError) {
+                NativePurchasesLog.e(TAG, "Billing flow launch failed: " + launchError.getMessage());
+                abortPurchaseClientFlow(purchaseClient, call, "Purchase could not start");
+            }
+        });
+    }
+
+    /**
      * Reject a purchase whose {@code offerToken} matched no current offer.
      *
      * Shared by the subscription and one-time paths because `definitions.ts`
@@ -1404,7 +1426,7 @@ public class NativePurchasesPlugin extends Plugin {
                         }
                         BillingFlowParams billingFlowParams = billingFlowBuilder.build();
                         NativePurchasesLog.d(TAG, "Launching billing flow");
-                        launchPurchaseBillingFlow(purchaseClient, call, billingFlowParams);
+                        launchPurchaseBillingFlowOnUiThread(purchaseClient, call, billingFlowParams);
                     }
                 }
             );
