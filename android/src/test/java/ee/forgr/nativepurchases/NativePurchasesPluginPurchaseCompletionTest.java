@@ -367,7 +367,10 @@ public class NativePurchasesPluginPurchaseCompletionTest {
         plugin.restoreWithClient(call, client);
         plugin.restoreWithClient(call, null);
 
-        verify(call, times(2)).reject("Billing client closed before restore could run. Please try again.");
+        verify(call, times(2)).reject(
+            "Billing client closed before restore could run. Please try again.",
+            BillingResponseCodes.BILLING_CLIENT_CLOSED
+        );
         verify(call, never()).resolve();
         verify(client, never()).queryPurchasesAsync(any(QueryPurchasesParams.class), any());
     }
@@ -428,7 +431,10 @@ public class NativePurchasesPluginPurchaseCompletionTest {
         plugin.acknowledgeWithClient(call, client, "token");
         plugin.acknowledgeWithClient(call, null, "token");
 
-        verify(call, times(2)).reject("Billing client closed before the acknowledge could run. Please try again.");
+        verify(call, times(2)).reject(
+            "Billing client closed before the acknowledge could run. Please try again.",
+            BillingResponseCodes.BILLING_CLIENT_CLOSED
+        );
         verify(client, never()).acknowledgePurchase(any(), any());
     }
 
@@ -505,6 +511,19 @@ public class NativePurchasesPluginPurchaseCompletionTest {
     }
 
     @Test
+    public void manualAcknowledge_playError_rejectsWithBillingCode() {
+        plugin.acknowledgeWithClient(call, client, "token");
+        ArgumentCaptor<AcknowledgePurchaseResponseListener> ack = ArgumentCaptor.forClass(AcknowledgePurchaseResponseListener.class);
+        verify(client).acknowledgePurchase(any(AcknowledgePurchaseParams.class), ack.capture());
+        BillingResult error = BillingResult.newBuilder().setResponseCode(BillingClient.BillingResponseCode.ERROR).build();
+        ack.getValue().onAcknowledgePurchaseResponse(error);
+        verify(call).reject(
+            org.mockito.ArgumentMatchers.startsWith("Failed to acknowledge purchase"),
+            org.mockito.ArgumentMatchers.eq("ERROR")
+        );
+    }
+
+    @Test
     public void manualAcknowledge_thatThrows_undoesItsCountAndRejectsOnce() {
         org.mockito.Mockito.doThrow(new IllegalStateException("boom"))
             .when(client)
@@ -512,7 +531,7 @@ public class NativePurchasesPluginPurchaseCompletionTest {
 
         plugin.acknowledgeWithClient(call, client, "token");
 
-        verify(call, times(1)).reject("Failed to acknowledge purchase: boom");
+        verify(call, times(1)).reject("Failed to acknowledge purchase: boom", "ERROR");
         verify(call, never()).resolve();
         verify(client, times(1)).endConnection();
         assertNoPendingFinish();
@@ -526,7 +545,7 @@ public class NativePurchasesPluginPurchaseCompletionTest {
 
         plugin.consumeWithClient(call, client, "token");
 
-        verify(call, times(1)).reject("Failed to consume purchase: boom");
+        verify(call, times(1)).reject("Failed to consume purchase: boom", "ERROR");
         verify(client, times(1)).endConnection();
         assertNoPendingFinish();
     }

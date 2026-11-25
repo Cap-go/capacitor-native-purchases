@@ -34,7 +34,7 @@ We build, improve and fix our plugins with heavy use of AI, so issues usually ge
 - **Purchases**: `purchaseProduct()` for consumables, non-consumables and subscriptions, with `acknowledgePurchase()`, plus `consumePurchase()` on Android.
 - **Restore and history**: `restorePurchases()` and `getPurchases()`.
 - **Subscription tools**: `manageSubscriptions()`, `presentOfferCodeRedeemSheet()` and `getStorefront()`, plus Android subscription upgrade/downgrade via `purchaseProduct({ oldPurchaseToken, oldProductIdentifier, replacementMode })`.
-- **Server validation**: receipt data and the `transactionUpdated` and `transactionVerificationFailed` events on iOS, purchase tokens on Android.
+- **Server validation**: receipt data, purchase tokens, and the `transactionUpdated` event on iOS and Android (`transactionVerificationFailed` is iOS only).
 - **Platforms**: iOS and Android. Web mocks the purchase calls for development, except `consumePurchase()`, which is Android only.
 
 ## In-app Purchases Made Easy
@@ -110,6 +110,10 @@ Add this to manifest
 ```xml
 <uses-permission android:name="com.android.vending.BILLING" />
 ```
+
+### Android rejection codes
+
+Mapped Android billing and operation failures expose a stable `error.code` (see `NativePurchasesAndroidErrorCode` in `definitions.ts`). Branch on `error.code` instead of message text to tell user cancel (`USER_CANCELED`), pending purchase (`PURCHASE_PENDING`), and Play billing failures (`SERVICE_TIMEOUT`, `NETWORK_ERROR`, and the other mapped codes). For missing products, handle both `PRODUCT_NOT_FOUND` (the product-details query succeeded but returned no details) and `ITEM_UNAVAILABLE` (Play reported the SKU as unavailable).
 
 ### Testing with Google Play Console
 
@@ -1819,8 +1823,8 @@ By default the plugin finishes StoreKit 2 transactions and acknowledges Google P
 
 | Setting | Scope |
 | -------- | ----- |
-| `autoFinishTransactions` (default `true`) | Plugin-wide: iOS `transactionUpdated` and `purchaseProduct` when combined with `autoAcknowledgePurchases`. Android `restorePurchases` recovery and `purchaseProduct` when combined with `autoAcknowledgePurchases`. |
-| `autoAcknowledgePurchases` on `purchaseProduct()` (default `true`) | Per purchase call. Effective auto finish/ack requires both flags to be true. Does not change the iOS `transactionUpdated` listener by itself. |
+| `autoFinishTransactions` (default `true`) | Plugin-wide: iOS and Android `transactionUpdated`, and `purchaseProduct` when combined with `autoAcknowledgePurchases`. Android `restorePurchases` recovery. |
+| `autoAcknowledgePurchases` on `purchaseProduct()` (default `true`) | Per purchase call. Effective auto finish/ack requires both flags to be true. Does not change the `transactionUpdated` listener by itself. |
 
 Set `autoFinishTransactions: false` in `capacitor.config` under `plugins.NativePurchases` so iOS applies it before the native update listener starts, or call `NativePurchases.configure({ autoFinishTransactions: false })` at startup.
 
@@ -1842,7 +1846,7 @@ After validation when automatic acknowledgment is off (for example `configure({ 
 
 An acknowledge or consume can be lost before Google Play answers, for example when the app is killed mid-finish. Plugin teardown (when Capacitor destroys the plugin with its activity) also closes the current billing client even while a finish is still in flight, and Play drops any work that client had queued. The purchase then stays unacknowledged, and Google Play refunds purchases that are not acknowledged within three days.
 
-With `autoFinishTransactions: true` (the default), call `restorePurchases()` at app launch. It acknowledges any `PURCHASED` purchase that is still unacknowledged, so a purchase interrupted by a lost finish is completed on the next start. With `autoFinishTransactions: false`, use `getUnfinishedTransactions()` at launch instead and finish each purchase after validation.
+With `autoFinishTransactions: true` (the default), call `restorePurchases()` at app launch. It acknowledges any `PURCHASED` purchase that is still unacknowledged, so a purchase interrupted by a lost finish is completed on the next start. With `autoFinishTransactions: false`, use `getUnfinishedTransactions()` at launch, or listen for `transactionUpdated`, and finish each purchase after validation.
 
 ## Breaking (TypeScript typings)
 
@@ -2355,14 +2359,19 @@ can change their store region.
 addListener(eventName: 'transactionUpdated', listenerFunc: (transaction: Transaction) => void) => Promise<PluginListenerHandle>
 ```
 
-Listen for StoreKit transaction updates delivered by Apple's <a href="#transaction">Transaction</a>.updates.
-Fires on app launch if there are unfinished transactions, and for any updates afterward.
+Listen for purchase transaction updates outside an in-flight `purchaseProduct()` call.
 
-When `autoFinishTransactions` is `true` (default), the plugin finishes each verified transaction
-before emitting the event. When `false`, the event includes `needsFinish: true` and you must call
-`finishTransaction()` after backend validation.
+**iOS:** StoreKit <a href="#transaction">Transaction</a>.updates. Fires on app launch for unfinished transactions.
 
-iOS only.
+**Android:** Google Play PurchasesUpdatedListener on a persistent billing connection while this
+listener is registered, plus queryPurchasesAsync when the first listener is added and when the
+app returns to the foreground. Pending purchases that complete later are reported here.
+
+When `autoFinishTransactions` is `true` (default), iOS finishes each verified transaction before
+emitting; Android attempts to acknowledge each PURCHASED purchase before emitting (pending
+purchases and failed acknowledgements are still emitted without acknowledgement). When `false`,
+purchased `transactionUpdated` events include `needsFinish: true` when not yet acknowledged; call
+`finishTransaction()` or `acknowledgePurchase()` after backend validation.
 
 | Param              | Type                                                                          |
 | ------------------ | ----------------------------------------------------------------------------- |
