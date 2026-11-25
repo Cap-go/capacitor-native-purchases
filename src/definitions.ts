@@ -128,6 +128,41 @@ export enum PACKAGE_TYPE {
   WEEKLY = 'WEEKLY',
 }
 
+/**
+ * Stable `code` string on rejected plugin calls on Android (Capacitor `error.code`).
+ *
+ * Use these values instead of parsing localized error messages. Unlisted Play response
+ * codes appear as `UNKNOWN_<number>`. Non-purchased states use `PURCHASE_STATE_<number>`.
+ *
+ * @since 8.10.0
+ * @platform android
+ */
+export type NativePurchasesAndroidErrorCode =
+  | 'OK'
+  | 'USER_CANCELED'
+  | 'SERVICE_TIMEOUT'
+  | 'SERVICE_UNAVAILABLE'
+  | 'SERVICE_DISCONNECTED'
+  | 'BILLING_UNAVAILABLE'
+  | 'ITEM_UNAVAILABLE'
+  | 'DEVELOPER_ERROR'
+  | 'ERROR'
+  | 'ITEM_ALREADY_OWNED'
+  | 'ITEM_NOT_OWNED'
+  | 'FEATURE_NOT_SUPPORTED'
+  | 'NETWORK_ERROR'
+  | 'PURCHASE_PENDING'
+  | 'PURCHASE_NOT_FOUND'
+  | 'PRODUCT_NOT_FOUND'
+  | 'BILLING_CLIENT_CLOSED'
+  | 'QUERY_PURCHASES_FAILED'
+  | 'BILLING_INTERRUPTED'
+  | 'BILLING_SETUP_TIMEOUT'
+  | 'BILLING_SETUP_FAILED'
+  | 'FINISH_TIMEOUT'
+  | `UNKNOWN_${number}`
+  | `PURCHASE_STATE_${number}`;
+
 export enum INTRO_ELIGIBILITY_STATUS {
   /**
    * doesn't have enough information to determine eligibility.
