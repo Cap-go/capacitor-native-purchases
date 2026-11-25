@@ -2328,15 +2328,17 @@ addListener(eventName: 'transactionUpdated', listenerFunc: (transaction: Transac
 
 Listen for purchase transaction updates outside an in-flight `purchaseProduct()` call.
 
-**iOS:** StoreKit <a href="#transaction">`Transaction</a>.updates`. Fires on app launch for unfinished transactions.
+**iOS:** StoreKit <a href="#transaction">Transaction</a>.updates. Fires on app launch for unfinished transactions.
 
-**Android:** Google Play `PurchasesUpdatedListener` on a persistent billing connection while this
-listener is registered, plus `queryPurchasesAsync` when the first listener is added and when the
+**Android:** Google Play PurchasesUpdatedListener on a persistent billing connection while this
+listener is registered, plus queryPurchasesAsync when the first listener is added and when the
 app returns to the foreground. Pending purchases that complete later are reported here.
 
-When `autoFinishTransactions` is `true` (default), the plugin acknowledges or finishes each
-purchase before emitting the event. When `false`, the event includes `needsFinish: true` and you
-must call `finishTransaction()` / `acknowledgePurchase()` after backend validation.
+When `autoFinishTransactions` is `true` (default), iOS finishes each verified transaction before
+emitting; Android attempts to acknowledge each PURCHASED purchase before emitting (pending
+purchases and failed acknowledgements are still emitted without acknowledgement). When `false`,
+purchased `transactionUpdated` events include `needsFinish: true` when not yet acknowledged; call
+`finishTransaction()` or `acknowledgePurchase()` after backend validation.
 
 | Param              | Type                                                                          |
 | ------------------ | ----------------------------------------------------------------------------- |

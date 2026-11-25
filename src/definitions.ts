@@ -583,7 +583,7 @@ export interface Transaction {
    *
    * @since 8.9.0
    * @platform ios Present when the transaction is unfinished in StoreKit 2
-   * @platform android Present when `autoFinishTransactions` is `false` and the purchase is not acknowledged
+   * @platform android Present on `transactionUpdated` purchased events when `autoFinishTransactions` is `false` and the purchase is not acknowledged; not set by `getUnfinishedTransactions()`
    */
   readonly needsFinish?: boolean;
   /**
@@ -1555,15 +1555,17 @@ export interface NativePurchasesPlugin {
   /**
    * Listen for purchase transaction updates outside an in-flight `purchaseProduct()` call.
    *
-   * **iOS:** StoreKit `Transaction.updates`. Fires on app launch for unfinished transactions.
+   * **iOS:** StoreKit Transaction.updates. Fires on app launch for unfinished transactions.
    *
-   * **Android:** Google Play `PurchasesUpdatedListener` on a persistent billing connection while this
-   * listener is registered, plus `queryPurchasesAsync` when the first listener is added and when the
+   * **Android:** Google Play PurchasesUpdatedListener on a persistent billing connection while this
+   * listener is registered, plus queryPurchasesAsync when the first listener is added and when the
    * app returns to the foreground. Pending purchases that complete later are reported here.
    *
-   * When `autoFinishTransactions` is `true` (default), the plugin acknowledges or finishes each
-   * purchase before emitting the event. When `false`, the event includes `needsFinish: true` and you
-   * must call `finishTransaction()` / `acknowledgePurchase()` after backend validation.
+   * When `autoFinishTransactions` is `true` (default), iOS finishes each verified transaction before
+   * emitting; Android attempts to acknowledge each PURCHASED purchase before emitting (pending
+   * purchases and failed acknowledgements are still emitted without acknowledgement). When `false`,
+   * purchased `transactionUpdated` events include `needsFinish: true` when not yet acknowledged; call
+   * `finishTransaction()` or `acknowledgePurchase()` after backend validation.
    */
   addListener(
     eventName: 'transactionUpdated',
