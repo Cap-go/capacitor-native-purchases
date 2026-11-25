@@ -1309,7 +1309,9 @@ export interface NativePurchasesPlugin {
    *                                   create a second subscription instead of replacing the first one.
    * @param options.oldProductIdentifier - Only Android, the product identifier of the subscription being replaced.
    * @param options.replacementMode - Only Android, how Google Play replaces the old subscription (see `SubscriptionReplacementMode`).
-   *                                  Google recommends `CHARGE_PRORATED_PRICE` for upgrades and `DEFERRED` for downgrades.
+   *                                  Google recommends `CHARGE_PRORATED_PRICE` for upgrades and `DEFERRED` for downgrades between different subscription products.
+   *                                  When `oldProductIdentifier` equals `productIdentifier` (a base plan change within the same subscription),
+   *                                  use `CHARGE_FULL_PRICE` or `WITHOUT_PRORATION`. Other modes make Google Play fail the purchase.
    */
   purchaseProduct(options: {
     productIdentifier: string;
