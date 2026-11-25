@@ -157,7 +157,8 @@ public class NativePurchasesPlugin extends Plugin {
     /** Billing client kept open while JS listens for {@link #TRANSACTION_UPDATED_EVENT}. */
     private BillingClient updatesBillingClient;
     private final Object updatesClientLock = new Object();
-    private final Set<String> activePurchaseFlowProductIds = Collections.newSetFromMap(new ConcurrentHashMap<>());
+    private static final String ACTIVE_FLOW_REGISTERED_PRODUCT_IDS = "nativePurchasesActiveFlowRegisteredProductIds";
+    private final Map<String, Integer> activePurchaseFlowProductIdRefCounts = new ConcurrentHashMap<>();
     private final AtomicInteger updatesClientPendingAcknowledgements = new AtomicInteger(0);
     private volatile boolean disconnectUpdatesClientWhenIdle;
 
@@ -345,43 +346,64 @@ public class NativePurchasesPlugin extends Plugin {
         }
         String productId = purchase.getProducts().get(0);
         synchronized (billingClientLock) {
-            return activePurchaseFlowProductIds.contains(productId);
+            Integer refCount = activePurchaseFlowProductIdRefCounts.get(productId);
+            return refCount != null && refCount > 0;
         }
     }
 
-    private void registerActivePurchaseFlowProduct(String productIdentifier) {
-        if (productIdentifier == null || productIdentifier.isEmpty()) {
+    private void registerActivePurchaseFlowProduct(PluginCall call, String productIdentifier) {
+        if (call == null || productIdentifier == null || productIdentifier.isEmpty()) {
             return;
         }
         synchronized (billingClientLock) {
-            activePurchaseFlowProductIds.add(productIdentifier);
+            activePurchaseFlowProductIdRefCounts.merge(productIdentifier, 1, Integer::sum);
         }
+        appendActiveFlowRegisteredProductId(call, productIdentifier);
     }
 
-    private void clearActivePurchaseFlowProducts(PluginCall purchaseCall, Purchase purchase) {
-        if (purchaseCall != null) {
-            String requestedId = purchaseCall.getString("productIdentifier");
-            if (requestedId != null && !requestedId.isEmpty()) {
-                synchronized (billingClientLock) {
-                    activePurchaseFlowProductIds.remove(requestedId);
+    private void appendActiveFlowRegisteredProductId(PluginCall call, String productIdentifier) {
+        JSObject data = call.getData();
+        JSONArray registeredIds = data.optJSONArray(ACTIVE_FLOW_REGISTERED_PRODUCT_IDS);
+        if (registeredIds == null) {
+            registeredIds = new JSONArray();
+            data.put(ACTIVE_FLOW_REGISTERED_PRODUCT_IDS, registeredIds);
+        }
+        registeredIds.put(productIdentifier);
+    }
+
+    private void releaseRegisteredActivePurchaseFlowProducts(PluginCall purchaseCall) {
+        if (purchaseCall == null) {
+            return;
+        }
+        JSONArray registeredIds = purchaseCall.getData().optJSONArray(ACTIVE_FLOW_REGISTERED_PRODUCT_IDS);
+        if (registeredIds == null || registeredIds.length() == 0) {
+            return;
+        }
+        synchronized (billingClientLock) {
+            for (int i = 0; i < registeredIds.length(); i++) {
+                String productId = registeredIds.optString(i, "");
+                if (productId.isEmpty()) {
+                    continue;
                 }
-            }
-            String oldPurchaseToken = purchaseCall.getString("oldPurchaseToken");
-            String oldProductIdentifier = purchaseCall.getString("oldProductIdentifier");
-            if (
-                oldPurchaseToken != null && !oldPurchaseToken.isEmpty() && oldProductIdentifier != null && !oldProductIdentifier.isEmpty()
-            ) {
-                synchronized (billingClientLock) {
-                    activePurchaseFlowProductIds.remove(oldProductIdentifier);
-                }
+                activePurchaseFlowProductIdRefCounts.compute(productId, (id, count) -> {
+                    if (count == null || count <= 1) {
+                        return null;
+                    }
+                    return count - 1;
+                });
             }
         }
-        if (purchase != null) {
-            for (String productId : purchase.getProducts()) {
-                synchronized (billingClientLock) {
-                    activePurchaseFlowProductIds.remove(productId);
-                }
-            }
+        purchaseCall.getData().remove(ACTIVE_FLOW_REGISTERED_PRODUCT_IDS);
+    }
+
+    void clearActivePurchaseFlowProducts(PluginCall purchaseCall, Purchase purchase) {
+        releaseRegisteredActivePurchaseFlowProducts(purchaseCall);
+    }
+
+    boolean isActivePurchaseFlowProductForTest(String productId) {
+        synchronized (billingClientLock) {
+            Integer refCount = activePurchaseFlowProductIdRefCounts.get(productId);
+            return refCount != null && refCount > 0;
         }
     }
 
@@ -1087,11 +1109,11 @@ public class NativePurchasesPlugin extends Plugin {
      * not the shared {@link #billingClient} field.
      */
     void launchPurchaseBillingFlow(BillingClient flowClient, PluginCall call, BillingFlowParams billingFlowParams) {
-        registerActivePurchaseFlowProduct(call.getString("productIdentifier"));
+        registerActivePurchaseFlowProduct(call, call.getString("productIdentifier"));
         String oldPurchaseToken = call.getString("oldPurchaseToken");
         String oldProductIdentifier = call.getString("oldProductIdentifier");
         if (oldPurchaseToken != null && !oldPurchaseToken.isEmpty() && oldProductIdentifier != null && !oldProductIdentifier.isEmpty()) {
-            registerActivePurchaseFlowProduct(oldProductIdentifier);
+            registerActivePurchaseFlowProduct(call, oldProductIdentifier);
         }
         if (flowClient == null || !flowClient.isReady()) {
             NativePurchasesLog.w(TAG, "Purchase billing client closed before launch");
