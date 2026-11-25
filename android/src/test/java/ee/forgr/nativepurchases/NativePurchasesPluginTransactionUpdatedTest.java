@@ -18,6 +18,7 @@ import com.android.billingclient.api.Purchase;
 import com.getcapacitor.JSObject;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.function.Consumer;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
@@ -112,6 +113,11 @@ public class NativePurchasesPluginTransactionUpdatedTest {
             if ("transactionUpdated".equals(eventName)) {
                 transactionUpdatedEvents.add(data);
             }
+        }
+
+        @Override
+        void resolveProductTypeForPurchase(BillingClient client, Purchase purchase, Consumer<String> onResolved) {
+            onResolved.accept("inapp");
         }
 
         @Override

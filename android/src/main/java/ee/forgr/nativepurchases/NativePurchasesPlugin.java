@@ -288,7 +288,7 @@ public class NativePurchasesPlugin extends Plugin {
         return false;
     }
 
-    private void resolveProductTypeForPurchase(BillingClient client, Purchase purchase, Consumer<String> onResolved) {
+    void resolveProductTypeForPurchase(BillingClient client, Purchase purchase, Consumer<String> onResolved) {
         if (client == null || !client.isReady() || purchase == null) {
             NativePurchasesLog.w(TAG, "Cannot resolve product type without a ready billing client");
             onResolved.accept(null);
