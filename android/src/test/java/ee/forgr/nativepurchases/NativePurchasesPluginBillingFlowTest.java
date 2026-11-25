@@ -241,4 +241,14 @@ public class NativePurchasesPluginBillingFlowTest {
         verify(client).endConnection();
         verify(call).reject(any(String.class), any(String.class));
     }
+
+    @Test
+    public void failedPurchaseUpdate_rejectsWithBillingResponseCode() {
+        plugin.registerPurchaseCallSettlementForTest(call);
+        BillingResult canceled = BillingResult.newBuilder().setResponseCode(BillingClient.BillingResponseCode.USER_CANCELED).build();
+
+        plugin.handlePurchasesUpdated(canceled, null, call, client);
+
+        verify(call).reject(eq("Purchase is not purchased"), eq("USER_CANCELED"));
+    }
 }

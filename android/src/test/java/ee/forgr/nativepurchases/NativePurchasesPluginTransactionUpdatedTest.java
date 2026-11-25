@@ -82,6 +82,16 @@ public class NativePurchasesPluginTransactionUpdatedTest {
     }
 
     @Test
+    public void handlePurchasesUpdated_withoutPurchaseCall_emitsTransactionUpdated() {
+        plugin.setBillingClientForTest(client);
+        plugin.processPurchaseForTransactionUpdated = false;
+        plugin.handlePurchasesUpdated(ok, List.of(purchase), null, client);
+
+        assertEquals(1, plugin.transactionUpdatedEvents.size());
+        verify(client).endConnection();
+    }
+
+    @Test
     public void handleUpdatesPurchasesUpdated_emitsForEachPurchase() {
         Purchase second = mock(Purchase.class);
         when(second.getPurchaseState()).thenReturn(Purchase.PurchaseState.PENDING);
