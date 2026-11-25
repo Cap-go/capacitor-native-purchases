@@ -147,14 +147,12 @@ public class NativePurchasesPluginBillingFlowTest {
         when(client.launchBillingFlow(any(), any())).thenReturn(ok);
 
         AtomicBoolean uiRunnableRan = new AtomicBoolean(false);
-        doAnswer(
-            (invocation) -> {
-                Runnable runnable = invocation.getArgument(0);
-                uiRunnableRan.set(true);
-                runnable.run();
-                return null;
-            }
-        )
+        doAnswer((invocation) -> {
+            Runnable runnable = invocation.getArgument(0);
+            uiRunnableRan.set(true);
+            runnable.run();
+            return null;
+        })
             .when(activity)
             .runOnUiThread(isA(Runnable.class));
 
