@@ -5,6 +5,7 @@ import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isA;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
@@ -26,6 +27,7 @@ import com.android.billingclient.api.Purchase;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.PluginCall;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicBoolean;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
@@ -121,6 +123,82 @@ public class NativePurchasesPluginBillingFlowTest {
 
         verify(client).launchBillingFlow(eq(activity), eq(params));
         verify(replacement, never()).launchBillingFlow(any(), any());
+    }
+
+    @Test
+    public void launchPurchaseBillingFlowOnUiThread_rejectsWhenActivityMissing() {
+        NativePurchasesPlugin pluginSpy = spy(plugin);
+        doReturn(null).when(pluginSpy).getActivity();
+        pluginSpy.registerPurchaseCallSettlementForTest(call);
+        assertTrue(pluginSpy.beginPendingBillingFlow(client));
+
+        BillingFlowParams params = mock(BillingFlowParams.class);
+        pluginSpy.launchPurchaseBillingFlowOnUiThread(client, call, params);
+
+        verify(client, never()).launchBillingFlow(any(), any());
+        verify(call).reject(eq("Purchase could not start"));
+    }
+
+    @Test
+    public void launchPurchaseBillingFlowOnUiThread_runsLaunchOnUiThread() {
+        NativePurchasesPlugin pluginSpy = spy(plugin);
+        AppCompatActivity activity = mock(AppCompatActivity.class);
+        doReturn(activity).when(pluginSpy).getActivity();
+
+        AtomicBoolean insideUiRunnable = new AtomicBoolean(false);
+        AtomicBoolean launchInsideUiRunnable = new AtomicBoolean(false);
+        doAnswer((invocation) -> {
+            if (insideUiRunnable.get()) {
+                launchInsideUiRunnable.set(true);
+            }
+            return ok;
+        })
+            .when(client)
+            .launchBillingFlow(any(), any());
+
+        doAnswer((invocation) -> {
+            Runnable runnable = invocation.getArgument(0);
+            insideUiRunnable.set(true);
+            try {
+                runnable.run();
+            } finally {
+                insideUiRunnable.set(false);
+            }
+            return null;
+        })
+            .when(activity)
+            .runOnUiThread(isA(Runnable.class));
+
+        assertTrue(pluginSpy.beginPendingBillingFlow(client));
+        BillingFlowParams params = mock(BillingFlowParams.class);
+        pluginSpy.launchPurchaseBillingFlowOnUiThread(client, call, params);
+
+        assertTrue(launchInsideUiRunnable.get());
+        verify(activity).runOnUiThread(isA(Runnable.class));
+        verify(client).launchBillingFlow(eq(activity), eq(params));
+    }
+
+    @Test
+    public void launchPurchaseBillingFlowOnUiThread_launchThrows_rejectsOnceAndEndsClient() {
+        NativePurchasesPlugin pluginSpy = spy(plugin);
+        AppCompatActivity activity = mock(AppCompatActivity.class);
+        doReturn(activity).when(pluginSpy).getActivity();
+        pluginSpy.registerPurchaseCallSettlementForTest(call);
+        when(client.launchBillingFlow(any(), any())).thenThrow(new RuntimeException("launch failed"));
+
+        doAnswer((invocation) -> {
+            Runnable runnable = invocation.getArgument(0);
+            runnable.run();
+            return null;
+        })
+            .when(activity)
+            .runOnUiThread(isA(Runnable.class));
+
+        assertTrue(pluginSpy.beginPendingBillingFlow(client));
+        pluginSpy.launchPurchaseBillingFlowOnUiThread(client, call, mock(BillingFlowParams.class));
+
+        verify(call, times(1)).reject(eq("Purchase could not start"));
+        verify(client, times(1)).endConnection();
     }
 
     @Test
