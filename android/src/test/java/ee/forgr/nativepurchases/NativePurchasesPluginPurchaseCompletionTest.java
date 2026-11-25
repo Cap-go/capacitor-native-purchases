@@ -58,6 +58,7 @@ public class NativePurchasesPluginPurchaseCompletionTest {
         when(purchase.isAcknowledged()).thenReturn(false);
         when(call.getBoolean("isConsumable", false)).thenReturn(false);
         when(call.getBoolean("autoAcknowledgePurchases", true)).thenReturn(true);
+        when(call.getData()).thenReturn(new JSObject());
     }
 
     @After

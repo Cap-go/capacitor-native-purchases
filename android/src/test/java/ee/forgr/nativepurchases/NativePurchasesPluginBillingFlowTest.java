@@ -216,14 +216,18 @@ public class NativePurchasesPluginBillingFlowTest {
         when(abortingCall.getString("oldPurchaseToken")).thenReturn("old-token");
         when(abortingCall.getString("oldProductIdentifier")).thenReturn("premium");
 
-        plugin.launchPurchaseBillingFlow(client, launchedCall, mock(BillingFlowParams.class));
-        assertTrue(plugin.isActivePurchaseFlowProductForTest("premium"));
+        NativePurchasesPlugin pluginSpy = spy(plugin);
+        AppCompatActivity activity = mock(AppCompatActivity.class);
+        doReturn(activity).when(pluginSpy).getActivity();
+        when(client.launchBillingFlow(any(), any())).thenReturn(ok);
+        pluginSpy.launchPurchaseBillingFlow(client, launchedCall, mock(BillingFlowParams.class));
+        assertTrue(pluginSpy.isActivePurchaseFlowProductForTest("premium"));
 
-        plugin.clearActivePurchaseFlowProducts(abortingCall, null);
+        pluginSpy.clearActivePurchaseFlowProducts(abortingCall, null);
 
-        assertTrue(plugin.isActivePurchaseFlowProductForTest("premium"));
-        plugin.clearActivePurchaseFlowProducts(launchedCall, null);
-        assertFalse(plugin.isActivePurchaseFlowProductForTest("premium"));
+        assertTrue(pluginSpy.isActivePurchaseFlowProductForTest("premium"));
+        pluginSpy.clearActivePurchaseFlowProducts(launchedCall, null);
+        assertFalse(pluginSpy.isActivePurchaseFlowProductForTest("premium"));
     }
 
     @Test
