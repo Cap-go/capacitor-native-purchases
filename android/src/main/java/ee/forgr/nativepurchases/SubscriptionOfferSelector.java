@@ -99,6 +99,21 @@ public final class SubscriptionOfferSelector {
         return isPresent(offerToken) || isPresent(planIdentifier);
     }
 
+    /**
+     * Whether any offer uses the given base plan id.
+     */
+    static boolean hasBasePlan(List<Offer> offers, String planIdentifier) {
+        if (!isPresent(planIdentifier) || offers == null || offers.isEmpty()) {
+            return false;
+        }
+        for (Offer offer : offers) {
+            if (planIdentifier.equals(offer.getBasePlanId())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     private static boolean isPresent(String value) {
         return value != null && !value.isEmpty();
     }

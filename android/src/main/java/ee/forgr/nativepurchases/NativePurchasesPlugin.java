@@ -110,21 +110,6 @@ public class NativePurchasesPlugin extends Plugin {
         return SubscriptionOfferPurchaseResult.ok(selected.getOfferToken(), selected.getBasePlanId());
     }
 
-    private static boolean planIdentifierMatchesAnyBasePlan(
-        List<ProductDetails.SubscriptionOfferDetails> subscriptionOffers,
-        String planIdentifier
-    ) {
-        if (subscriptionOffers == null || planIdentifier == null || planIdentifier.isEmpty()) {
-            return false;
-        }
-        for (ProductDetails.SubscriptionOfferDetails offer : subscriptionOffers) {
-            if (planIdentifier.equals(offer.getBasePlanId())) {
-                return true;
-            }
-        }
-        return false;
-    }
-
     private final String pluginVersion = "8.9.17";
     public static final String TAG = "NativePurchases";
     private static final int BILLING_CONNECTION_MAX_ATTEMPTS = 2;
@@ -1405,7 +1390,10 @@ public class NativePurchasesPlugin extends Plugin {
                                     !hasOfferToken &&
                                     planIdentifier != null &&
                                     !planIdentifier.isEmpty() &&
-                                    !planIdentifierMatchesAnyBasePlan(subscriptionOffers, planIdentifier)
+                                    !SubscriptionOfferSelector.hasBasePlan(
+                                        SubscriptionOfferSelector.adapt(subscriptionOffers),
+                                        planIdentifier
+                                    )
                                 ) {
                                     abortPurchaseClientFlow(
                                         purchaseClient,

@@ -1996,7 +1996,8 @@ purchaseProduct(options: { productIdentifier: string; planIdentifier?: string; o
 Started purchase process for the given product.
 
 **Upgrade / downgrade a subscription (Android):** pass `oldPurchaseToken`, `oldProductIdentifier` and
-`replacementMode` together, with `productType` set to <a href="#purchase_type">PURCHASE_TYPE.SUBS</a>. Partial replacement options are rejected.
+`replacementMode` together, with `productType` set to <a href="#purchase_type">PURCHASE_TYPE.SUBS</a>. Partial replacement options are rejected,
+and a `planIdentifier` that matches no base plan is rejected too (no first-offer fallback).
 On iOS, purchase the other product of the same subscription group instead (StoreKit handles the change).
 
 On Android, `offerToken` selects which offer is charged. If the token is
