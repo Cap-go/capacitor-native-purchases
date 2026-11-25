@@ -84,10 +84,12 @@ public class NativePurchasesPluginTransactionUpdatedTest {
     @Test
     public void handlePurchasesUpdated_withoutPurchaseCall_emitsTransactionUpdated() {
         plugin.setBillingClientForTest(client);
-        plugin.processPurchaseForTransactionUpdated = false;
+        plugin.setAutoFinishTransactionsForTest(false);
         plugin.handlePurchasesUpdated(ok, List.of(purchase), null, client);
 
         assertEquals(1, plugin.transactionUpdatedEvents.size());
+        assertTrue(plugin.transactionUpdatedEvents.get(0).getBoolean("needsFinish"));
+        verify(client, never()).acknowledgePurchase(any(), any());
         verify(client).endConnection();
     }
 
