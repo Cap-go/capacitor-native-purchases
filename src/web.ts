@@ -1,6 +1,13 @@
 import { WebPlugin } from '@capacitor/core';
 
-import type { AppTransaction, NativePurchasesPlugin, Product, PURCHASE_TYPE, Transaction } from './definitions';
+import type {
+  AppTransaction,
+  NativePurchasesPlugin,
+  Product,
+  PURCHASE_TYPE,
+  SubscriptionReplacementMode,
+  Transaction,
+} from './definitions';
 
 export class NativePurchasesWeb extends WebPlugin implements NativePurchasesPlugin {
   async configure(options?: { autoFinishTransactions?: boolean }): Promise<void> {
@@ -45,9 +52,17 @@ export class NativePurchasesWeb extends WebPlugin implements NativePurchasesPlug
     appAccountToken?: string;
     isConsumable?: boolean;
     autoAcknowledgePurchases?: boolean;
+    oldPurchaseToken?: string;
+    oldProductIdentifier?: string;
+    replacementMode?: SubscriptionReplacementMode;
   }): Promise<Transaction> {
     console.error('purchaseProduct only mocked in web' + options);
     return { transactionId: 'transactionId' } as any;
+  }
+
+  async isSubscriptionReplacementSupported(): Promise<{ supported: boolean }> {
+    console.warn('isSubscriptionReplacementSupported only mocked in web');
+    return { supported: false };
   }
 
   async isBillingSupported(): Promise<{ isBillingSupported: boolean }> {

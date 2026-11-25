@@ -33,7 +33,7 @@ We build, improve and fix our plugins with heavy use of AI, so issues usually ge
 - **Products**: `getProducts()` and `getProduct()` return localized prices and details.
 - **Purchases**: `purchaseProduct()` for consumables, non-consumables and subscriptions, with `acknowledgePurchase()`, plus `consumePurchase()` on Android.
 - **Restore and history**: `restorePurchases()` and `getPurchases()`.
-- **Subscription tools**: `manageSubscriptions()`, `presentOfferCodeRedeemSheet()` and `getStorefront()`.
+- **Subscription tools**: `manageSubscriptions()`, `presentOfferCodeRedeemSheet()` and `getStorefront()`, plus Android subscription upgrade/downgrade via `purchaseProduct({ oldPurchaseToken, oldProductIdentifier, replacementMode })`.
 - **Server validation**: receipt data and the `transactionUpdated` and `transactionVerificationFailed` events on iOS, purchase tokens on Android.
 - **Platforms**: iOS and Android. Web mocks the purchase calls for development, except `consumePurchase()`, which is Android only.
 
@@ -712,6 +712,10 @@ const checkBillingSupport = async () => {
   }
 };
 ```
+
+### Upgrade or downgrade a subscription (Android)
+
+Replace an active Google Play subscription in-app instead of opening Play subscription settings. Pass the current `purchaseToken` from `getPurchases()`, the product being replaced, and a `replacementMode` name (`CHARGE_PRORATED_PRICE` for upgrades, `DEFERRED` for downgrades). Call `isSubscriptionReplacementSupported()` first so older native builds are not treated as supporting replacement. On iOS, purchase the other product in the same subscription group; StoreKit handles the change.
 
 ### Manage Subscriptions
 
@@ -1853,6 +1857,7 @@ With `autoFinishTransactions: true` (the default), call `restorePurchases()` at 
 * [`getAppTransaction()`](#getapptransaction)
 * [`isEntitledToOldBusinessModel(...)`](#isentitledtooldbusinessmodel)
 * [`purchaseProduct(...)`](#purchaseproduct)
+* [`isSubscriptionReplacementSupported()`](#issubscriptionreplacementsupported)
 * [`getProducts(...)`](#getproducts)
 * [`getProduct(...)`](#getproduct)
 * [`isBillingSupported()`](#isbillingsupported)
@@ -1985,10 +1990,14 @@ to determine if they should be grandfathered into free features.
 ### purchaseProduct(...)
 
 ```typescript
-purchaseProduct(options: { productIdentifier: string; planIdentifier?: string; offerToken?: string; productType?: PURCHASE_TYPE; quantity?: number; billingPlanType?: 'monthly' | 'upFront'; appAccountToken?: string; isConsumable?: boolean; autoAcknowledgePurchases?: boolean; }) => Promise<Transaction>
+purchaseProduct(options: { productIdentifier: string; planIdentifier?: string; offerToken?: string; productType?: PURCHASE_TYPE; quantity?: number; billingPlanType?: 'monthly' | 'upFront'; appAccountToken?: string; isConsumable?: boolean; autoAcknowledgePurchases?: boolean; oldPurchaseToken?: string; oldProductIdentifier?: string; replacementMode?: SubscriptionReplacementMode; }) => Promise<Transaction>
 ```
 
 Started purchase process for the given product.
+
+**Upgrade / downgrade a subscription (Android):** pass `oldPurchaseToken`, `oldProductIdentifier` and
+`replacementMode` together, with `productType` set to <a href="#purchase_type">PURCHASE_TYPE.SUBS</a>. Partial replacement options are rejected.
+On iOS, purchase the other product of the same subscription group instead (StoreKit handles the change).
 
 On Android, `offerToken` selects which offer is charged. If the token is
 missing from the product details returned by the plugin's query, the plugin
@@ -2020,11 +2029,30 @@ purchase option is marked backward-compatible, which is the first
 option does the first offer in the list get used. So pass the token
 whenever a specific one-time offer matters.
 
-| Param         | Type                                                                                                                                                                                                                                                                                                   | Description               |
-| ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------- |
-| **`options`** | <code>{ productIdentifier: string; planIdentifier?: string; offerToken?: string; productType?: <a href="#purchase_type">PURCHASE_TYPE</a>; quantity?: number; billingPlanType?: 'upFront' \| 'monthly'; appAccountToken?: string; isConsumable?: boolean; autoAcknowledgePurchases?: boolean; }</code> | - The product to purchase |
+| Param         | Type                                                                                                                                                                                                                                                                                                                                                                                                                                                       | Description               |
+| ------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------- |
+| **`options`** | <code>{ productIdentifier: string; planIdentifier?: string; offerToken?: string; productType?: <a href="#purchase_type">PURCHASE_TYPE</a>; quantity?: number; billingPlanType?: 'upFront' \| 'monthly'; appAccountToken?: string; isConsumable?: boolean; autoAcknowledgePurchases?: boolean; oldPurchaseToken?: string; oldProductIdentifier?: string; replacementMode?: <a href="#subscriptionreplacementmode">SubscriptionReplacementMode</a>; }</code> | - The product to purchase |
 
 **Returns:** <code>Promise&lt;<a href="#transaction">Transaction</a>&gt;</code>
+
+--------------------
+
+
+### isSubscriptionReplacementSupported()
+
+```typescript
+isSubscriptionReplacementSupported() => Promise<{ supported: boolean; }>
+```
+
+Whether this native build can replace a subscription (`oldPurchaseToken` / `replacementMode` in `purchaseProduct()`).
+
+Use it before an upgrade / downgrade: a native build without this feature ignores the replacement options,
+so the purchase would become a second subscription instead of replacing the current one.
+On native builds that predate this method the call rejects (not implemented): treat a rejection as not supported.
+
+**Returns:** <code>Promise&lt;{ supported: boolean; }&gt;</code>
+
+**Since:** 8.10.0
 
 --------------------
 
@@ -2583,6 +2611,22 @@ Android one-time product discount display metadata.
 #### SubscriptionBillingPlanType
 
 <code>'upFront' | 'monthly' | 'unknown'</code>
+
+
+#### SubscriptionReplacementMode
+
+How Google Play replaces an active subscription when `purchaseProduct()` is called with `oldPurchaseToken`
+(Android only). Passed by name and mapped natively to Play Billing's item-level `ReplacementMode` constants.
+Do not pass numeric `PRORATION_MODE` values; use these names.
+
+- `WITH_TIME_PRORATION`: replace now; the remaining time is credited by moving the next billing date.
+- `CHARGE_PRORATED_PRICE`: replace now and charge the price difference for the rest of the current period
+  (upgrades only, where the price per unit of time increases).
+- `WITHOUT_PRORATION`: replace now; the new price is charged at the next renewal.
+- `CHARGE_FULL_PRICE`: replace now and charge the full price of the new plan.
+- `DEFERRED`: replace at the next renewal.
+
+<code>'WITH_TIME_PRORATION' | 'CHARGE_PRORATED_PRICE' | 'WITHOUT_PRORATION' | 'CHARGE_FULL_PRICE' | 'DEFERRED'</code>
 
 
 ### Enums

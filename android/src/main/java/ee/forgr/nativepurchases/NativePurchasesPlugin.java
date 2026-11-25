@@ -110,6 +110,21 @@ public class NativePurchasesPlugin extends Plugin {
         return SubscriptionOfferPurchaseResult.ok(selected.getOfferToken(), selected.getBasePlanId());
     }
 
+    private static boolean planIdentifierMatchesAnyBasePlan(
+        List<ProductDetails.SubscriptionOfferDetails> subscriptionOffers,
+        String planIdentifier
+    ) {
+        if (subscriptionOffers == null || planIdentifier == null || planIdentifier.isEmpty()) {
+            return false;
+        }
+        for (ProductDetails.SubscriptionOfferDetails offer : subscriptionOffers) {
+            if (planIdentifier.equals(offer.getBasePlanId())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     private final String pluginVersion = "8.9.17";
     public static final String TAG = "NativePurchases";
     private static final int BILLING_CONNECTION_MAX_ATTEMPTS = 2;
@@ -280,6 +295,15 @@ public class NativePurchasesPlugin extends Plugin {
         purchaseData.put("appAccountToken", purchaseAccountId);
         purchaseData.put("willCancel", null);
         return purchaseData;
+    }
+
+    // Lets JS confirm that this native build understands oldPurchaseToken / replacementMode. Older builds ignore
+    // unknown options, so a replacement sent to them would silently become a second subscription instead.
+    @PluginMethod
+    public void isSubscriptionReplacementSupported(PluginCall call) {
+        JSObject ret = new JSObject();
+        ret.put("supported", true);
+        call.resolve(ret);
     }
 
     @PluginMethod
@@ -1218,6 +1242,14 @@ public class NativePurchasesPlugin extends Plugin {
         final String accountIdentifier = appAccountToken != null && !appAccountToken.isEmpty() ? appAccountToken : null;
         boolean isConsumable = call.getBoolean("isConsumable", false);
         boolean autoAcknowledgePurchases = call.getBoolean("autoAcknowledgePurchases", true);
+        // Subscription replacement (upgrade / downgrade): the purchase being replaced and how to replace it.
+        final String oldPurchaseToken = call.getString("oldPurchaseToken");
+        final String oldProductIdentifier = call.getString("oldProductIdentifier");
+        final String replacementModeName = call.getString("replacementMode");
+        final boolean isReplacement = oldPurchaseToken != null && !oldPurchaseToken.isEmpty();
+        final int replacementMode = isReplacement
+            ? SubscriptionReplacementModes.fromName(replacementModeName)
+            : SubscriptionReplacementModes.UNKNOWN;
 
         NativePurchasesLog.d(TAG, "Product identifier: " + productIdentifier);
         NativePurchasesLog.d(TAG, "Plan identifier: " + planIdentifier);
@@ -1227,6 +1259,7 @@ public class NativePurchasesPlugin extends Plugin {
         NativePurchasesLog.d(TAG, "Account identifier provided: " + (accountIdentifier != null ? "[REDACTED]" : "none"));
         NativePurchasesLog.d(TAG, "Is consumable: " + isConsumable);
         NativePurchasesLog.d(TAG, "Auto-acknowledge purchases: " + autoAcknowledgePurchases);
+        NativePurchasesLog.d(TAG, "Subscription replacement: " + isReplacement);
 
         // cannot use quantity, because it's done in native modal
         NativePurchasesLog.d("CapacitorPurchases", "purchaseProduct: " + productIdentifier);
@@ -1261,6 +1294,16 @@ public class NativePurchasesPlugin extends Plugin {
         if (isConsumable && productType.equals("subs")) {
             NativePurchasesLog.d(TAG, "isConsumable is not supported for subscriptions, ignoring flag");
             isConsumable = false;
+        }
+        String replacementError = SubscriptionReplacementModes.validationError(
+            productType,
+            oldPurchaseToken,
+            oldProductIdentifier,
+            replacementModeName
+        );
+        if (replacementError != null) {
+            call.reject(replacementError);
+            return;
         }
 
         call.getData().put("isConsumable", isConsumable);
@@ -1357,6 +1400,20 @@ public class NativePurchasesPlugin extends Plugin {
                                     rejectOfferTokenNotFoundForPurchase(call, productIdentifier, purchaseClient);
                                     return;
                                 }
+                                if (
+                                    isReplacement &&
+                                    !hasOfferToken &&
+                                    planIdentifier != null &&
+                                    !planIdentifier.isEmpty() &&
+                                    !planIdentifierMatchesAnyBasePlan(subscriptionOffers, planIdentifier)
+                                ) {
+                                    abortPurchaseClientFlow(
+                                        purchaseClient,
+                                        call,
+                                        "planIdentifier not found for subscription replacement: " + planIdentifier
+                                    );
+                                    return;
+                                }
 
                                 NativePurchasesLog.d(TAG, "Selected base plan: " + subscriptionSelection.basePlanId);
                                 productDetailsParams.setOfferToken(subscriptionSelection.offerToken);
@@ -1364,6 +1421,14 @@ public class NativePurchasesPlugin extends Plugin {
                                     TAG,
                                     "Set offer token: " + NativePurchasesLog.redactSensitive(subscriptionSelection.offerToken)
                                 );
+                                if (isReplacement) {
+                                    productDetailsParams.setSubscriptionProductReplacementParams(
+                                        BillingFlowParams.ProductDetailsParams.SubscriptionProductReplacementParams.newBuilder()
+                                            .setOldProductId(oldProductIdentifier)
+                                            .setReplacementMode(replacementMode)
+                                            .build()
+                                    );
+                                }
                             } else if (productType.equals("inapp")) {
                                 NativePurchasesLog.d(TAG, "Processing in-app product");
                                 List<ProductDetails.OneTimePurchaseOfferDetails> oneTimeOffers =
@@ -1401,6 +1466,11 @@ public class NativePurchasesPlugin extends Plugin {
                         );
                         if (accountIdentifier != null && !accountIdentifier.isEmpty()) {
                             billingFlowBuilder.setObfuscatedAccountId(accountIdentifier);
+                        }
+                        if (isReplacement) {
+                            billingFlowBuilder.setSubscriptionUpdateParams(
+                                BillingFlowParams.SubscriptionUpdateParams.newBuilder().setOldPurchaseToken(oldPurchaseToken).build()
+                            );
                         }
                         BillingFlowParams billingFlowParams = billingFlowBuilder.build();
                         NativePurchasesLog.d(TAG, "Launching billing flow");
