@@ -81,14 +81,6 @@ public class NativePurchasesPluginTransactionUpdatedTest {
     }
 
     @Test
-    public void inferProductTypeFromPurchase_usesAutoRenewingForSubs() {
-        when(purchase.isAutoRenewing()).thenReturn(true);
-        assertEquals("subs", NativePurchasesPlugin.inferProductTypeFromPurchase(purchase));
-        when(purchase.isAutoRenewing()).thenReturn(false);
-        assertEquals("inapp", NativePurchasesPlugin.inferProductTypeFromPurchase(purchase));
-    }
-
-    @Test
     public void handleUpdatesPurchasesUpdated_emitsForEachPurchase() {
         Purchase second = mock(Purchase.class);
         when(second.getPurchaseState()).thenReturn(Purchase.PurchaseState.PENDING);
