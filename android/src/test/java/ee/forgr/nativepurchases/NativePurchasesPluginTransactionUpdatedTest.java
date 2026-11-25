@@ -115,12 +115,12 @@ public class NativePurchasesPluginTransactionUpdatedTest {
         }
 
         @Override
-        void processPurchaseForTransactionUpdated(Purchase purchase, String productType, BillingClient client) {
+        boolean processPurchaseForTransactionUpdated(Purchase purchase, String productType, BillingClient client) {
             if (!processPurchaseForTransactionUpdated) {
                 transactionUpdatedEvents.add(new JSObject());
-                return;
+                return false;
             }
-            super.processPurchaseForTransactionUpdated(purchase, productType, client);
+            return super.processPurchaseForTransactionUpdated(purchase, productType, client);
         }
     }
 }
