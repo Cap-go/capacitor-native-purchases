@@ -1514,8 +1514,9 @@ public class NativePurchasesPlugin extends Plugin {
         QueryProductDetailsParams params = QueryProductDetailsParams.newBuilder().setProductList(productList).build();
         NativePurchasesLog.d(TAG, "Initializing billing client for single product query");
         withBillingClient(call, () -> {
+            final BillingClient queryClient = billingClient;
             NativePurchasesLog.d(TAG, "Querying product details");
-            billingClient.queryProductDetailsAsync(
+            queryClient.queryProductDetailsAsync(
                 params,
                 new ProductDetailsResponseListener() {
                     @Override
@@ -1532,7 +1533,7 @@ public class NativePurchasesPlugin extends Plugin {
                         NativePurchasesLog.d(TAG, "Product details count: " + productDetailsList.size());
 
                         if (billingResult.getResponseCode() != BillingClient.BillingResponseCode.OK) {
-                            closeBillingClient();
+                            closeBillingClientIfCurrent(queryClient);
                             call.reject(
                                 "Failed to query product details: " + billingResult.getDebugMessage(),
                                 BillingResponseCodes.name(billingResult.getResponseCode())
@@ -1547,7 +1548,7 @@ public class NativePurchasesPlugin extends Plugin {
                             NativePurchasesLog.d(TAG, "2. Product is not published/active");
                             NativePurchasesLog.d(TAG, "3. App is not properly configured for the product type");
                             NativePurchasesLog.d(TAG, "4. Wrong product ID or type");
-                            closeBillingClient();
+                            closeBillingClientIfCurrent(queryClient);
                             call.reject("Product not found", BillingResponseCodes.PRODUCT_NOT_FOUND);
                             return;
                         }
@@ -1569,7 +1570,7 @@ public class NativePurchasesPlugin extends Plugin {
                                     TAG,
                                     "No one-time purchase offer details found for product: " + productDetails.getProductId()
                                 );
-                                closeBillingClient();
+                                closeBillingClientIfCurrent(queryClient);
                                 call.reject("No one-time purchase offer details found for product: " + productDetails.getProductId());
                                 return;
                             }
@@ -1589,7 +1590,7 @@ public class NativePurchasesPlugin extends Plugin {
                                     TAG,
                                     "No subscription offer details found for product: " + productDetails.getProductId()
                                 );
-                                closeBillingClient();
+                                closeBillingClientIfCurrent(queryClient);
                                 call.reject("No subscription offers found for product: " + productDetails.getProductId());
                                 return;
                             }
@@ -1610,7 +1611,7 @@ public class NativePurchasesPlugin extends Plugin {
                                     TAG,
                                     "No offers with pricing phases found for product: " + productDetails.getProductId()
                                 );
-                                closeBillingClient();
+                                closeBillingClientIfCurrent(queryClient);
                                 call.reject("No pricing phases found for product: " + productDetails.getProductId());
                                 return;
                             }
@@ -1636,7 +1637,7 @@ public class NativePurchasesPlugin extends Plugin {
                         JSObject ret = new JSObject();
                         ret.put("product", product);
                         NativePurchasesLog.d(TAG, "Returning single product");
-                        closeBillingClient();
+                        closeBillingClientIfCurrent(queryClient);
                         call.resolve(ret);
                     }
                 }
@@ -1664,8 +1665,9 @@ public class NativePurchasesPlugin extends Plugin {
         QueryProductDetailsParams params = QueryProductDetailsParams.newBuilder().setProductList(productList).build();
         NativePurchasesLog.d(TAG, "Initializing billing client for product query");
         withBillingClient(call, () -> {
+            final BillingClient queryClient = billingClient;
             NativePurchasesLog.d(TAG, "Querying product details");
-            billingClient.queryProductDetailsAsync(
+            queryClient.queryProductDetailsAsync(
                 params,
                 new ProductDetailsResponseListener() {
                     @Override
@@ -1682,7 +1684,7 @@ public class NativePurchasesPlugin extends Plugin {
                         NativePurchasesLog.d(TAG, "Product details count: " + productDetailsList.size());
 
                         if (billingResult.getResponseCode() != BillingClient.BillingResponseCode.OK) {
-                            closeBillingClient();
+                            closeBillingClientIfCurrent(queryClient);
                             call.reject(
                                 "Failed to query product details: " + billingResult.getDebugMessage(),
                                 BillingResponseCodes.name(billingResult.getResponseCode())
@@ -1697,7 +1699,7 @@ public class NativePurchasesPlugin extends Plugin {
                             NativePurchasesLog.d(TAG, "2. Product is not published/active");
                             NativePurchasesLog.d(TAG, "3. App is not properly configured for the product type");
                             NativePurchasesLog.d(TAG, "4. Wrong product ID or type");
-                            closeBillingClient();
+                            closeBillingClientIfCurrent(queryClient);
                             call.reject("Product not found", BillingResponseCodes.PRODUCT_NOT_FOUND);
                             return;
                         }
@@ -1801,7 +1803,7 @@ public class NativePurchasesPlugin extends Plugin {
                         JSObject ret = new JSObject();
                         ret.put("products", products);
                         NativePurchasesLog.d(TAG, "Returning " + products.length() + " products");
-                        closeBillingClient();
+                        closeBillingClientIfCurrent(queryClient);
                         call.resolve(ret);
                     }
                 }
