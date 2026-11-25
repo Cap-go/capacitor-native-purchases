@@ -81,8 +81,8 @@ public class NativePurchasesPluginTransactionUpdatedTest {
         assertTrue(plugin.transactionUpdatedEvents.get(0).getBoolean("isAcknowledged"));
     }
 
-    @Test
-    public void handlePurchasesUpdated_withoutPurchaseCall_emitsTransactionUpdated() {
+  @Test
+    public void handlePurchasesUpdated_withoutPurchaseCall_emitsTransactionUpdated() throws Exception {
         plugin.setBillingClientForTest(client);
         plugin.setAutoFinishTransactionsForTest(false);
         plugin.handlePurchasesUpdated(ok, List.of(purchase), null, client);
