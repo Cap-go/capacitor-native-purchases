@@ -37,6 +37,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.WeakHashMap;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -152,6 +153,13 @@ public class NativePurchasesPlugin extends Plugin {
     /** Ensures purchaseProduct settles its promise once even if Play reports the failure twice. */
     private final Map<PluginCall, AtomicBoolean> purchaseCallSettlement = new WeakHashMap<>();
     private volatile boolean autoFinishTransactions = true;
+    private static final String TRANSACTION_UPDATED_EVENT = "transactionUpdated";
+    /** Billing client kept open while JS listens for {@link #TRANSACTION_UPDATED_EVENT}. */
+    private BillingClient updatesBillingClient;
+    private final Object updatesClientLock = new Object();
+    private final Set<String> activePurchaseFlowProductIds = Collections.newSetFromMap(new ConcurrentHashMap<>());
+    private final AtomicInteger updatesClientPendingAcknowledgements = new AtomicInteger(0);
+    private volatile boolean disconnectUpdatesClientWhenIdle;
 
     @PluginMethod
     public void configure(PluginCall call) {
@@ -262,6 +270,127 @@ public class NativePurchasesPlugin extends Plugin {
         java.text.SimpleDateFormat purchaseDateFormat = new java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", java.util.Locale.US);
         purchaseDateFormat.setTimeZone(java.util.TimeZone.getTimeZone("UTC"));
         return purchaseDateFormat.format(new java.util.Date(timeMillis));
+    }
+
+    static String productTypeForBillingQuery(String billingProductType) {
+        return BillingClient.ProductType.SUBS.equals(billingProductType) ? "subs" : "inapp";
+    }
+
+    private static boolean containsPurchaseToken(List<Purchase> purchases, String purchaseToken) {
+        if (purchases == null || purchaseToken == null) {
+            return false;
+        }
+        for (Purchase purchase : purchases) {
+            if (purchaseToken.equals(purchase.getPurchaseToken())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    void resolveProductTypeForPurchase(BillingClient client, Purchase purchase, Consumer<String> onResolved) {
+        if (client == null || !client.isReady() || purchase == null) {
+            NativePurchasesLog.w(TAG, "Cannot resolve product type without a ready billing client");
+            onResolved.accept(null);
+            return;
+        }
+        final String purchaseToken = purchase.getPurchaseToken();
+        QueryPurchasesParams inAppParams = QueryPurchasesParams.newBuilder().setProductType(BillingClient.ProductType.INAPP).build();
+        try {
+            client.queryPurchasesAsync(inAppParams, (inAppResult, inAppPurchases) -> {
+                if (
+                    inAppResult.getResponseCode() == BillingClient.BillingResponseCode.OK &&
+                    containsPurchaseToken(inAppPurchases, purchaseToken)
+                ) {
+                    onResolved.accept("inapp");
+                    return;
+                }
+                if (inAppResult.getResponseCode() != BillingClient.BillingResponseCode.OK) {
+                    NativePurchasesLog.w(TAG, "In-app query failed while resolving product type");
+                    onResolved.accept(null);
+                    return;
+                }
+                QueryPurchasesParams subsParams = QueryPurchasesParams.newBuilder().setProductType(BillingClient.ProductType.SUBS).build();
+                try {
+                    client.queryPurchasesAsync(subsParams, (subsResult, subsPurchases) -> {
+                        if (
+                            subsResult.getResponseCode() == BillingClient.BillingResponseCode.OK &&
+                            containsPurchaseToken(subsPurchases, purchaseToken)
+                        ) {
+                            onResolved.accept("subs");
+                            return;
+                        }
+                        if (subsResult.getResponseCode() != BillingClient.BillingResponseCode.OK) {
+                            NativePurchasesLog.w(TAG, "Subs query failed while resolving product type");
+                            onResolved.accept(null);
+                            return;
+                        }
+                        NativePurchasesLog.w(TAG, "Purchase token missing from typed queries; skipping transactionUpdated");
+                        onResolved.accept(null);
+                    });
+                } catch (RuntimeException e) {
+                    NativePurchasesLog.w(TAG, "Subs query failed while resolving product type: " + e.getMessage());
+                    onResolved.accept(null);
+                }
+            });
+        } catch (RuntimeException e) {
+            NativePurchasesLog.w(TAG, "In-app query failed while resolving product type: " + e.getMessage());
+            onResolved.accept(null);
+        }
+    }
+
+    private boolean isPurchaseHandledByActiveFlow(Purchase purchase) {
+        if (purchase == null || purchase.getProducts().isEmpty()) {
+            return false;
+        }
+        String productId = purchase.getProducts().get(0);
+        synchronized (billingClientLock) {
+            return activePurchaseFlowProductIds.contains(productId);
+        }
+    }
+
+    private void registerActivePurchaseFlowProduct(String productIdentifier) {
+        if (productIdentifier == null || productIdentifier.isEmpty()) {
+            return;
+        }
+        synchronized (billingClientLock) {
+            activePurchaseFlowProductIds.add(productIdentifier);
+        }
+    }
+
+    private void clearActivePurchaseFlowProducts(PluginCall purchaseCall, Purchase purchase) {
+        if (purchaseCall != null) {
+            String requestedId = purchaseCall.getString("productIdentifier");
+            if (requestedId != null && !requestedId.isEmpty()) {
+                synchronized (billingClientLock) {
+                    activePurchaseFlowProductIds.remove(requestedId);
+                }
+            }
+        }
+        if (purchase != null) {
+            for (String productId : purchase.getProducts()) {
+                synchronized (billingClientLock) {
+                    activePurchaseFlowProductIds.remove(productId);
+                }
+            }
+        }
+    }
+
+    private void maybeRefreshTransactionUpdatesAfterPurchaseFlow() {
+        synchronized (billingClientLock) {
+            if (!pendingBillingFlows.isEmpty()) {
+                return;
+            }
+        }
+        if (hasListeners(TRANSACTION_UPDATED_EVENT)) {
+            billingExecutor.execute(this::refreshTransactionUpdatesFromPlay);
+        }
+    }
+
+    private boolean isEphemeralBillingClient(BillingClient client) {
+        synchronized (updatesClientLock) {
+            return client != null && client != updatesBillingClient;
+        }
     }
 
     private JSObject buildPurchaseTransactionObject(Purchase purchase, String productType) {
@@ -375,6 +504,261 @@ public class NativePurchasesPlugin extends Plugin {
         NativePurchasesLog.d(TAG, "Plugin load() completed");
     }
 
+    @PluginMethod(returnType = PluginMethod.RETURN_NONE)
+    @Override
+    public void addListener(PluginCall call) {
+        String eventName = call.getString("eventName");
+        boolean firstTransactionUpdatedListener = TRANSACTION_UPDATED_EVENT.equals(eventName) && !hasListeners(TRANSACTION_UPDATED_EVENT);
+        super.addListener(call);
+        if (firstTransactionUpdatedListener) {
+            billingExecutor.execute(this::ensureTransactionUpdatesBillingClient);
+        }
+    }
+
+    @PluginMethod(returnType = PluginMethod.RETURN_NONE)
+    @Override
+    public void removeListener(PluginCall call) {
+        String eventName = call.getString("eventName");
+        super.removeListener(call);
+        if (TRANSACTION_UPDATED_EVENT.equals(eventName) && !hasListeners(TRANSACTION_UPDATED_EVENT)) {
+            billingExecutor.execute(this::disconnectTransactionUpdatesBillingClient);
+        }
+    }
+
+    @PluginMethod(returnType = PluginMethod.RETURN_PROMISE)
+    @Override
+    public void removeAllListeners(PluginCall call) {
+        boolean hadTransactionUpdatedListeners = hasListeners(TRANSACTION_UPDATED_EVENT);
+        super.removeAllListeners(call);
+        if (hadTransactionUpdatedListeners) {
+            billingExecutor.execute(this::disconnectTransactionUpdatesBillingClient);
+        }
+    }
+
+    @Override
+    protected void handleOnResume() {
+        super.handleOnResume();
+        if (hasListeners(TRANSACTION_UPDATED_EVENT)) {
+            billingExecutor.execute(this::refreshTransactionUpdatesFromPlay);
+        }
+    }
+
+    private void refreshTransactionUpdatesFromPlay() {
+        BillingClient client;
+        synchronized (updatesClientLock) {
+            client = updatesBillingClient;
+        }
+        if (client != null && client.isReady()) {
+            queryUnacknowledgedPurchasesForTransactionUpdated(client);
+            return;
+        }
+        ensureTransactionUpdatesBillingClient();
+    }
+
+    private void ensureTransactionUpdatesBillingClient() {
+        if (!hasListeners(TRANSACTION_UPDATED_EVENT)) {
+            return;
+        }
+        synchronized (updatesClientLock) {
+            if (updatesBillingClient != null && updatesBillingClient.isReady()) {
+                queryUnacknowledgedPurchasesForTransactionUpdated(updatesBillingClient);
+                return;
+            }
+            if (updatesBillingClient != null) {
+                try {
+                    updatesBillingClient.endConnection();
+                } catch (RuntimeException e) {
+                    NativePurchasesLog.w(TAG, "Failed to end stale updates billing client: " + e.getMessage());
+                }
+                updatesBillingClient = null;
+            }
+            final BillingClient[] clientHolder = new BillingClient[1];
+            clientHolder[0] = BillingClient.newBuilder(getContext())
+                .setListener(
+                    new PurchasesUpdatedListener() {
+                        @Override
+                        public void onPurchasesUpdated(@NonNull BillingResult billingResult, List<Purchase> purchases) {
+                            handleUpdatesPurchasesUpdated(billingResult, purchases, clientHolder[0]);
+                        }
+                    }
+                )
+                .enablePendingPurchases(PendingPurchasesParams.newBuilder().enableOneTimeProducts().build())
+                .build();
+            updatesBillingClient = clientHolder[0];
+            NativePurchasesLog.d(TAG, "Starting updates billing client connection");
+            clientHolder[0].startConnection(
+                new BillingClientStateListener() {
+                    @Override
+                    public void onBillingSetupFinished(@NonNull BillingResult billingResult) {
+                        if (billingResult.getResponseCode() == BillingClient.BillingResponseCode.OK) {
+                            queryUnacknowledgedPurchasesForTransactionUpdated(clientHolder[0]);
+                        } else {
+                            NativePurchasesLog.w(TAG, "Updates billing client setup failed: " + billingResult.getDebugMessage());
+                        }
+                    }
+
+                    @Override
+                    public void onBillingServiceDisconnected() {
+                        NativePurchasesLog.d(TAG, "Updates billing client disconnected");
+                        synchronized (updatesClientLock) {
+                            if (updatesBillingClient == clientHolder[0]) {
+                                updatesBillingClient = null;
+                            }
+                        }
+                    }
+                }
+            );
+        }
+    }
+
+    private void disconnectTransactionUpdatesBillingClient() {
+        if (updatesClientPendingAcknowledgements.get() > 0) {
+            disconnectUpdatesClientWhenIdle = true;
+            return;
+        }
+        disconnectTransactionUpdatesBillingClientNow();
+    }
+
+    private void disconnectTransactionUpdatesBillingClientNow() {
+        disconnectUpdatesClientWhenIdle = false;
+        synchronized (updatesClientLock) {
+            if (updatesBillingClient != null) {
+                try {
+                    updatesBillingClient.endConnection();
+                } catch (RuntimeException e) {
+                    NativePurchasesLog.w(TAG, "Failed to end updates billing client: " + e.getMessage());
+                }
+                updatesBillingClient = null;
+            }
+        }
+    }
+
+    private void maybeFinishDeferredUpdatesClientDisconnect() {
+        if (
+            disconnectUpdatesClientWhenIdle && updatesClientPendingAcknowledgements.get() == 0 && !hasListeners(TRANSACTION_UPDATED_EVENT)
+        ) {
+            disconnectTransactionUpdatesBillingClientNow();
+        }
+    }
+
+    private void queryUnacknowledgedPurchasesForTransactionUpdated(BillingClient client) {
+        if (client == null || !client.isReady() || !hasListeners(TRANSACTION_UPDATED_EVENT)) {
+            return;
+        }
+        queryUnacknowledgedPurchasesForTransactionUpdated(client, BillingClient.ProductType.INAPP);
+        queryUnacknowledgedPurchasesForTransactionUpdated(client, BillingClient.ProductType.SUBS);
+    }
+
+    private void queryUnacknowledgedPurchasesForTransactionUpdated(BillingClient client, String billingProductType) {
+        final String productType = productTypeForBillingQuery(billingProductType);
+        QueryPurchasesParams params = QueryPurchasesParams.newBuilder().setProductType(billingProductType).build();
+        try {
+            client.queryPurchasesAsync(params, (billingResult, purchases) -> {
+                if (billingResult.getResponseCode() != BillingClient.BillingResponseCode.OK || purchases == null) {
+                    return;
+                }
+                for (Purchase purchase : purchases) {
+                    if (
+                        purchase.getPurchaseState() == Purchase.PurchaseState.PURCHASED &&
+                        !purchase.isAcknowledged() &&
+                        !isPurchaseHandledByActiveFlow(purchase)
+                    ) {
+                        processPurchaseForTransactionUpdated(purchase, productType, client);
+                    }
+                }
+            });
+        } catch (RuntimeException e) {
+            NativePurchasesLog.w(TAG, "queryPurchasesAsync failed for transactionUpdated recovery: " + e.getMessage());
+        }
+    }
+
+    void handleUpdatesPurchasesUpdated(BillingResult billingResult, List<Purchase> purchases, BillingClient client) {
+        if (billingResult.getResponseCode() != BillingClient.BillingResponseCode.OK || purchases == null) {
+            return;
+        }
+        for (Purchase purchase : purchases) {
+            if (isPurchaseHandledByActiveFlow(purchase)) {
+                NativePurchasesLog.d(TAG, "Skipping transactionUpdated for in-flight purchaseProduct");
+                continue;
+            }
+            processPurchaseForTransactionUpdatedWithResolvedType(purchase, client);
+        }
+    }
+
+    private void processPurchaseForTransactionUpdatedWithResolvedType(Purchase purchase, BillingClient client) {
+        resolveProductTypeForPurchase(client, purchase, (productType) ->
+            processPurchaseForTransactionUpdated(purchase, productType, client)
+        );
+    }
+
+    /**
+     * @return true when an async acknowledge is in flight on an ephemeral billing client that must
+     *     stay open until the callback runs.
+     */
+    boolean processPurchaseForTransactionUpdated(Purchase purchase, String productType, BillingClient client) {
+        if (!hasListeners(TRANSACTION_UPDATED_EVENT)) {
+            return false;
+        }
+        if (productType == null) {
+            return false;
+        }
+        int purchaseState = purchase.getPurchaseState();
+        if (purchaseState != Purchase.PurchaseState.PURCHASED && purchaseState != Purchase.PurchaseState.PENDING) {
+            return false;
+        }
+        JSObject payload = buildPurchaseTransactionObject(purchase, productType);
+        if (purchaseState == Purchase.PurchaseState.PURCHASED) {
+            if (autoFinishTransactions) {
+                PurchaseAction action = PurchaseActionDecider.decide(false, purchase);
+                if (action == PurchaseAction.ACKNOWLEDGE && client != null && client.isReady()) {
+                    final boolean trackFinishOnEphemeralClient = isEphemeralBillingClient(client);
+                    final boolean trackFinishOnUpdatesClient = !trackFinishOnEphemeralClient;
+                    if (trackFinishOnEphemeralClient && !beginFinishingPurchase(client)) {
+                        NativePurchasesLog.w(TAG, "Ephemeral billing client unavailable for transactionUpdated ack");
+                        if (!purchase.isAcknowledged()) {
+                            payload.put("needsFinish", true);
+                        }
+                        notifyListeners(TRANSACTION_UPDATED_EVENT, payload);
+                        return false;
+                    }
+                    if (trackFinishOnUpdatesClient) {
+                        updatesClientPendingAcknowledgements.incrementAndGet();
+                    }
+                    acknowledgePurchase(client, purchase.getPurchaseToken(), (billingResult) -> {
+                        if (billingResult != null && billingResult.getResponseCode() == BillingClient.BillingResponseCode.OK) {
+                            payload.put("isAcknowledged", true);
+                        } else if (!purchase.isAcknowledged()) {
+                            payload.put("needsFinish", true);
+                        }
+                        if (trackFinishOnEphemeralClient) {
+                            endFinishingPurchase(client);
+                        }
+                        if (trackFinishOnUpdatesClient) {
+                            if (updatesClientPendingAcknowledgements.decrementAndGet() == 0) {
+                                maybeFinishDeferredUpdatesClientDisconnect();
+                            }
+                        }
+                        notifyListeners(TRANSACTION_UPDATED_EVENT, payload);
+                    });
+                    return trackFinishOnEphemeralClient;
+                } else if (action == PurchaseAction.ACKNOWLEDGE && !purchase.isAcknowledged()) {
+                    payload.put("needsFinish", true);
+                }
+            } else if (!purchase.isAcknowledged()) {
+                payload.put("needsFinish", true);
+            }
+        }
+        notifyListeners(TRANSACTION_UPDATED_EVENT, payload);
+        return false;
+    }
+
+    private void finishEphemeralTransactionUpdatedHandling(BillingClient owner, boolean keepClientOpenForAsyncWork) {
+        endPendingBillingFlow(owner);
+        if (!keepClientOpenForAsyncWork) {
+            closeBillingClientIfCurrent(owner);
+        }
+    }
+
     @FunctionalInterface
     private interface BillingTask {
         void run() throws Exception;
@@ -402,6 +786,12 @@ public class NativePurchasesPlugin extends Plugin {
     protected void handleOnDestroy() {
         billingExecutor.shutdownNow();
         List<BillingClient> clientsToEnd = new ArrayList<>();
+        synchronized (updatesClientLock) {
+            if (updatesBillingClient != null) {
+                clientsToEnd.add(updatesBillingClient);
+                updatesBillingClient = null;
+            }
+        }
         synchronized (billingClientLock) {
             if (billingClient != null) {
                 clientsToEnd.add(billingClient);
@@ -611,6 +1001,9 @@ public class NativePurchasesPlugin extends Plugin {
             }
             billingClientLock.notifyAll();
         }
+        if (last) {
+            maybeRefreshTransactionUpdatesAfterPurchaseFlow();
+        }
         if (last && !finishInFlight) {
             client.endConnection();
         }
@@ -622,6 +1015,10 @@ public class NativePurchasesPlugin extends Plugin {
 
     void registerPurchaseCallSettlementForTest(PluginCall call) {
         registerPurchaseCallSettlement(call);
+    }
+
+    void setAutoFinishTransactionsForTest(boolean value) {
+        autoFinishTransactions = value;
     }
 
     private boolean trySettlePurchaseCall(PluginCall call) {
@@ -654,12 +1051,14 @@ public class NativePurchasesPlugin extends Plugin {
     }
 
     private void abortPurchaseClientFlow(BillingClient purchaseClient, PluginCall call, String message) {
+        clearActivePurchaseFlowProducts(call, null);
         endPendingBillingFlow(purchaseClient);
         closeBillingClientIfCurrent(purchaseClient);
         rejectPurchaseCallOnce(call, message);
     }
 
     private void abortPurchaseClientFlow(BillingClient purchaseClient, PluginCall call, String message, String code) {
+        clearActivePurchaseFlowProducts(call, null);
         endPendingBillingFlow(purchaseClient);
         closeBillingClientIfCurrent(purchaseClient);
         rejectPurchaseCallOnce(call, message, code);
@@ -670,6 +1069,7 @@ public class NativePurchasesPlugin extends Plugin {
      * not the shared {@link #billingClient} field.
      */
     void launchPurchaseBillingFlow(BillingClient flowClient, PluginCall call, BillingFlowParams billingFlowParams) {
+        registerActivePurchaseFlowProduct(call.getString("productIdentifier"));
         if (flowClient == null || !flowClient.isReady()) {
             NativePurchasesLog.w(TAG, "Purchase billing client closed before launch");
             abortPurchaseClientFlow(
@@ -684,6 +1084,7 @@ public class NativePurchasesPlugin extends Plugin {
         try {
             billingResult2 = flowClient.launchBillingFlow(getActivity(), billingFlowParams);
         } catch (RuntimeException launchError) {
+            clearActivePurchaseFlowProducts(call, null);
             endPendingBillingFlow(flowClient);
             throw launchError;
         }
@@ -693,6 +1094,7 @@ public class NativePurchasesPlugin extends Plugin {
         );
         NativePurchasesLog.i(NativePurchasesPlugin.TAG, "onProductDetailsResponse2" + billingResult2);
         if (billingResult2.getResponseCode() != BillingClient.BillingResponseCode.OK) {
+            clearActivePurchaseFlowProducts(call, null);
             endPendingBillingFlow(flowClient);
             rejectPurchaseCallOnce(call, "Purchase is not purchased", BillingResponseCodes.name(billingResult2.getResponseCode()));
             closeBillingClientIfCurrent(flowClient);
@@ -1012,16 +1414,40 @@ public class NativePurchasesPlugin extends Plugin {
         NativePurchasesLog.d(TAG, "Billing result: " + billingResult.getResponseCode() + " - " + billingResult.getDebugMessage());
         NativePurchasesLog.d(TAG, "Purchases count: " + (purchases != null ? purchases.size() : 0));
         NativePurchasesLog.i(NativePurchasesPlugin.TAG, "onPurchasesUpdated" + billingResult);
+        if (billingResult.getResponseCode() == BillingClient.BillingResponseCode.OK && purchases != null && purchaseCall == null) {
+            NativePurchasesLog.d(TAG, "Purchase update outside purchaseProduct, emitting transactionUpdated");
+            if (purchases.isEmpty()) {
+                finishEphemeralTransactionUpdatedHandling(owner, false);
+                return;
+            }
+            AtomicInteger pendingResolutions = new AtomicInteger(purchases.size());
+            AtomicBoolean keepClientOpenForAsyncWork = new AtomicBoolean(false);
+            for (Purchase purchase : purchases) {
+                resolveProductTypeForPurchase(owner, purchase, (productType) -> {
+                    if (processPurchaseForTransactionUpdated(purchase, productType, owner)) {
+                        keepClientOpenForAsyncWork.set(true);
+                    }
+                    if (pendingResolutions.decrementAndGet() <= 0) {
+                        finishEphemeralTransactionUpdatedHandling(owner, keepClientOpenForAsyncWork.get());
+                    }
+                });
+            }
+            return;
+        }
         if (billingResult.getResponseCode() == BillingClient.BillingResponseCode.OK) {
             if (purchases != null && !purchases.isEmpty()) {
                 NativePurchasesLog.d(TAG, "Purchase update successful, processing first purchase");
-                if (handlePurchase(purchases.get(0), purchaseCall, owner)) {
+                Purchase firstPurchase = purchases.get(0);
+                if (handlePurchase(firstPurchase, purchaseCall, owner)) {
+                    clearActivePurchaseFlowProducts(purchaseCall, firstPurchase);
                     endPendingBillingFlow(owner);
                     return;
                 }
+                clearActivePurchaseFlowProducts(purchaseCall, firstPurchase);
             } else {
                 NativePurchasesLog.d(TAG, "Purchase update OK but no purchases returned");
                 if (purchaseCall != null) {
+                    clearActivePurchaseFlowProducts(purchaseCall, null);
                     if (purchaseCallSettlement.containsKey(purchaseCall)) {
                         rejectPurchaseCallOnce(purchaseCall, "Purchase is not purchased", BillingResponseCodes.PURCHASE_NOT_FOUND);
                     } else {
@@ -1034,6 +1460,8 @@ public class NativePurchasesPlugin extends Plugin {
             NativePurchasesLog.i(NativePurchasesPlugin.TAG, "onPurchasesUpdated" + billingResult);
             if (purchaseCall != null) {
                 String code = BillingResponseCodes.name(billingResult.getResponseCode());
+                Purchase failedPurchase = purchases != null && !purchases.isEmpty() ? purchases.get(0) : null;
+                clearActivePurchaseFlowProducts(purchaseCall, failedPurchase);
                 if (purchaseCallSettlement.containsKey(purchaseCall)) {
                     rejectPurchaseCallOnce(purchaseCall, "Purchase is not purchased", code);
                 } else {
