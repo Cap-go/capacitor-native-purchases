@@ -291,6 +291,7 @@ public class NativePurchasesPlugin extends Plugin {
     private void resolveProductTypeForPurchase(BillingClient client, Purchase purchase, Consumer<String> onResolved) {
         if (client == null || !client.isReady() || purchase == null) {
             NativePurchasesLog.w(TAG, "Cannot resolve product type without a ready billing client");
+            onResolved.accept(null);
             return;
         }
         final String purchaseToken = purchase.getPurchaseToken();
@@ -306,6 +307,7 @@ public class NativePurchasesPlugin extends Plugin {
                 }
                 if (inAppResult.getResponseCode() != BillingClient.BillingResponseCode.OK) {
                     NativePurchasesLog.w(TAG, "In-app query failed while resolving product type");
+                    onResolved.accept(null);
                     return;
                 }
                 QueryPurchasesParams subsParams = QueryPurchasesParams.newBuilder().setProductType(BillingClient.ProductType.SUBS).build();
@@ -320,16 +322,20 @@ public class NativePurchasesPlugin extends Plugin {
                         }
                         if (subsResult.getResponseCode() != BillingClient.BillingResponseCode.OK) {
                             NativePurchasesLog.w(TAG, "Subs query failed while resolving product type");
+                            onResolved.accept(null);
                             return;
                         }
                         NativePurchasesLog.w(TAG, "Purchase token missing from typed queries; skipping transactionUpdated");
+                        onResolved.accept(null);
                     });
                 } catch (RuntimeException e) {
                     NativePurchasesLog.w(TAG, "Subs query failed while resolving product type: " + e.getMessage());
+                    onResolved.accept(null);
                 }
             });
         } catch (RuntimeException e) {
             NativePurchasesLog.w(TAG, "In-app query failed while resolving product type: " + e.getMessage());
+            onResolved.accept(null);
         }
     }
 
@@ -691,6 +697,9 @@ public class NativePurchasesPlugin extends Plugin {
      */
     boolean processPurchaseForTransactionUpdated(Purchase purchase, String productType, BillingClient client) {
         if (!hasListeners(TRANSACTION_UPDATED_EVENT)) {
+            return false;
+        }
+        if (productType == null) {
             return false;
         }
         int purchaseState = purchase.getPurchaseState();
@@ -1075,6 +1084,7 @@ public class NativePurchasesPlugin extends Plugin {
         try {
             billingResult2 = flowClient.launchBillingFlow(getActivity(), billingFlowParams);
         } catch (RuntimeException launchError) {
+            clearActivePurchaseFlowProducts(call, null);
             endPendingBillingFlow(flowClient);
             throw launchError;
         }
@@ -1084,6 +1094,7 @@ public class NativePurchasesPlugin extends Plugin {
         );
         NativePurchasesLog.i(NativePurchasesPlugin.TAG, "onProductDetailsResponse2" + billingResult2);
         if (billingResult2.getResponseCode() != BillingClient.BillingResponseCode.OK) {
+            clearActivePurchaseFlowProducts(call, null);
             endPendingBillingFlow(flowClient);
             rejectPurchaseCallOnce(call, "Purchase is not purchased", billingResponseCodeName(billingResult2.getResponseCode()));
             closeBillingClientIfCurrent(flowClient);

@@ -53,7 +53,7 @@ public class NativePurchasesPluginTransactionUpdatedTest {
     }
 
     @Test
-    public void processPurchaseForTransactionUpdated_setsNeedsFinishWhenManualMode() {
+    public void processPurchaseForTransactionUpdated_setsNeedsFinishWhenManualMode() throws Exception {
         plugin.setAutoFinishTransactionsForTest(false);
 
         plugin.processPurchaseForTransactionUpdated(purchase, "inapp", client);
@@ -65,7 +65,7 @@ public class NativePurchasesPluginTransactionUpdatedTest {
     }
 
     @Test
-    public void processPurchaseForTransactionUpdated_autoAcknowledgesBeforeEmit() {
+    public void processPurchaseForTransactionUpdated_autoAcknowledgesBeforeEmit() throws Exception {
         plugin.setAutoFinishTransactionsForTest(true);
 
         plugin.processPurchaseForTransactionUpdated(purchase, "inapp", client);
