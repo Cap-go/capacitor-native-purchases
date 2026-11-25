@@ -82,6 +82,18 @@ public class NativePurchasesPluginTransactionUpdatedTest {
     }
 
     @Test
+    public void handlePurchasesUpdated_withoutPurchaseCall_emitsTransactionUpdated() throws Exception {
+        plugin.setBillingClientForTest(client);
+        plugin.setAutoFinishTransactionsForTest(false);
+        plugin.handlePurchasesUpdated(ok, List.of(purchase), null, client);
+
+        assertEquals(1, plugin.transactionUpdatedEvents.size());
+        assertTrue(plugin.transactionUpdatedEvents.get(0).getBoolean("needsFinish"));
+        verify(client, never()).acknowledgePurchase(any(), any());
+        verify(client).endConnection();
+    }
+
+    @Test
     public void handleUpdatesPurchasesUpdated_emitsForEachPurchase() {
         Purchase second = mock(Purchase.class);
         when(second.getPurchaseState()).thenReturn(Purchase.PurchaseState.PENDING);

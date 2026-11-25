@@ -111,6 +111,10 @@ Add this to manifest
 <uses-permission android:name="com.android.vending.BILLING" />
 ```
 
+### Android rejection codes
+
+Mapped Android billing and operation failures expose a stable `error.code` (see `NativePurchasesAndroidErrorCode` in `definitions.ts`). Branch on `error.code` instead of message text to tell user cancel (`USER_CANCELED`), pending purchase (`PURCHASE_PENDING`), and Play billing failures (`SERVICE_TIMEOUT`, `NETWORK_ERROR`, and the other mapped codes). For missing products, handle both `PRODUCT_NOT_FOUND` (the product-details query succeeded but returned no details) and `ITEM_UNAVAILABLE` (Play reported the SKU as unavailable).
+
 ### Testing with Google Play Console
 
 > 📖 **[Complete Android Testing Guide](./docs/ANDROID_TESTING_GUIDE.md)** - Comprehensive guide covering Internal Testing, License Testing, and Internal App Sharing methods with step-by-step instructions, troubleshooting, and best practices.

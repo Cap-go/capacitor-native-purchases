@@ -1076,7 +1076,7 @@ public class NativePurchasesPlugin extends Plugin {
                 flowClient,
                 call,
                 "Purchase is not purchased",
-                billingResponseCodeName(BillingClient.BillingResponseCode.SERVICE_DISCONNECTED)
+                BillingResponseCodes.name(BillingClient.BillingResponseCode.SERVICE_DISCONNECTED)
             );
             return;
         }
@@ -1096,7 +1096,7 @@ public class NativePurchasesPlugin extends Plugin {
         if (billingResult2.getResponseCode() != BillingClient.BillingResponseCode.OK) {
             clearActivePurchaseFlowProducts(call, null);
             endPendingBillingFlow(flowClient);
-            rejectPurchaseCallOnce(call, "Purchase is not purchased", billingResponseCodeName(billingResult2.getResponseCode()));
+            rejectPurchaseCallOnce(call, "Purchase is not purchased", BillingResponseCodes.name(billingResult2.getResponseCode()));
             closeBillingClientIfCurrent(flowClient);
         }
     }
@@ -1156,46 +1156,11 @@ public class NativePurchasesPlugin extends Plugin {
         }
     }
 
-    /**
-     * Maps a {@link BillingClient.BillingResponseCode} to a readable name so
-     * consumers can tell why a purchase was refused - most importantly
-     * USER_CANCELED (not an error) and ITEM_ALREADY_OWNED (the user already
-     * paid and the app should restore instead of showing a failure).
-     */
-    private static String billingResponseCodeName(int code) {
-        switch (code) {
-            case BillingClient.BillingResponseCode.USER_CANCELED:
-                return "USER_CANCELED";
-            case BillingClient.BillingResponseCode.ITEM_ALREADY_OWNED:
-                return "ITEM_ALREADY_OWNED";
-            case BillingClient.BillingResponseCode.ITEM_NOT_OWNED:
-                return "ITEM_NOT_OWNED";
-            case BillingClient.BillingResponseCode.ITEM_UNAVAILABLE:
-                return "ITEM_UNAVAILABLE";
-            case BillingClient.BillingResponseCode.BILLING_UNAVAILABLE:
-                return "BILLING_UNAVAILABLE";
-            case BillingClient.BillingResponseCode.SERVICE_DISCONNECTED:
-                return "SERVICE_DISCONNECTED";
-            case BillingClient.BillingResponseCode.SERVICE_UNAVAILABLE:
-                return "SERVICE_UNAVAILABLE";
-            case BillingClient.BillingResponseCode.DEVELOPER_ERROR:
-                return "DEVELOPER_ERROR";
-            case BillingClient.BillingResponseCode.FEATURE_NOT_SUPPORTED:
-                return "FEATURE_NOT_SUPPORTED";
-            case BillingClient.BillingResponseCode.NETWORK_ERROR:
-                return "NETWORK_ERROR";
-            case BillingClient.BillingResponseCode.ERROR:
-                return "ERROR";
-            default:
-                return "UNKNOWN_" + code;
-        }
-    }
-
     private static String describeQueryFailure(String productType, BillingResult billingResult) {
         return (
             productType +
             ": " +
-            billingResponseCodeName(billingResult.getResponseCode()) +
+            BillingResponseCodes.name(billingResult.getResponseCode()) +
             " (" +
             billingResult.getResponseCode() +
             ") " +
@@ -1205,7 +1170,7 @@ public class NativePurchasesPlugin extends Plugin {
 
     private void rejectBillingSetupCall(PluginCall purchaseCall, AtomicBoolean callRejected, String code, String message) {
         if (purchaseCall != null && callRejected.compareAndSet(false, true)) {
-            purchaseCall.reject(code, message);
+            purchaseCall.reject(message, code);
         }
     }
 
@@ -1352,7 +1317,7 @@ public class NativePurchasesPlugin extends Plugin {
         } else if (purchase.getPurchaseState() == Purchase.PurchaseState.PENDING) {
             NativePurchasesLog.d(TAG, "Purchase state is PENDING");
             if (purchaseCall != null) {
-                rejectPurchaseCallOnce(purchaseCall, "Purchase is pending");
+                rejectPurchaseCallOnce(purchaseCall, "Purchase is pending", BillingResponseCodes.PURCHASE_PENDING);
             } else {
                 NativePurchasesLog.d(TAG, "purchaseCall is null for pending purchase");
             }
@@ -1491,29 +1456,38 @@ public class NativePurchasesPlugin extends Plugin {
             }
             return;
         }
-        if (billingResult.getResponseCode() == BillingClient.BillingResponseCode.OK && purchases != null) {
-            NativePurchasesLog.d(TAG, "Purchase update successful, processing first purchase");
-            Purchase firstPurchase = purchases.get(0);
-            if (handlePurchase(firstPurchase, purchaseCall, owner)) {
+        if (billingResult.getResponseCode() == BillingClient.BillingResponseCode.OK) {
+            if (purchases != null && !purchases.isEmpty()) {
+                NativePurchasesLog.d(TAG, "Purchase update successful, processing first purchase");
+                Purchase firstPurchase = purchases.get(0);
+                if (handlePurchase(firstPurchase, purchaseCall, owner)) {
+                    clearActivePurchaseFlowProducts(purchaseCall, firstPurchase);
+                    endPendingBillingFlow(owner);
+                    return;
+                }
                 clearActivePurchaseFlowProducts(purchaseCall, firstPurchase);
-                endPendingBillingFlow(owner);
-                return;
+            } else {
+                NativePurchasesLog.d(TAG, "Purchase update OK but no purchases returned");
+                if (purchaseCall != null) {
+                    clearActivePurchaseFlowProducts(purchaseCall, null);
+                    if (purchaseCallSettlement.containsKey(purchaseCall)) {
+                        rejectPurchaseCallOnce(purchaseCall, "Purchase is not purchased", BillingResponseCodes.PURCHASE_NOT_FOUND);
+                    } else {
+                        purchaseCall.reject("Purchase is not purchased", BillingResponseCodes.PURCHASE_NOT_FOUND);
+                    }
+                }
             }
-            clearActivePurchaseFlowProducts(purchaseCall, firstPurchase);
         } else {
-            NativePurchasesLog.d(TAG, "Purchase update failed or purchases is null");
+            NativePurchasesLog.d(TAG, "Purchase update failed");
             NativePurchasesLog.i(NativePurchasesPlugin.TAG, "onPurchasesUpdated" + billingResult);
             if (purchaseCall != null) {
+                String code = BillingResponseCodes.name(billingResult.getResponseCode());
                 Purchase failedPurchase = purchases != null && !purchases.isEmpty() ? purchases.get(0) : null;
                 clearActivePurchaseFlowProducts(purchaseCall, failedPurchase);
                 if (purchaseCallSettlement.containsKey(purchaseCall)) {
-                    rejectPurchaseCallOnce(
-                        purchaseCall,
-                        "Purchase is not purchased",
-                        billingResponseCodeName(billingResult.getResponseCode())
-                    );
+                    rejectPurchaseCallOnce(purchaseCall, "Purchase is not purchased", code);
                 } else {
-                    purchaseCall.reject("Purchase is not purchased", billingResponseCodeName(billingResult.getResponseCode()));
+                    purchaseCall.reject("Purchase is not purchased", code);
                 }
             }
         }
@@ -1735,7 +1709,7 @@ public class NativePurchasesPlugin extends Plugin {
                     purchaseClient,
                     call,
                     "Purchase is not purchased",
-                    billingResponseCodeName(BillingClient.BillingResponseCode.SERVICE_DISCONNECTED)
+                    BillingResponseCodes.name(BillingClient.BillingResponseCode.SERVICE_DISCONNECTED)
                 );
                 return;
             }
@@ -1761,14 +1735,14 @@ public class NativePurchasesPlugin extends Plugin {
                                 purchaseClient,
                                 call,
                                 "Purchase is not purchased",
-                                billingResponseCodeName(billingResult.getResponseCode())
+                                BillingResponseCodes.name(billingResult.getResponseCode())
                             );
                             return;
                         }
 
                         if (productDetailsList.isEmpty()) {
                             NativePurchasesLog.d(TAG, "No products found");
-                            abortPurchaseClientFlow(purchaseClient, call, "Product not found");
+                            abortPurchaseClientFlow(purchaseClient, call, "Product not found", BillingResponseCodes.PRODUCT_NOT_FOUND);
                             return;
                         }
                         // Process the result
@@ -1967,7 +1941,7 @@ public class NativePurchasesPlugin extends Plugin {
     /** Body of restorePurchases once a client exists. Package-private for tests. */
     void restoreWithClient(PluginCall call, BillingClient client) {
         if (!processUnfinishedPurchases(client)) {
-            call.reject("Billing client closed before restore could run. Please try again.");
+            call.reject("Billing client closed before restore could run. Please try again.", BillingResponseCodes.BILLING_CLIENT_CLOSED);
             return;
         }
         call.resolve();
@@ -1990,8 +1964,9 @@ public class NativePurchasesPlugin extends Plugin {
         QueryProductDetailsParams params = QueryProductDetailsParams.newBuilder().setProductList(productList).build();
         NativePurchasesLog.d(TAG, "Initializing billing client for single product query");
         withBillingClient(call, () -> {
+            final BillingClient queryClient = billingClient;
             NativePurchasesLog.d(TAG, "Querying product details");
-            billingClient.queryProductDetailsAsync(
+            queryClient.queryProductDetailsAsync(
                 params,
                 new ProductDetailsResponseListener() {
                     @Override
@@ -2007,6 +1982,15 @@ public class NativePurchasesPlugin extends Plugin {
                         );
                         NativePurchasesLog.d(TAG, "Product details count: " + productDetailsList.size());
 
+                        if (billingResult.getResponseCode() != BillingClient.BillingResponseCode.OK) {
+                            closeBillingClientIfCurrent(queryClient);
+                            call.reject(
+                                "Failed to query product details: " + billingResult.getDebugMessage(),
+                                BillingResponseCodes.name(billingResult.getResponseCode())
+                            );
+                            return;
+                        }
+
                         if (productDetailsList.isEmpty()) {
                             NativePurchasesLog.d(TAG, "No product found in query");
                             NativePurchasesLog.d(TAG, "This usually means:");
@@ -2014,8 +1998,8 @@ public class NativePurchasesPlugin extends Plugin {
                             NativePurchasesLog.d(TAG, "2. Product is not published/active");
                             NativePurchasesLog.d(TAG, "3. App is not properly configured for the product type");
                             NativePurchasesLog.d(TAG, "4. Wrong product ID or type");
-                            closeBillingClient();
-                            call.reject("Product not found");
+                            closeBillingClientIfCurrent(queryClient);
+                            call.reject("Product not found", BillingResponseCodes.PRODUCT_NOT_FOUND);
                             return;
                         }
 
@@ -2036,7 +2020,7 @@ public class NativePurchasesPlugin extends Plugin {
                                     TAG,
                                     "No one-time purchase offer details found for product: " + productDetails.getProductId()
                                 );
-                                closeBillingClient();
+                                closeBillingClientIfCurrent(queryClient);
                                 call.reject("No one-time purchase offer details found for product: " + productDetails.getProductId());
                                 return;
                             }
@@ -2056,7 +2040,7 @@ public class NativePurchasesPlugin extends Plugin {
                                     TAG,
                                     "No subscription offer details found for product: " + productDetails.getProductId()
                                 );
-                                closeBillingClient();
+                                closeBillingClientIfCurrent(queryClient);
                                 call.reject("No subscription offers found for product: " + productDetails.getProductId());
                                 return;
                             }
@@ -2077,7 +2061,7 @@ public class NativePurchasesPlugin extends Plugin {
                                     TAG,
                                     "No offers with pricing phases found for product: " + productDetails.getProductId()
                                 );
-                                closeBillingClient();
+                                closeBillingClientIfCurrent(queryClient);
                                 call.reject("No pricing phases found for product: " + productDetails.getProductId());
                                 return;
                             }
@@ -2103,7 +2087,7 @@ public class NativePurchasesPlugin extends Plugin {
                         JSObject ret = new JSObject();
                         ret.put("product", product);
                         NativePurchasesLog.d(TAG, "Returning single product");
-                        closeBillingClient();
+                        closeBillingClientIfCurrent(queryClient);
                         call.resolve(ret);
                     }
                 }
@@ -2131,8 +2115,9 @@ public class NativePurchasesPlugin extends Plugin {
         QueryProductDetailsParams params = QueryProductDetailsParams.newBuilder().setProductList(productList).build();
         NativePurchasesLog.d(TAG, "Initializing billing client for product query");
         withBillingClient(call, () -> {
+            final BillingClient queryClient = billingClient;
             NativePurchasesLog.d(TAG, "Querying product details");
-            billingClient.queryProductDetailsAsync(
+            queryClient.queryProductDetailsAsync(
                 params,
                 new ProductDetailsResponseListener() {
                     @Override
@@ -2148,6 +2133,15 @@ public class NativePurchasesPlugin extends Plugin {
                         );
                         NativePurchasesLog.d(TAG, "Product details count: " + productDetailsList.size());
 
+                        if (billingResult.getResponseCode() != BillingClient.BillingResponseCode.OK) {
+                            closeBillingClientIfCurrent(queryClient);
+                            call.reject(
+                                "Failed to query product details: " + billingResult.getDebugMessage(),
+                                BillingResponseCodes.name(billingResult.getResponseCode())
+                            );
+                            return;
+                        }
+
                         if (productDetailsList.isEmpty()) {
                             NativePurchasesLog.d(TAG, "No products found in query");
                             NativePurchasesLog.d(TAG, "This usually means:");
@@ -2155,8 +2149,8 @@ public class NativePurchasesPlugin extends Plugin {
                             NativePurchasesLog.d(TAG, "2. Product is not published/active");
                             NativePurchasesLog.d(TAG, "3. App is not properly configured for the product type");
                             NativePurchasesLog.d(TAG, "4. Wrong product ID or type");
-                            closeBillingClient();
-                            call.reject("Product not found");
+                            closeBillingClientIfCurrent(queryClient);
+                            call.reject("Product not found", BillingResponseCodes.PRODUCT_NOT_FOUND);
                             return;
                         }
                         JSONArray products = new JSONArray();
@@ -2259,7 +2253,7 @@ public class NativePurchasesPlugin extends Plugin {
                         JSObject ret = new JSObject();
                         ret.put("products", products);
                         NativePurchasesLog.d(TAG, "Returning " + products.length() + " products");
-                        closeBillingClient();
+                        closeBillingClientIfCurrent(queryClient);
                         call.resolve(ret);
                     }
                 }
@@ -2521,7 +2515,10 @@ public class NativePurchasesPlugin extends Plugin {
             }
         };
         if (!beginFinishingPurchase(client, onAbandon)) {
-            call.reject("Billing client closed before the acknowledge could run. Please try again.");
+            call.reject(
+                "Billing client closed before the acknowledge could run. Please try again.",
+                BillingResponseCodes.BILLING_CLIENT_CLOSED
+            );
             return;
         }
         AcknowledgePurchaseParams acknowledgePurchaseParams = AcknowledgePurchaseParams.newBuilder()
@@ -2542,7 +2539,10 @@ public class NativePurchasesPlugin extends Plugin {
                 call.resolve();
             } else {
                 NativePurchasesLog.d(TAG, "Purchase acknowledgment failed");
-                call.reject("Failed to acknowledge purchase: " + billingResult.getDebugMessage());
+                call.reject(
+                    "Failed to acknowledge purchase: " + billingResult.getDebugMessage(),
+                    BillingResponseCodes.name(billingResult.getResponseCode())
+                );
             }
         };
         try {
@@ -2579,7 +2579,10 @@ public class NativePurchasesPlugin extends Plugin {
             }
         };
         if (!beginFinishingPurchase(client, onAbandon)) {
-            call.reject("Billing client closed before the consume could run. Please try again.");
+            call.reject(
+                "Billing client closed before the consume could run. Please try again.",
+                BillingResponseCodes.BILLING_CLIENT_CLOSED
+            );
             return;
         }
         ConsumeParams consumeParams = ConsumeParams.newBuilder().setPurchaseToken(purchaseToken).build();
@@ -2598,7 +2601,10 @@ public class NativePurchasesPlugin extends Plugin {
                 call.resolve();
             } else {
                 NativePurchasesLog.d(TAG, "Purchase consumption failed");
-                call.reject("Failed to consume purchase: " + billingResult.getDebugMessage());
+                call.reject(
+                    "Failed to consume purchase: " + billingResult.getDebugMessage(),
+                    BillingResponseCodes.name(billingResult.getResponseCode())
+                );
             }
         };
         try {
