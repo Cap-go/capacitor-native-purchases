@@ -1311,7 +1311,9 @@ export interface NativePurchasesPlugin {
    * @param options.replacementMode - Only Android, how Google Play replaces the old subscription (see `SubscriptionReplacementMode`).
    *                                  Google recommends `CHARGE_PRORATED_PRICE` for upgrades and `DEFERRED` for downgrades between different subscription products.
    *                                  When `oldProductIdentifier` equals `productIdentifier` (a base plan change within the same subscription),
-   *                                  use `CHARGE_FULL_PRICE` or `WITHOUT_PRORATION`. Other modes make Google Play fail the purchase.
+   *                                  use `CHARGE_FULL_PRICE` or `WITHOUT_PRORATION` for auto-renewing base plans.
+   *                                  For prepaid destination base plans, use `CHARGE_FULL_PRICE` only; `WITHOUT_PRORATION` and other modes fail on Play.
+   *                                  Play rejects an installment base plan changing to a non-installment base plan within the same product regardless of mode.
    */
   purchaseProduct(options: {
     productIdentifier: string;

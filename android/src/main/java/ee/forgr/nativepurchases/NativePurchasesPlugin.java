@@ -366,6 +366,15 @@ public class NativePurchasesPlugin extends Plugin {
                     activePurchaseFlowProductIds.remove(requestedId);
                 }
             }
+            String oldPurchaseToken = purchaseCall.getString("oldPurchaseToken");
+            String oldProductIdentifier = purchaseCall.getString("oldProductIdentifier");
+            if (
+                oldPurchaseToken != null && !oldPurchaseToken.isEmpty() && oldProductIdentifier != null && !oldProductIdentifier.isEmpty()
+            ) {
+                synchronized (billingClientLock) {
+                    activePurchaseFlowProductIds.remove(oldProductIdentifier);
+                }
+            }
         }
         if (purchase != null) {
             for (String productId : purchase.getProducts()) {
@@ -1079,6 +1088,11 @@ public class NativePurchasesPlugin extends Plugin {
      */
     void launchPurchaseBillingFlow(BillingClient flowClient, PluginCall call, BillingFlowParams billingFlowParams) {
         registerActivePurchaseFlowProduct(call.getString("productIdentifier"));
+        String oldPurchaseToken = call.getString("oldPurchaseToken");
+        String oldProductIdentifier = call.getString("oldProductIdentifier");
+        if (oldPurchaseToken != null && !oldPurchaseToken.isEmpty() && oldProductIdentifier != null && !oldProductIdentifier.isEmpty()) {
+            registerActivePurchaseFlowProduct(oldProductIdentifier);
+        }
         if (flowClient == null || !flowClient.isReady()) {
             NativePurchasesLog.w(TAG, "Purchase billing client closed before launch");
             abortPurchaseClientFlow(
