@@ -8,10 +8,21 @@ import { execFileSync } from 'node:child_process';
 import { appendFileSync } from 'node:fs';
 import {
   buildAiModelCandidates,
-  findPreviousReleaseTag,
-  resolveCurrentTag,
+  resolveReleaseTags,
   shouldRetryWithFallbackModel,
 } from './changelog-release-tags.mjs';
+
+export class ChangelogAiRequestError extends Error {
+  /**
+   * @param {number} status
+   * @param {string} message
+   */
+  constructor(status, message) {
+    super(message);
+    this.name = 'ChangelogAiRequestError';
+    this.status = status;
+  }
+}
 
 const DEFAULT_MODEL = '@cf/zai-org/glm-4.7-flash';
 const FALLBACK_MODELS = ['@cf/moonshotai/kimi-k2.6', '@cf/google/gemma-4-26b-a4b-it'];
@@ -38,34 +49,13 @@ function listReleaseTags() {
 }
 
 function resolveTags({ fromTag, toTag }) {
-  const currentTag = resolveCurrentTag({ toTag, githubRef: process.env.GITHUB_REF });
-
-  if (fromTag) {
-    return { previousTag: fromTag, currentTag };
-  }
-
-  const major = currentTag.match(/^v?(\d+)/)?.[1];
-  const describeArgs = ['describe', '--tags', '--abbrev=0'];
-  if (major) {
-    try {
-      return {
-        previousTag: git([...describeArgs, `--match=${major}.*`, `--match=v${major}.*`, `${currentTag}^`]),
-        currentTag,
-      };
-    } catch {
-      // First release of a new major has no same-major predecessor.
-    }
-  }
-
-  try {
-    return { previousTag: git([...describeArgs, `${currentTag}^`]), currentTag };
-  } catch {
-    const previousTag = findPreviousReleaseTag(currentTag, listReleaseTags());
-    if (!previousTag) {
-      throw new Error(`Could not resolve a previous release tag before ${currentTag}.`);
-    }
-    return { previousTag, currentTag };
-  }
+  return resolveReleaseTags({
+    fromTag,
+    toTag,
+    githubRef: process.env.GITHUB_REF,
+    git,
+    listTags: listReleaseTags,
+  });
 }
 
 function buildPrompt(previousTag, currentTag) {
@@ -131,13 +121,22 @@ async function generateChangelog(prompt, model) {
     signal: AbortSignal.timeout(timeoutMs),
   });
 
-  const payload = await response.json();
+  const bodyText = await response.text();
+  let payload = {};
+  try {
+    payload = bodyText ? JSON.parse(bodyText) : {};
+  } catch {
+    payload = {};
+  }
   if (!response.ok || !payload.success) {
     const detail = Array.isArray(payload.errors)
       ? payload.errors.map((entry) => entry?.message).filter(Boolean).join('; ')
       : '';
-    const suffix = detail ? ` (${detail})` : '';
-    throw new Error(`Cloudflare AI request failed with status ${response.status}${suffix}`);
+    const suffix = detail ? ` (${detail})` : bodyText && !detail ? ` (${bodyText.slice(0, 200)})` : '';
+    throw new ChangelogAiRequestError(
+      response.status,
+      `Cloudflare AI request failed with status ${response.status}${suffix}`,
+    );
   }
 
   const content = payload.result?.choices?.[0]?.message?.content ?? payload.result?.response;
@@ -156,8 +155,10 @@ async function generateChangelogWithFallback(prompt, models) {
       return await generateChangelog(prompt, model);
     } catch (error) {
       lastError = error;
-      const statusMatch = error instanceof Error ? error.message.match(/status (\d+)/) : null;
-      const status = statusMatch ? Number(statusMatch[1]) : 0;
+      const status =
+        error instanceof ChangelogAiRequestError
+          ? error.status
+          : Number(error instanceof Error ? error.message.match(/status (\d+)/)?.[1] : 0);
       if (!shouldRetryWithFallbackModel(status)) {
         throw error;
       }

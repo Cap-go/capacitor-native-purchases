@@ -45,9 +45,11 @@ function compareIdentifiers(a, b) {
     if (bNum !== null) {
       return 1;
     }
-    const cmp = aPart.localeCompare(bPart);
-    if (cmp !== 0) {
-      return cmp;
+    if (aPart < bPart) {
+      return -1;
+    }
+    if (aPart > bPart) {
+      return 1;
     }
   }
   return 0;
@@ -134,4 +136,40 @@ export function buildAiModelCandidates({ explicitModel, defaultModel, fallbackMo
 
 export function shouldRetryWithFallbackModel(status) {
   return status === 404 || status === 410 || status === 503;
+}
+
+/**
+ * Resolve the previous and current release tags using git describe, with list fallback.
+ *
+ * @param {{ fromTag?: string, toTag?: string, githubRef?: string, git: (args: string[]) => string, listTags: () => string[] }} options
+ */
+export function resolveReleaseTags({ fromTag, toTag, githubRef, git, listTags }) {
+  const currentTag = resolveCurrentTag({ toTag, githubRef });
+
+  if (fromTag) {
+    return { previousTag: fromTag, currentTag };
+  }
+
+  const major = currentTag.match(/^v?(\d+)/)?.[1];
+  const describeArgs = ['describe', '--tags', '--abbrev=0'];
+  if (major) {
+    try {
+      return {
+        previousTag: git([...describeArgs, `--match=${major}.*`, `--match=v${major}.*`, `${currentTag}^`]),
+        currentTag,
+      };
+    } catch {
+      // First release of a new major has no same-major predecessor.
+    }
+  }
+
+  try {
+    return { previousTag: git([...describeArgs, `${currentTag}^`]), currentTag };
+  } catch {
+    const previousTag = findPreviousReleaseTag(currentTag, listTags());
+    if (!previousTag) {
+      throw new Error(`Could not resolve a previous release tag before ${currentTag}.`);
+    }
+    return { previousTag, currentTag };
+  }
 }
