@@ -27,7 +27,7 @@ public class NativePurchasesPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "isSubscriptionReplacementSupported", returnType: CAPPluginReturnPromise)
     ]
 
-    private let pluginVersion: String = "8.10.0"
+    private let pluginVersion: String = "8.11.0"
     var autoFinishTransactions: Bool = true
     private var transactionUpdatesTask: Task<Void, Never>?
 
