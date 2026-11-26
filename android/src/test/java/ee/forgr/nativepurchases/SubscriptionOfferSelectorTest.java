@@ -145,6 +145,20 @@ public class SubscriptionOfferSelectorTest {
         assertFalse(SubscriptionOfferSelector.canSelect("", ""));
     }
 
+    @Test
+    public void hasBasePlanWhenAMatchingOfferExists() {
+        List<Offer> offers = offers(offer("monthly", "token-monthly"), offer("yearly", "token-yearly"));
+
+        assertTrue(SubscriptionOfferSelector.hasBasePlan(offers, "yearly"));
+    }
+
+    @Test
+    public void hasBasePlanIsFalseWhenNoOfferUsesThePlan() {
+        List<Offer> offers = offers(offer("monthly", "token-monthly"));
+
+        assertFalse(SubscriptionOfferSelector.hasBasePlan(offers, "yearly"));
+    }
+
     private static List<Offer> offers(Offer... values) {
         List<Offer> offers = new ArrayList<>();
         for (Offer value : values) {

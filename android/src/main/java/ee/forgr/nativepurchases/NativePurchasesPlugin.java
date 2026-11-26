@@ -157,7 +157,8 @@ public class NativePurchasesPlugin extends Plugin {
     /** Billing client kept open while JS listens for {@link #TRANSACTION_UPDATED_EVENT}. */
     private BillingClient updatesBillingClient;
     private final Object updatesClientLock = new Object();
-    private final Set<String> activePurchaseFlowProductIds = Collections.newSetFromMap(new ConcurrentHashMap<>());
+    private static final String ACTIVE_FLOW_REGISTERED_PRODUCT_IDS = "nativePurchasesActiveFlowRegisteredProductIds";
+    private final Map<String, Integer> activePurchaseFlowProductIdRefCounts = new ConcurrentHashMap<>();
     private final AtomicInteger updatesClientPendingAcknowledgements = new AtomicInteger(0);
     private volatile boolean disconnectUpdatesClientWhenIdle;
 
@@ -345,34 +346,64 @@ public class NativePurchasesPlugin extends Plugin {
         }
         String productId = purchase.getProducts().get(0);
         synchronized (billingClientLock) {
-            return activePurchaseFlowProductIds.contains(productId);
+            Integer refCount = activePurchaseFlowProductIdRefCounts.get(productId);
+            return refCount != null && refCount > 0;
         }
     }
 
-    private void registerActivePurchaseFlowProduct(String productIdentifier) {
-        if (productIdentifier == null || productIdentifier.isEmpty()) {
+    private void registerActivePurchaseFlowProduct(PluginCall call, String productIdentifier) {
+        if (call == null || productIdentifier == null || productIdentifier.isEmpty()) {
             return;
         }
         synchronized (billingClientLock) {
-            activePurchaseFlowProductIds.add(productIdentifier);
+            activePurchaseFlowProductIdRefCounts.merge(productIdentifier, 1, Integer::sum);
         }
+        appendActiveFlowRegisteredProductId(call, productIdentifier);
     }
 
-    private void clearActivePurchaseFlowProducts(PluginCall purchaseCall, Purchase purchase) {
-        if (purchaseCall != null) {
-            String requestedId = purchaseCall.getString("productIdentifier");
-            if (requestedId != null && !requestedId.isEmpty()) {
-                synchronized (billingClientLock) {
-                    activePurchaseFlowProductIds.remove(requestedId);
+    private void appendActiveFlowRegisteredProductId(PluginCall call, String productIdentifier) {
+        JSObject data = call.getData();
+        JSONArray registeredIds = data.optJSONArray(ACTIVE_FLOW_REGISTERED_PRODUCT_IDS);
+        if (registeredIds == null) {
+            registeredIds = new JSONArray();
+            data.put(ACTIVE_FLOW_REGISTERED_PRODUCT_IDS, registeredIds);
+        }
+        registeredIds.put(productIdentifier);
+    }
+
+    private void releaseRegisteredActivePurchaseFlowProducts(PluginCall purchaseCall) {
+        if (purchaseCall == null) {
+            return;
+        }
+        JSONArray registeredIds = purchaseCall.getData().optJSONArray(ACTIVE_FLOW_REGISTERED_PRODUCT_IDS);
+        if (registeredIds == null || registeredIds.length() == 0) {
+            return;
+        }
+        synchronized (billingClientLock) {
+            for (int i = 0; i < registeredIds.length(); i++) {
+                String productId = registeredIds.optString(i, "");
+                if (productId.isEmpty()) {
+                    continue;
                 }
+                activePurchaseFlowProductIdRefCounts.compute(productId, (id, count) -> {
+                    if (count == null || count <= 1) {
+                        return null;
+                    }
+                    return count - 1;
+                });
             }
         }
-        if (purchase != null) {
-            for (String productId : purchase.getProducts()) {
-                synchronized (billingClientLock) {
-                    activePurchaseFlowProductIds.remove(productId);
-                }
-            }
+        purchaseCall.getData().remove(ACTIVE_FLOW_REGISTERED_PRODUCT_IDS);
+    }
+
+    void clearActivePurchaseFlowProducts(PluginCall purchaseCall, Purchase purchase) {
+        releaseRegisteredActivePurchaseFlowProducts(purchaseCall);
+    }
+
+    boolean isActivePurchaseFlowProductForTest(String productId) {
+        synchronized (billingClientLock) {
+            Integer refCount = activePurchaseFlowProductIdRefCounts.get(productId);
+            return refCount != null && refCount > 0;
         }
     }
 
@@ -409,6 +440,15 @@ public class NativePurchasesPlugin extends Plugin {
         purchaseData.put("appAccountToken", purchaseAccountId);
         purchaseData.put("willCancel", null);
         return purchaseData;
+    }
+
+    // Lets JS confirm that this native build understands oldPurchaseToken / replacementMode. Older builds ignore
+    // unknown options, so a replacement sent to them would silently become a second subscription instead.
+    @PluginMethod
+    public void isSubscriptionReplacementSupported(PluginCall call) {
+        JSObject ret = new JSObject();
+        ret.put("supported", true);
+        call.resolve(ret);
     }
 
     @PluginMethod
@@ -1069,7 +1109,12 @@ public class NativePurchasesPlugin extends Plugin {
      * not the shared {@link #billingClient} field.
      */
     void launchPurchaseBillingFlow(BillingClient flowClient, PluginCall call, BillingFlowParams billingFlowParams) {
-        registerActivePurchaseFlowProduct(call.getString("productIdentifier"));
+        registerActivePurchaseFlowProduct(call, call.getString("productIdentifier"));
+        String oldPurchaseToken = call.getString("oldPurchaseToken");
+        String oldProductIdentifier = call.getString("oldProductIdentifier");
+        if (oldPurchaseToken != null && !oldPurchaseToken.isEmpty() && oldProductIdentifier != null && !oldProductIdentifier.isEmpty()) {
+            registerActivePurchaseFlowProduct(call, oldProductIdentifier);
+        }
         if (flowClient == null || !flowClient.isReady()) {
             NativePurchasesLog.w(TAG, "Purchase billing client closed before launch");
             abortPurchaseClientFlow(
@@ -1641,6 +1686,14 @@ public class NativePurchasesPlugin extends Plugin {
         final String accountIdentifier = appAccountToken != null && !appAccountToken.isEmpty() ? appAccountToken : null;
         boolean isConsumable = call.getBoolean("isConsumable", false);
         boolean autoAcknowledgePurchases = call.getBoolean("autoAcknowledgePurchases", true);
+        // Subscription replacement (upgrade / downgrade): the purchase being replaced and how to replace it.
+        final String oldPurchaseToken = call.getString("oldPurchaseToken");
+        final String oldProductIdentifier = call.getString("oldProductIdentifier");
+        final String replacementModeName = call.getString("replacementMode");
+        final boolean isReplacement = oldPurchaseToken != null && !oldPurchaseToken.isEmpty();
+        final int replacementMode = isReplacement
+            ? SubscriptionReplacementModes.fromName(replacementModeName)
+            : SubscriptionReplacementModes.UNKNOWN;
 
         NativePurchasesLog.d(TAG, "Product identifier: " + productIdentifier);
         NativePurchasesLog.d(TAG, "Plan identifier: " + planIdentifier);
@@ -1650,6 +1703,7 @@ public class NativePurchasesPlugin extends Plugin {
         NativePurchasesLog.d(TAG, "Account identifier provided: " + (accountIdentifier != null ? "[REDACTED]" : "none"));
         NativePurchasesLog.d(TAG, "Is consumable: " + isConsumable);
         NativePurchasesLog.d(TAG, "Auto-acknowledge purchases: " + autoAcknowledgePurchases);
+        NativePurchasesLog.d(TAG, "Subscription replacement: " + isReplacement);
 
         // cannot use quantity, because it's done in native modal
         NativePurchasesLog.d("CapacitorPurchases", "purchaseProduct: " + productIdentifier);
@@ -1684,6 +1738,16 @@ public class NativePurchasesPlugin extends Plugin {
         if (isConsumable && productType.equals("subs")) {
             NativePurchasesLog.d(TAG, "isConsumable is not supported for subscriptions, ignoring flag");
             isConsumable = false;
+        }
+        String replacementError = SubscriptionReplacementModes.validationError(
+            productType,
+            oldPurchaseToken,
+            oldProductIdentifier,
+            replacementModeName
+        );
+        if (replacementError != null) {
+            call.reject(replacementError);
+            return;
         }
 
         call.getData().put("isConsumable", isConsumable);
@@ -1780,6 +1844,23 @@ public class NativePurchasesPlugin extends Plugin {
                                     rejectOfferTokenNotFoundForPurchase(call, productIdentifier, purchaseClient);
                                     return;
                                 }
+                                if (
+                                    isReplacement &&
+                                    !hasOfferToken &&
+                                    planIdentifier != null &&
+                                    !planIdentifier.isEmpty() &&
+                                    !SubscriptionOfferSelector.hasBasePlan(
+                                        SubscriptionOfferSelector.adapt(subscriptionOffers),
+                                        planIdentifier
+                                    )
+                                ) {
+                                    abortPurchaseClientFlow(
+                                        purchaseClient,
+                                        call,
+                                        "planIdentifier not found for subscription replacement: " + planIdentifier
+                                    );
+                                    return;
+                                }
 
                                 NativePurchasesLog.d(TAG, "Selected base plan: " + subscriptionSelection.basePlanId);
                                 productDetailsParams.setOfferToken(subscriptionSelection.offerToken);
@@ -1787,6 +1868,14 @@ public class NativePurchasesPlugin extends Plugin {
                                     TAG,
                                     "Set offer token: " + NativePurchasesLog.redactSensitive(subscriptionSelection.offerToken)
                                 );
+                                if (isReplacement) {
+                                    productDetailsParams.setSubscriptionProductReplacementParams(
+                                        BillingFlowParams.ProductDetailsParams.SubscriptionProductReplacementParams.newBuilder()
+                                            .setOldProductId(oldProductIdentifier)
+                                            .setReplacementMode(replacementMode)
+                                            .build()
+                                    );
+                                }
                             } else if (productType.equals("inapp")) {
                                 NativePurchasesLog.d(TAG, "Processing in-app product");
                                 List<ProductDetails.OneTimePurchaseOfferDetails> oneTimeOffers =
@@ -1824,6 +1913,11 @@ public class NativePurchasesPlugin extends Plugin {
                         );
                         if (accountIdentifier != null && !accountIdentifier.isEmpty()) {
                             billingFlowBuilder.setObfuscatedAccountId(accountIdentifier);
+                        }
+                        if (isReplacement) {
+                            billingFlowBuilder.setSubscriptionUpdateParams(
+                                BillingFlowParams.SubscriptionUpdateParams.newBuilder().setOldPurchaseToken(oldPurchaseToken).build()
+                            );
                         }
                         BillingFlowParams billingFlowParams = billingFlowBuilder.build();
                         NativePurchasesLog.d(TAG, "Launching billing flow");

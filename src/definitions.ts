@@ -81,6 +81,23 @@ export enum PRORATION_MODE {
   DEFERRED = 4,
 }
 
+/**
+ * How Google Play replaces an active subscription when `purchaseProduct()` is called with `oldPurchaseToken`
+ * (Android only). Passed by name and mapped natively to Play Billing's item-level `ReplacementMode` constants.
+ * Do not pass numeric `PRORATION_MODE` values; use these names.
+ *
+ * - `WITH_TIME_PRORATION`: replace now; the remaining time is credited by moving the next billing date.
+ * - `CHARGE_PRORATED_PRICE`: replace now and charge the price difference for the rest of the current period
+ *   (upgrades only, where the price per unit of time increases).
+ * - `WITHOUT_PRORATION`: replace now; the new price is charged at the next renewal.
+ * - `CHARGE_FULL_PRICE`: replace now and charge the full price of the new plan.
+ * - `DEFERRED`: replace at the next renewal.
+ *
+ * @since 8.10.0
+ */
+export type SubscriptionReplacementMode =
+  'WITH_TIME_PRORATION' | 'CHARGE_PRORATED_PRICE' | 'WITHOUT_PRORATION' | 'CHARGE_FULL_PRICE' | 'DEFERRED';
+
 export enum PACKAGE_TYPE {
   /**
    * A package that was defined with a custom identifier.
@@ -1230,6 +1247,11 @@ export interface NativePurchasesPlugin {
   /**
    * Started purchase process for the given product.
    *
+   * **Upgrade / downgrade a subscription (Android):** pass `oldPurchaseToken`, `oldProductIdentifier` and
+   * `replacementMode` together, with `productType` set to PURCHASE_TYPE.SUBS. Partial replacement options are rejected,
+   * and a `planIdentifier` that matches no base plan is rejected too (no first-offer fallback).
+   * On iOS, purchase the other product of the same subscription group instead (StoreKit handles the change).
+   *
    * On Android, `offerToken` selects which offer is charged. If the token is
    * missing from the product details returned by the plugin's query, the plugin
    * rejects the purchase instead of selecting another offer. Other failures can
@@ -1280,6 +1302,18 @@ export interface NativePurchasesPlugin {
    *                                           for manual finishing across purchase and recovery flows. Defaults to true.
    *                                           - **Android**: Must acknowledge within 3 days or Google Play will refund
    *                                           - **iOS**: Unfinished transactions remain in the queue and may block future purchases
+   * @param options.oldPurchaseToken - Only Android, the purchase token of the active subscription to replace (upgrade / downgrade).
+   *                                   When set, `oldProductIdentifier` and `replacementMode` are required and `productType` must be `subs`.
+   *                                   On iOS, purchasing another product of the same subscription group is already the upgrade / downgrade.
+   *                                   Call `isSubscriptionReplacementSupported()` first: older native builds ignore this option, which would
+   *                                   create a second subscription instead of replacing the first one.
+   * @param options.oldProductIdentifier - Only Android, the product identifier of the subscription being replaced.
+   * @param options.replacementMode - Only Android, how Google Play replaces the old subscription (see `SubscriptionReplacementMode`).
+   *                                  Google recommends `CHARGE_PRORATED_PRICE` for upgrades and `DEFERRED` for downgrades between different subscription products.
+   *                                  When `oldProductIdentifier` equals `productIdentifier` (a base plan change within the same subscription),
+   *                                  use `CHARGE_FULL_PRICE` or `WITHOUT_PRORATION` for auto-renewing base plans.
+   *                                  For prepaid destination base plans, use `CHARGE_FULL_PRICE` only; `WITHOUT_PRORATION` and other modes fail on Play.
+   *                                  Play rejects an installment base plan changing to a non-installment base plan within the same product regardless of mode.
    */
   purchaseProduct(options: {
     productIdentifier: string;
@@ -1291,7 +1325,48 @@ export interface NativePurchasesPlugin {
     appAccountToken?: string;
     isConsumable?: boolean;
     autoAcknowledgePurchases?: boolean;
+    oldPurchaseToken?: string;
+    oldProductIdentifier?: string;
+    replacementMode?: SubscriptionReplacementMode;
   }): Promise<Transaction>;
+
+  /**
+   * Whether this native build can replace a subscription (`oldPurchaseToken` / `replacementMode` in `purchaseProduct()`).
+   *
+   * Use it before an upgrade / downgrade: a native build without this feature ignores the replacement options,
+   * so the purchase would become a second subscription instead of replacing the current one.
+   * On native builds that predate this method the call rejects (not implemented): treat a rejection as not supported.
+   *
+   * @returns `supported: true` on Android builds that support replacement; `false` on iOS (StoreKit replaces
+   *          within a subscription group automatically) and on web.
+   * @since 8.10.0
+   * @platform android Returns true
+   * @platform ios Returns false (not needed)
+   *
+   * @example
+   * ```typescript
+   * // Android. On iOS, purchase the other product of the same subscription group instead.
+   * let supported = false;
+   * try {
+   *   ({ supported } = await NativePurchases.isSubscriptionReplacementSupported());
+   * } catch {
+   *   // The native build predates this method: treat it as not supported.
+   * }
+   * const { purchases } = await NativePurchases.getPurchases({ productType: PURCHASE_TYPE.SUBS });
+   * const current = purchases.find((p) => p.productIdentifier === 'basic');
+   * if (supported && current?.purchaseToken) {
+   *   await NativePurchases.purchaseProduct({
+   *     productIdentifier: 'premium',
+   *     planIdentifier: 'monthly',
+   *     productType: PURCHASE_TYPE.SUBS,
+   *     oldPurchaseToken: current.purchaseToken,
+   *     oldProductIdentifier: current.productIdentifier,
+   *     replacementMode: 'CHARGE_PRORATED_PRICE',
+   *   });
+   * }
+   * ```
+   */
+  isSubscriptionReplacementSupported(): Promise<{ supported: boolean }>;
 
   /**
    * Gets the product info associated with a list of product identifiers.

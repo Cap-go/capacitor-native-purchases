@@ -1,5 +1,6 @@
 package ee.forgr.nativepurchases;
 
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertTrue;
@@ -59,6 +60,8 @@ public class NativePurchasesPluginBillingFlowTest {
         when(call.getBoolean("isConsumable", false)).thenReturn(false);
         when(call.getBoolean("autoAcknowledgePurchases", true)).thenReturn(true);
         when(call.getString("productType")).thenReturn("inapp");
+        when(call.getString("productIdentifier")).thenReturn("premium");
+        when(call.getData()).thenReturn(new JSObject());
     }
 
     @After
@@ -199,6 +202,32 @@ public class NativePurchasesPluginBillingFlowTest {
 
         verify(call, times(1)).reject(eq("Purchase could not start"));
         verify(client, times(1)).endConnection();
+    }
+
+    @Test
+    public void abortBeforeLaunch_doesNotUnregisterAnotherFlowsProductId() {
+        PluginCall launchedCall = mock(PluginCall.class);
+        when(launchedCall.getData()).thenReturn(new JSObject());
+        when(launchedCall.getString("productIdentifier")).thenReturn("premium");
+
+        PluginCall abortingCall = mock(PluginCall.class);
+        when(abortingCall.getData()).thenReturn(new JSObject());
+        when(abortingCall.getString("productIdentifier")).thenReturn("basic");
+        when(abortingCall.getString("oldPurchaseToken")).thenReturn("old-token");
+        when(abortingCall.getString("oldProductIdentifier")).thenReturn("premium");
+
+        NativePurchasesPlugin pluginSpy = spy(plugin);
+        AppCompatActivity activity = mock(AppCompatActivity.class);
+        doReturn(activity).when(pluginSpy).getActivity();
+        when(client.launchBillingFlow(any(), any())).thenReturn(ok);
+        pluginSpy.launchPurchaseBillingFlow(client, launchedCall, mock(BillingFlowParams.class));
+        assertTrue(pluginSpy.isActivePurchaseFlowProductForTest("premium"));
+
+        pluginSpy.clearActivePurchaseFlowProducts(abortingCall, null);
+
+        assertTrue(pluginSpy.isActivePurchaseFlowProductForTest("premium"));
+        pluginSpy.clearActivePurchaseFlowProducts(launchedCall, null);
+        assertFalse(pluginSpy.isActivePurchaseFlowProductForTest("premium"));
     }
 
     @Test
