@@ -53,7 +53,8 @@
     "check:cap9-deprecated": "node scripts/check-cap9-deprecated.mjs",
     "example:install": "cd example-app && bun install --frozen-lockfile",
     "example:build": "bun run build && cd example-app && bun install --frozen-lockfile && bun run build",
-    "changelog:ai": "node scripts/generate-ai-changelog.mjs"
+    "changelog:ai": "node scripts/generate-ai-changelog.mjs",
+    "test:changelog": "node --test scripts/changelog-release-tags.test.mjs"
   },
   "devDependencies": {
     "@capacitor/android": "^8.0.0",

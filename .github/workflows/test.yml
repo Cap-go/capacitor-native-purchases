@@ -131,6 +131,8 @@ jobs:
         run: bun run check:wiring
       - name: Check Cap 9 deprecated APIs
         run: bun run check:cap9-deprecated
+      - name: Test AI changelog tag helpers
+        run: bun run test:changelog
       - name: Lint
         id: lint_code
         run: bun run lint
